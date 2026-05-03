@@ -18,8 +18,19 @@ Sections:
 - **Cost** — session total when available
 
 Replaces [`pi-powerline-footer`](https://github.com/nicobailon/pi-powerline-footer);
-this package skips the bash mode, working vibes, welcome overlay, and
-fixed-editor cluster pieces and only wires the footer.
+this package skips the bash mode, working vibes, and welcome overlay pieces
+and only wires the footer plus an optional fixed editor cluster.
+
+## Fixed editor cluster
+
+In interactive TUI sessions, chat/feed content scrolls above the fixed
+statusline, editor, and any extension-supplied widget rows. Scroll chat with
+the mouse wheel, PageUp/PageDown, Command+PageUp/PageDown, or Ctrl+Shift+Up/Down;
+the editor stays put. Drag text to copy it, drag a selection to the viewport
+edge to scroll, double-click a line to select it, and right-click to open the
+terminal context menu. Use `/wierd-status fixed-editor off` for pi's regular
+scrolling layout, or `/wierd-status mouse-scroll off` for native terminal
+selection.
 
 ## Install
 
@@ -35,3 +46,5 @@ Restart pi to activate.
 - `/wierd-status off` — disable, restoring pi's default editor and footer
 - `/wierd-status toggle` — toggle
 - `/wierd-status footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)
+- `/wierd-status fixed-editor on|off|toggle` — keep the editor cluster fixed at the bottom while chat scrolls above (on by default)
+- `/wierd-status mouse-scroll on|off|toggle` — enable wheel/drag scrolling and selection inside the fixed editor (on by default)

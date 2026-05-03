@@ -1,4 +1,5 @@
 import {
+  copyToClipboard,
   CustomEditor,
   type EditorFactory,
   type ExtensionAPI,
@@ -11,6 +12,8 @@ import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { basename, dirname } from "node:path";
 
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
+import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
+import { emergencyTerminalModeReset, TerminalSplitCompositor } from "./fixed-editor/terminal-split.ts";
 
 const C_RED = "\x1b[38;2;247;118;142m";
 const C_YELLOW = "\x1b[38;2;224;175;104m";
@@ -234,6 +237,8 @@ function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: num
 function makeEditorFactory(
   ctx: ExtensionContext,
   setActiveTui: (tui: TUI | undefined) => void,
+  setCurrentEditor: (editor: any) => void,
+  onEditorMounted: (editor: any) => void,
 ): EditorFactory {
   return (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
     setActiveTui(tui);
@@ -273,7 +278,15 @@ function makeEditorFactory(
       }
     }
 
-    return new WierdStatuslineEditor();
+    const editor = new WierdStatuslineEditor();
+    const originalRender = editor.render.bind(editor);
+    editor.render = (width: number): string[] => {
+      const lines = originalRender(width);
+      onEditorMounted(editor);
+      return lines;
+    };
+    setCurrentEditor(editor);
+    return editor;
   };
 }
 
@@ -306,11 +319,120 @@ function installStatusWidget(pi: ExtensionAPI, ctx: ExtensionContext) {
   );
 }
 
+function findContainerWithChild(tui: any, child: any): { container: any; index: number } | null {
+  const children = Array.isArray(tui?.children) ? tui.children : [];
+  const index = children.findIndex(
+    (candidate: any) => Array.isArray(candidate?.children) && candidate.children.includes(child),
+  );
+  if (index === -1) return null;
+  return { container: children[index], index };
+}
+
 export default function (pi: ExtensionAPI) {
   let activeTui: TUI | undefined;
   const setActiveTui = (tui: TUI | undefined) => {
     activeTui = tui;
   };
+
+  let currentEditor: any = null;
+  const setCurrentEditor = (editor: any) => {
+    currentEditor = editor;
+  };
+
+  const tryInstallFixedEditor = () => {
+    if (!statuslineEnabled || !fixedEditorEnabled) return;
+    if (fixedEditorCompositor) return;
+    if (!activeTui || !currentCtx || !currentEditor) return;
+    if (!findContainerWithChild(activeTui, currentEditor)) return;
+    installFixedEditorCompositor(currentCtx, activeTui);
+  };
+
+  let fixedEditorCompositor: TerminalSplitCompositor | null = null;
+  let fixedEditorContainer: any = null;
+  let fixedStatusContainer: any = null;
+  let fixedWidgetContainerAbove: any = null;
+  let fixedWidgetContainerBelow: any = null;
+  let currentCtx: ExtensionContext | undefined;
+
+  let footerHidden = true;
+  let statuslineEnabled = true;
+  let fixedEditorEnabled = true;
+  let mouseScrollEnabled = true;
+
+  function teardownFixedEditorCompositor(options?: { resetExtendedKeyboardModes?: boolean }) {
+    const hadCompositor = fixedEditorCompositor !== null;
+    fixedEditorCompositor?.dispose(options);
+    if (!hadCompositor && options?.resetExtendedKeyboardModes) {
+      try {
+        process.stdout.write(emergencyTerminalModeReset());
+      } catch {
+        // Shutdown cleanup cannot surface useful terminal write failures.
+      }
+    }
+    fixedEditorCompositor = null;
+    fixedEditorContainer = null;
+    fixedStatusContainer = null;
+    fixedWidgetContainerAbove = null;
+    fixedWidgetContainerBelow = null;
+  }
+
+  function installFixedEditorCompositor(ctx: ExtensionContext, tui: any) {
+    teardownFixedEditorCompositor();
+
+    if (!ctx.hasUI || !fixedEditorEnabled) return;
+    if (!tui?.terminal || typeof tui.terminal.write !== "function") return;
+    if (!currentEditor) return;
+
+    const editorContainerMatch = findContainerWithChild(tui, currentEditor);
+    if (!editorContainerMatch) return;
+
+    const tuiChildren = Array.isArray(tui.children) ? tui.children : [];
+    fixedEditorContainer = editorContainerMatch.container;
+    const statusContainerCandidate = tuiChildren[editorContainerMatch.index - 2] ?? null;
+    fixedStatusContainer =
+      statusContainerCandidate && typeof statusContainerCandidate.render === "function"
+        ? statusContainerCandidate
+        : null;
+    fixedWidgetContainerAbove = tuiChildren[editorContainerMatch.index - 1] ?? null;
+    fixedWidgetContainerBelow = tuiChildren[editorContainerMatch.index + 1] ?? null;
+
+    const compositor: TerminalSplitCompositor = new TerminalSplitCompositor({
+      tui,
+      terminal: tui.terminal,
+      mouseScroll: mouseScrollEnabled,
+      onCopySelection: (text) => {
+        void copyToClipboard(text).catch(() => {});
+      },
+      getShowHardwareCursor: () =>
+        typeof tui.getShowHardwareCursor === "function" && tui.getShowHardwareCursor(),
+      renderCluster: (width, terminalRows) => {
+        const statusContainerLines = fixedStatusContainer
+          ? compositor.renderHidden(fixedStatusContainer, width).filter((line) => visibleWidth(line) > 0)
+          : [];
+        const aboveWidgetLines = fixedWidgetContainerAbove
+          ? compositor.renderHidden(fixedWidgetContainerAbove, width)
+          : [];
+        const belowWidgetLines = fixedWidgetContainerBelow
+          ? compositor.renderHidden(fixedWidgetContainerBelow, width)
+          : [];
+        return renderFixedEditorCluster({
+          width,
+          terminalRows,
+          statusLines: [...statusContainerLines, ...aboveWidgetLines],
+          editorLines: fixedEditorContainer ? compositor.renderHidden(fixedEditorContainer, width) : [],
+          secondaryLines: belowWidgetLines,
+        });
+      },
+    });
+
+    fixedEditorCompositor = compositor;
+    if (fixedStatusContainer?.render) compositor.hideRenderable(fixedStatusContainer);
+    if (fixedWidgetContainerAbove?.render) compositor.hideRenderable(fixedWidgetContainerAbove);
+    compositor.hideRenderable(fixedEditorContainer);
+    if (fixedWidgetContainerBelow?.render) compositor.hideRenderable(fixedWidgetContainerBelow);
+    compositor.install();
+    tui.requestRender(true);
+  }
 
   pi.on("thinking_level_select", async () => {
     activeTui?.requestRender();
@@ -321,20 +443,24 @@ export default function (pi: ExtensionAPI) {
     activeTui?.requestRender();
   });
 
-  let footerHidden = true;
-  let statuslineEnabled = true;
+  pi.on("session_shutdown", async () => {
+    teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
+  });
 
   const enableStatusline = (ctx: ExtensionContext) => {
+    currentCtx = ctx;
     installStatusWidget(pi, ctx);
-    ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui));
+    ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
     if (footerHidden) hidePiFooter(ctx);
     else restorePiFooter(ctx);
   };
 
   const disableStatusline = (ctx: ExtensionContext) => {
+    teardownFixedEditorCompositor();
     ctx.ui.setWidget("wierd-statusline", undefined);
     ctx.ui.setEditorComponent(undefined);
     restorePiFooter(ctx);
+    currentEditor = null;
   };
 
   pi.on("session_start", async (_event, ctx) => {
@@ -343,8 +469,9 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("wierd-status", {
     description:
-      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle'",
+      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle' | 'fixed-editor on|off|toggle' | 'mouse-scroll on|off|toggle'",
     handler: async (args, ctx) => {
+      currentCtx = ctx;
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const cmd = tokens[0];
 
@@ -374,8 +501,45 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      if (cmd === "fixed-editor") {
+        const action = tokens[1] ?? "toggle";
+        if (action === "toggle") fixedEditorEnabled = !fixedEditorEnabled;
+        else if (action === "on") fixedEditorEnabled = true;
+        else if (action === "off") fixedEditorEnabled = false;
+        else {
+          ctx.ui.notify(`Unknown fixed-editor action: ${action}`, "warning");
+          return;
+        }
+        if (statuslineEnabled && activeTui) {
+          if (fixedEditorEnabled) {
+            installFixedEditorCompositor(ctx, activeTui);
+          } else {
+            teardownFixedEditorCompositor();
+            activeTui.requestRender(true);
+          }
+        }
+        ctx.ui.notify(`fixed editor ${fixedEditorEnabled ? "enabled" : "disabled"}`, "info");
+        return;
+      }
+
+      if (cmd === "mouse-scroll") {
+        const action = tokens[1] ?? "toggle";
+        if (action === "toggle") mouseScrollEnabled = !mouseScrollEnabled;
+        else if (action === "on") mouseScrollEnabled = true;
+        else if (action === "off") mouseScrollEnabled = false;
+        else {
+          ctx.ui.notify(`Unknown mouse-scroll action: ${action}`, "warning");
+          return;
+        }
+        if (statuslineEnabled && fixedEditorEnabled && activeTui) {
+          installFixedEditorCompositor(ctx, activeTui);
+        }
+        ctx.ui.notify(`mouse scroll ${mouseScrollEnabled ? "enabled" : "disabled"}`, "info");
+        return;
+      }
+
       ctx.ui.notify(
-        "Usage: /wierd-status <on|off|toggle> | /wierd-status footer <on|off|toggle>",
+        "Usage: /wierd-status <on|off|toggle> | footer <on|off|toggle> | fixed-editor <on|off|toggle> | mouse-scroll <on|off|toggle>",
         "info",
       );
     },
