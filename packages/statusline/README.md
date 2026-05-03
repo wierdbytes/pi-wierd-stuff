@@ -2,11 +2,12 @@
 
 Minimal Tokyo Night Storm statusline footer extension for [pi](https://github.com/badlogic/pi-mono).
 
-Replaces the default footer with a single-line status that mirrors a typical
-Claude Code statusline command:
+Renders the statusline directly into the editor's top border (replacing it),
+and prepends a `❱ ` prompt glyph to the input field:
 
 ```
-/Users/me/projects/foo │  main ✓ │ 23%: 38k[▓▓░░░░░░░░]129k │ $0.42
+🤖 opus-4-7 🧠 high │ /Users/me/projects/foo │  main ✓ │ 23%: 38k[▓▓░░░░░░░░]129k │ $0.42 │ ↑38k ↓1.2k R5.7M W194k
+❱ your prompt here
 ```
 
 Sections:
@@ -30,5 +31,7 @@ Restart pi to activate.
 
 ## Commands
 
-- `/statusline-off` — restore pi's built-in footer for the current session.
-- `/statusline-on` — re-enable the wierd statusline.
+- `/wierd-status on` — enable the statusline
+- `/wierd-status off` — disable, restoring pi's default editor and footer
+- `/wierd-status toggle` — toggle
+- `/wierd-status footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)

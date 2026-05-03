@@ -1,6 +1,6 @@
 {
   "name": "pi-wierd-statusline",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Minimal Tokyo Night statusline footer extension for pi coding agent",
   "type": "module",
   "files": [

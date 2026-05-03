@@ -1,7 +1,13 @@
-import type { ExtensionAPI, ExtensionContext, ReadonlyFooterDataProvider } from "@mariozechner/pi-coding-agent";
+import {
+  CustomEditor,
+  type EditorFactory,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type KeybindingsManager,
+} from "@mariozechner/pi-coding-agent";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import type { Component, TUI, Theme } from "@mariozechner/pi-tui";
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component, EditorTheme, TUI } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { basename, dirname } from "node:path";
 
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
@@ -37,6 +43,8 @@ const THINK_LABELS: Record<string, string> = {
 
 const AUTOCOMPACT_BUFFER = 33000;
 const BAR_WIDTH = 10;
+const PROMPT_GLYPH = "❯";
+const PROMPT_PADDING = 2;
 
 function shortenPath(cwd: string): string {
   const segments = cwd.split("/");
@@ -63,8 +71,7 @@ function buildBar(pct: number, pctColor: string): string {
   if (filled > BAR_WIDTH) filled = BAR_WIDTH;
   if (filled < 0) filled = 0;
   const empty = BAR_WIDTH - filled;
-  const bar = `${pctColor}${"▓".repeat(filled)}${C_GRAY}${"░".repeat(empty)}${C_RESET}`;
-  return bar;
+  return `${pctColor}${"▓".repeat(filled)}${C_GRAY}${"░".repeat(empty)}${C_RESET}`;
 }
 
 function pctColorFor(pct: number): string {
@@ -123,8 +130,7 @@ function buildStatusLine(opts: {
   const shortDir = shortenPath(cwd);
   const dirParent = dirname(shortDir);
   const dirName = basename(shortDir) || shortDir;
-  const parentPart = `${C_GRAY}${dirParent}${C_RESET}`;
-  const dirPart = `${parentPart}${C_PURPLE}/${dirName}${C_RESET}`;
+  const dirPart = `${C_GRAY}${dirParent}${C_RESET}${C_PURPLE}/${dirName}${C_RESET}`;
 
   let gitPart = "";
   if (branch) {
@@ -163,79 +169,141 @@ function buildStatusLine(opts: {
     ? ` ${C_GRAY}│ ${tokenSegments.join(" ")}${C_RESET}`
     : "";
 
-  return `${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart}`;
+  return `${C_GRAY}─${C_RESET} ${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart} `;
 }
 
-function makeFooter(
-  pi: ExtensionAPI,
+function gatherStats(ctx: ExtensionContext) {
+  let cost = 0;
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalCacheRead = 0;
+  let totalCacheWrite = 0;
+  let lastAssistant: AssistantMessage | undefined;
+
+  for (const e of ctx.sessionManager.getBranch()) {
+    if (e.type === "message" && e.message.role === "assistant") {
+      const m = e.message as AssistantMessage;
+      cost += m.usage.cost.total;
+      totalInput += m.usage.input;
+      totalOutput += m.usage.output;
+      totalCacheRead += m.usage.cacheRead;
+      totalCacheWrite += m.usage.cacheWrite;
+      if (
+        m.usage.input + m.usage.output + m.usage.cacheRead + m.usage.cacheWrite > 0
+      ) {
+        lastAssistant = m;
+      }
+    }
+  }
+
+  return { cost, totalInput, totalOutput, totalCacheRead, totalCacheWrite, lastAssistant };
+}
+
+function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: number): string {
+  const stats = gatherStats(ctx);
+  const contextWindow =
+    ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+  const current = stats.lastAssistant
+    ? stats.lastAssistant.usage.input +
+      stats.lastAssistant.usage.cacheRead +
+      stats.lastAssistant.usage.cacheWrite
+    : 0;
+  const git = getGitStatus(ctx.cwd);
+
+  const status = buildStatusLine({
+    cwd: ctx.cwd,
+    branch: git.branch,
+    dirty: git.dirty,
+    current,
+    contextWindow,
+    cost: stats.cost,
+    modelName: shortenModelName(ctx.model),
+    thinkingLevel: pi.getThinkingLevel?.() ?? "off",
+    modelReasoning: ctx.model?.reasoning ?? false,
+    totalInput: stats.totalInput,
+    totalOutput: stats.totalOutput,
+    totalCacheRead: stats.totalCacheRead,
+    totalCacheWrite: stats.totalCacheWrite,
+  });
+
+  const truncated = truncateToWidth(status, width);
+  const fillWidth = Math.max(0, width - visibleWidth(truncated));
+  return truncated + `${C_GRAY}${"─".repeat(fillWidth)}${C_RESET}`;
+}
+
+function makeEditorFactory(
   ctx: ExtensionContext,
   setActiveTui: (tui: TUI | undefined) => void,
-) {
-  return (tui: TUI, _theme: Theme, footerData: ReadonlyFooterDataProvider): Component & { dispose?(): void } => {
+): EditorFactory {
+  return (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
     setActiveTui(tui);
-    const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
 
-    return {
-      dispose() {
-        unsubBranch();
-        setActiveTui(undefined);
-      },
-      invalidate() {},
+    class WierdStatuslineEditor extends CustomEditor {
+      constructor() {
+        super(tui, theme, keybindings, { paddingX: PROMPT_PADDING });
+      }
+
+      setPaddingX(_value: number): void {
+        super.setPaddingX(PROMPT_PADDING);
+      }
+
       render(width: number): string[] {
-        let cost = 0;
-        let totalInput = 0;
-        let totalOutput = 0;
-        let totalCacheRead = 0;
-        let totalCacheWrite = 0;
-        let lastAssistant: AssistantMessage | undefined;
+        const lines = super.render(width);
+        if (lines.length === 0) return lines;
 
-        for (const e of ctx.sessionManager.getBranch()) {
-          if (e.type === "message" && e.message.role === "assistant") {
-            const m = e.message as AssistantMessage;
-            cost += m.usage.cost.total;
-            totalInput += m.usage.input;
-            totalOutput += m.usage.output;
-            totalCacheRead += m.usage.cacheRead;
-            totalCacheWrite += m.usage.cacheWrite;
-            if (
-              m.usage.input + m.usage.output + m.usage.cacheRead + m.usage.cacheWrite > 0
-            ) {
-              lastAssistant = m;
-            }
+        const stripAnsi = (s: string) =>
+          s.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x07]*\x07/g, "");
+        const isBorder = (s: string) => /^[─━]+\s*$/.test(s);
+
+        if (isBorder(stripAnsi(lines[0]))) lines.shift();
+
+        for (let i = lines.length - 1; i >= 0; i--) {
+          if (isBorder(stripAnsi(lines[i]))) {
+            lines.splice(i, 1);
+            break;
           }
         }
 
-        const contextWindow =
-          ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-        const current = lastAssistant
-          ? lastAssistant.usage.input +
-            lastAssistant.usage.cacheRead +
-            lastAssistant.usage.cacheWrite
-          : 0;
+        if (lines.length > 0 && lines[0].startsWith("  ")) {
+          const replacement = `${C_GRAY}${PROMPT_GLYPH}${C_RESET} ` + lines[0].slice(2);
+          lines[0] = truncateToWidth(replacement, width);
+        }
 
-        const branch = footerData.getGitBranch();
-        const git = getGitStatus(ctx.cwd);
+        return lines;
+      }
+    }
 
-        const line = buildStatusLine({
-          cwd: ctx.cwd,
-          branch: branch ?? git.branch,
-          dirty: git.dirty,
-          current,
-          contextWindow,
-          cost,
-          modelName: shortenModelName(ctx.model),
-          thinkingLevel: pi.getThinkingLevel?.() ?? "off",
-          modelReasoning: ctx.model?.reasoning ?? false,
-          totalInput,
-          totalOutput,
-          totalCacheRead,
-          totalCacheWrite,
-        });
-
-        return [truncateToWidth(line, width)];
-      },
-    };
+    return new WierdStatuslineEditor();
   };
+}
+
+class EmptyFooter implements Component {
+  render(): string[] {
+    return [];
+  }
+  invalidate(): void {}
+}
+
+function hidePiFooter(ctx: ExtensionContext): void {
+  ctx.ui.setFooter(() => new EmptyFooter());
+}
+
+function restorePiFooter(ctx: ExtensionContext): void {
+  ctx.ui.setFooter(undefined);
+}
+
+function installStatusWidget(pi: ExtensionAPI, ctx: ExtensionContext) {
+  ctx.ui.setWidget(
+    "wierd-statusline",
+    () => ({
+      dispose() {},
+      invalidate() {},
+      render(width: number): string[] {
+        return [renderStatusContent(pi, ctx, width)];
+      },
+    }),
+    { placement: "aboveEditor" },
+  );
 }
 
 export default function (pi: ExtensionAPI) {
@@ -248,27 +316,68 @@ export default function (pi: ExtensionAPI) {
     activeTui?.requestRender();
   });
 
-  pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.setFooter(makeFooter(pi, ctx, setActiveTui));
-  });
-
   pi.on("tool_result", async () => {
     invalidateGitStatus();
+    activeTui?.requestRender();
   });
 
-  pi.registerCommand("statusline-off", {
-    description: "Disable wierd statusline (restore default footer)",
-    handler: async (_args, ctx) => {
-      ctx.ui.setFooter(undefined);
-      ctx.ui.notify("wierd statusline disabled", "info");
-    },
+  let footerHidden = true;
+  let statuslineEnabled = true;
+
+  const enableStatusline = (ctx: ExtensionContext) => {
+    installStatusWidget(pi, ctx);
+    ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui));
+    if (footerHidden) hidePiFooter(ctx);
+    else restorePiFooter(ctx);
+  };
+
+  const disableStatusline = (ctx: ExtensionContext) => {
+    ctx.ui.setWidget("wierd-statusline", undefined);
+    ctx.ui.setEditorComponent(undefined);
+    restorePiFooter(ctx);
+  };
+
+  pi.on("session_start", async (_event, ctx) => {
+    if (statuslineEnabled) enableStatusline(ctx);
   });
 
-  pi.registerCommand("statusline-on", {
-    description: "Enable wierd statusline",
-    handler: async (_args, ctx) => {
-      ctx.ui.setFooter(makeFooter(pi, ctx, setActiveTui));
-      ctx.ui.notify("wierd statusline enabled", "info");
+  pi.registerCommand("wierd-status", {
+    description:
+      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle'",
+    handler: async (args, ctx) => {
+      const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
+      const cmd = tokens[0];
+
+      if (cmd === "on" || cmd === "off" || cmd === "toggle") {
+        const next = cmd === "toggle" ? !statuslineEnabled : cmd === "on";
+        statuslineEnabled = next;
+        if (statuslineEnabled) enableStatusline(ctx);
+        else disableStatusline(ctx);
+        ctx.ui.notify(`wierd statusline ${statuslineEnabled ? "enabled" : "disabled"}`, "info");
+        return;
+      }
+
+      if (cmd === "footer") {
+        const action = tokens[1] ?? "toggle";
+        if (action === "toggle") footerHidden = !footerHidden;
+        else if (action === "on") footerHidden = false;
+        else if (action === "off") footerHidden = true;
+        else {
+          ctx.ui.notify(`Unknown footer action: ${action}`, "warning");
+          return;
+        }
+        if (statuslineEnabled) {
+          if (footerHidden) hidePiFooter(ctx);
+          else restorePiFooter(ctx);
+        }
+        ctx.ui.notify(`pi footer ${footerHidden ? "hidden" : "shown"}`, "info");
+        return;
+      }
+
+      ctx.ui.notify(
+        "Usage: /wierd-status <on|off|toggle> | /wierd-status footer <on|off|toggle>",
+        "info",
+      );
     },
   });
 }
