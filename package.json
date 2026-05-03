@@ -1,0 +1,8 @@
+{
+  "name": "pi-wierd-stuff",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ]
+}
