@@ -5,11 +5,14 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type KeybindingsManager,
+  type Theme,
 } from "@mariozechner/pi-coding-agent";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import type { Component, EditorTheme, TUI } from "@mariozechner/pi-tui";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { basename, dirname } from "node:path";
+import type { Component, EditorTheme, SelectItem, TUI } from "@mariozechner/pi-tui";
+import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
 import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
@@ -103,6 +106,7 @@ function buildStatusLine(opts: {
   totalOutput: number;
   totalCacheRead: number;
   totalCacheWrite: number;
+  stashCount: number;
 }): string {
   const {
     cwd,
@@ -118,6 +122,7 @@ function buildStatusLine(opts: {
     totalOutput,
     totalCacheRead,
     totalCacheWrite,
+    stashCount,
   } = opts;
 
   const modelPart = `🤖 ${C_PINK}${modelName}${C_RESET}`;
@@ -171,7 +176,9 @@ function buildStatusLine(opts: {
     ? ` ${C_GRAY}│ ${tokenSegments.join(" ")}${C_RESET}`
     : "";
 
-  return `${C_GRAY}─${C_RESET} ${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart} `;
+  const stashPart = stashCount > 0 ? ` ${C_GRAY}│${C_RESET} ${C_YELLOW}📦 ${stashCount}${C_RESET}` : "";
+
+  return `${C_GRAY}─${C_RESET} ${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart}${stashPart} `;
 }
 
 function gatherStats(ctx: ExtensionContext) {
@@ -201,7 +208,7 @@ function gatherStats(ctx: ExtensionContext) {
   return { cost, totalInput, totalOutput, totalCacheRead, totalCacheWrite, lastAssistant };
 }
 
-function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: number): string {
+function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: number, stashCount: number): string {
   const stats = gatherStats(ctx);
   const contextWindow =
     ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow ?? 0;
@@ -226,6 +233,7 @@ function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: num
     totalOutput: stats.totalOutput,
     totalCacheRead: stats.totalCacheRead,
     totalCacheWrite: stats.totalCacheWrite,
+    stashCount,
   });
 
   const truncated = truncateToWidth(status, width);
@@ -299,18 +307,226 @@ function restorePiFooter(ctx: ExtensionContext): void {
   ctx.ui.setFooter(undefined);
 }
 
-function installStatusWidget(pi: ExtensionAPI, ctx: ExtensionContext) {
+function installStatusWidget(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  getStashCount: () => number,
+) {
   ctx.ui.setWidget(
     "wierd-statusline",
     () => ({
       dispose() {},
       invalidate() {},
       render(width: number): string[] {
-        return [renderStatusContent(pi, ctx, width)];
+        return [renderStatusContent(pi, ctx, width, getStashCount())];
       },
     }),
     { placement: "aboveEditor" },
   );
+}
+
+function isStashShortcutInput(data: string): boolean {
+  if (isKeyRelease(data)) return false;
+  return (
+    data === "ß" ||
+    data === "\x1bs" ||
+    data === "\x1bS" ||
+    /^\x1b\[(?:83|115)(?::\d*)?(?::\d*)?;3(?::\d+)?u$/.test(data) ||
+    data === "\x1b[27;3;115~" ||
+    data === "\x1b[27;3;83~" ||
+    matchesKey(data, "alt+s")
+  );
+}
+
+function isStashHistoryShortcutInput(data: string): boolean {
+  if (isKeyRelease(data)) return false;
+  return (
+    matchesKey(data, "ctrl+alt+s") ||
+    /^\x1b\[(?:115|83)(?::\d*)?(?::\d*)?;7(?::\d+)?u$/.test(data) ||
+    data === "\x1b[27;7;115~" ||
+    data === "\x1b[27;7;83~"
+  );
+}
+
+function hasNonWhitespaceText(text: string): boolean {
+  return text.trim().length > 0;
+}
+
+const STASH_HISTORY_LIMIT = 12;
+const STASH_PREVIEW_WIDTH = 72;
+
+function getStashHistoryPath(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || homedir();
+  return join(homeDir, ".pi", "agent", "wierd-statusline", "stash-history.json");
+}
+
+function normalizeStashHistoryEntries(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const history: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    if (!hasNonWhitespaceText(entry)) continue;
+    if (history[history.length - 1] === entry) continue;
+    history.push(entry);
+    if (history.length >= STASH_HISTORY_LIMIT) break;
+  }
+  return history;
+}
+
+function readPersistedStashHistory(): string[] {
+  const path = getStashHistoryPath();
+  try {
+    if (!existsSync(path)) return [];
+    const parsed = JSON.parse(readFileSync(path, "utf-8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+    return normalizeStashHistoryEntries((parsed as { history?: unknown }).history);
+  } catch {
+    return [];
+  }
+}
+
+function persistStashHistory(history: string[]): void {
+  const path = getStashHistoryPath();
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, history: history.slice(0, STASH_HISTORY_LIMIT) }, null, 2) + "\n",
+    );
+  } catch {
+    // Stash history persistence is best-effort.
+  }
+}
+
+function pushStashHistoryEntry(history: string[], text: string): boolean {
+  if (!hasNonWhitespaceText(text)) return false;
+  if (history[0] === text) return false;
+  const existingIndex = history.indexOf(text);
+  if (existingIndex >= 0) history.splice(existingIndex, 1);
+  history.unshift(text);
+  if (history.length > STASH_HISTORY_LIMIT) history.length = STASH_HISTORY_LIMIT;
+  return true;
+}
+
+function buildStashPreview(text: string, maxWidth: number): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (!compact) return "(empty)";
+  return truncateToWidth(compact, maxWidth, "…");
+}
+
+function overlaySelectListTheme(theme: Theme) {
+  return {
+    selectedPrefix: (text: string) => theme.fg("accent", text),
+    selectedText: (text: string) => theme.fg("accent", text),
+    description: (text: string) => theme.fg("muted", text),
+    scrollInfo: (text: string) => theme.fg("dim", text),
+    noMatch: (text: string) => theme.fg("warning", text),
+  };
+}
+
+async function showStashHistoryOverlay(
+  ctx: ExtensionContext,
+  history: string[],
+  onDelete: (text: string) => void,
+): Promise<string | null> {
+  const entries = [...history];
+  const buildItems = (): SelectItem[] =>
+    entries.map((entry, index) => ({
+      value: String(index),
+      label: `#${index + 1} ${buildStashPreview(entry, STASH_PREVIEW_WIDTH)}`,
+    }));
+
+  const selected = await ctx.ui.custom<SelectItem | null>(
+    (tui, theme, _keybindings, done) => {
+      const maxVisible = Math.min(Math.max(entries.length, 1), 10);
+      let selectList = new SelectList(buildItems(), maxVisible, overlaySelectListTheme(theme));
+      selectList.onSelect = (item) => done(item);
+      selectList.onCancel = () => done(null);
+
+      const border = (text: string) => theme.fg("dim", text);
+      const wrapRow = (text: string, innerWidth: number): string =>
+        `${border("│")}${truncateToWidth(text, innerWidth, "…", true)}${border("│")}`;
+
+      const rebuild = (focusIndex: number) => {
+        if (entries.length === 0) {
+          done(null);
+          return;
+        }
+        const next = new SelectList(buildItems(), Math.min(entries.length, 10), overlaySelectListTheme(theme));
+        next.onSelect = (item) => done(item);
+        next.onCancel = () => done(null);
+        next.setSelectedIndex(Math.max(0, Math.min(focusIndex, entries.length - 1)));
+        selectList = next;
+        tui.requestRender();
+      };
+
+      return {
+        render(width: number): string[] {
+          const innerWidth = Math.max(1, width - 2);
+          const lines: string[] = [];
+          lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
+          lines.push(wrapRow(theme.fg("accent", theme.bold("Stash history")), innerWidth));
+          lines.push(border(`├${"─".repeat(innerWidth)}┤`));
+          for (const line of selectList.render(innerWidth)) lines.push(wrapRow(line, innerWidth));
+          lines.push(border(`├${"─".repeat(innerWidth)}┤`));
+          lines.push(
+            wrapRow(theme.fg("dim", "↑↓ navigate • enter insert • d delete • esc cancel"), innerWidth),
+          );
+          lines.push(border(`╰${"─".repeat(innerWidth)}╯`));
+          return lines;
+        },
+        invalidate(): void {
+          selectList.invalidate();
+        },
+        handleInput(data: string): void {
+          if (data === "d" || data === "D") {
+            const item = selectList.getSelectedItem();
+            if (!item) return;
+            const idx = Number.parseInt(item.value, 10);
+            const text = entries[idx];
+            if (text === undefined) return;
+            entries.splice(idx, 1);
+            onDelete(text);
+            rebuild(idx);
+            return;
+          }
+          selectList.handleInput(data);
+          tui.requestRender();
+        },
+      };
+    },
+    {
+      overlay: true,
+      overlayOptions: () => ({ anchor: "center" }),
+    },
+  );
+
+  if (!selected) return null;
+  const i = Number.parseInt(selected.value, 10);
+  return entries[i] ?? null;
+}
+
+async function insertStashHistoryEntry(ctx: ExtensionContext, selected: string): Promise<boolean> {
+  const currentText = ctx.ui.getEditorText();
+  if (!hasNonWhitespaceText(currentText)) {
+    ctx.ui.setEditorText(selected);
+    ctx.ui.notify("Inserted prompt", "info");
+    return true;
+  }
+
+  const action = await ctx.ui.select("Insert prompt", ["Replace", "Append", "Cancel"]);
+  if (action === "Replace") {
+    ctx.ui.setEditorText(selected);
+    ctx.ui.notify("Replaced editor with prompt", "info");
+    return true;
+  }
+  if (action === "Append") {
+    const separator = currentText.endsWith("\n") || selected.startsWith("\n") ? "" : "\n";
+    ctx.ui.setEditorText(`${currentText}${separator}${selected}`);
+    ctx.ui.notify("Appended prompt", "info");
+    return true;
+  }
+  return false;
 }
 
 function findContainerWithChild(tui: any, child: any): { container: any; index: number } | null {
@@ -352,6 +568,68 @@ export default function (pi: ExtensionAPI) {
   let statuslineEnabled = true;
   let fixedEditorEnabled = true;
   let mouseScrollEnabled = true;
+
+  let stashedEditorText: string | null = null;
+  let stashedPromptHistory: string[] = readPersistedStashHistory();
+  let stashShortcutUnsubscribe: (() => void) | null = null;
+
+  const getStashCount = () => stashedPromptHistory.length;
+
+  const removeStashEntry = (text: string) => {
+    const idx = stashedPromptHistory.indexOf(text);
+    if (idx >= 0) {
+      stashedPromptHistory.splice(idx, 1);
+      persistStashHistory(stashedPromptHistory);
+    }
+    if (stashedEditorText === text) stashedEditorText = null;
+  };
+
+  const popLatestStash = (): string | null => {
+    const text = stashedEditorText ?? stashedPromptHistory[0] ?? null;
+    if (text !== null) removeStashEntry(text);
+    return text;
+  };
+
+  const stashOrRestoreEditorText = (ctx: ExtensionContext) => {
+    const rawText = ctx.ui.getEditorText();
+
+    if (!hasNonWhitespaceText(rawText)) {
+      const popped = popLatestStash();
+      if (popped === null) {
+        ctx.ui.notify("Nothing to stash", "info");
+        return;
+      }
+      ctx.ui.setEditorText(popped);
+      ctx.ui.notify("Stash restored", "info");
+      activeTui?.requestRender();
+      return;
+    }
+
+    const hadStash = stashedEditorText !== null;
+    stashedEditorText = rawText;
+    if (pushStashHistoryEntry(stashedPromptHistory, rawText)) {
+      persistStashHistory(stashedPromptHistory);
+    }
+    ctx.ui.setEditorText("");
+    ctx.ui.notify(hadStash ? "Stash updated" : "Text stashed", "info");
+    activeTui?.requestRender();
+  };
+
+  const openStashHistoryPicker = async (ctx: ExtensionContext) => {
+    if (stashedPromptHistory.length === 0) {
+      ctx.ui.notify("No stashed prompts yet", "info");
+      return;
+    }
+    const selected = await showStashHistoryOverlay(
+      ctx,
+      [...stashedPromptHistory],
+      removeStashEntry,
+    );
+    if (selected && (await insertStashHistoryEntry(ctx, selected))) {
+      removeStashEntry(selected);
+    }
+    activeTui?.requestRender();
+  };
 
   function teardownFixedEditorCompositor(options?: { resetExtendedKeyboardModes?: boolean }) {
     const hadCompositor = fixedEditorCompositor !== null;
@@ -439,14 +717,49 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
+    stashShortcutUnsubscribe?.();
+    stashShortcutUnsubscribe = null;
+  });
+
+  pi.on("agent_end", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    if (stashedEditorText === null) return;
+    if (ctx.ui.getEditorText().trim() === "") {
+      const popped = popLatestStash();
+      if (popped !== null) {
+        ctx.ui.setEditorText(popped);
+        ctx.ui.notify("Stash restored", "info");
+        activeTui?.requestRender();
+      }
+    } else {
+      ctx.ui.notify("Stash preserved — clear editor then Alt+S to restore", "info");
+    }
   });
 
   const enableStatusline = (ctx: ExtensionContext) => {
     currentCtx = ctx;
-    installStatusWidget(pi, ctx);
+    installStatusWidget(pi, ctx, getStashCount);
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
     if (footerHidden) hidePiFooter(ctx);
     else restorePiFooter(ctx);
+
+    stashShortcutUnsubscribe?.();
+    stashShortcutUnsubscribe =
+      typeof ctx.ui.onTerminalInput === "function"
+        ? ctx.ui.onTerminalInput((data) => {
+            if (!statuslineEnabled || !ctx.hasUI || activeTui?.hasOverlay?.()) return undefined;
+            if (isStashShortcutInput(data)) {
+              stashOrRestoreEditorText(ctx);
+              activeTui?.requestRender();
+              return { consume: true };
+            }
+            if (isStashHistoryShortcutInput(data)) {
+              void openStashHistoryPicker(ctx);
+              return { consume: true };
+            }
+            return undefined;
+          })
+        : null;
   };
 
   const disableStatusline = (ctx: ExtensionContext) => {
@@ -454,6 +767,8 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setWidget("wierd-statusline", undefined);
     ctx.ui.setEditorComponent(undefined);
     restorePiFooter(ctx);
+    stashShortcutUnsubscribe?.();
+    stashShortcutUnsubscribe = null;
     currentEditor = null;
   };
 

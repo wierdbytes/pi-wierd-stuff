@@ -21,6 +21,20 @@ Replaces [`pi-powerline-footer`](https://github.com/nicobailon/pi-powerline-foot
 this package skips the bash mode, working vibes, and welcome overlay pieces
 and only wires the footer plus an optional fixed editor cluster.
 
+## Editor stash
+
+Press `Alt+S` to save the editor's contents and clear the input, type a quick
+prompt, and the stashed text auto-restores when the agent finishes (only if
+the editor is empty at that point). Pressing `Alt+S` again with text in the
+editor *updates* the live stash slot. A `📦 stash` indicator appears in the
+statusline while a stash is held.
+
+Every stash is also pushed onto a persisted FIFO history (12 entries max,
+stored at `~/.pi/agent/wierd-statusline/stash-history.json`). Press
+`Ctrl+Alt+S` to open a picker; selecting an entry inserts it into the editor
+(replacing or appending if there is already text) and removes it from the
+history.
+
 ## Fixed editor cluster
 
 In interactive TUI sessions, chat/feed content scrolls above the fixed
@@ -48,3 +62,8 @@ Restart pi to activate.
 - `/wierd-status footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)
 - `/wierd-status fixed-editor on|off|toggle` — keep the editor cluster fixed at the bottom while chat scrolls above (on by default)
 - `/wierd-status mouse-scroll on|off|toggle` — enable wheel/drag scrolling and selection inside the fixed editor (on by default)
+
+## Shortcuts
+
+- `Alt+S` — stash editor text / restore stash when editor is empty
+- `Ctrl+Alt+S` — open the stash history picker
