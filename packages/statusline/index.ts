@@ -46,8 +46,7 @@ const THINK_LABELS: Record<string, string> = {
 
 const AUTOCOMPACT_BUFFER = 33000;
 const BAR_WIDTH = 10;
-const PROMPT_GLYPH = "❯";
-const PROMPT_PADDING = 2;
+const PROMPT_PADDING = 0;
 
 function shortenPath(cwd: string): string {
   const segments = cwd.split("/");
@@ -267,11 +266,6 @@ function makeEditorFactory(
             lines.splice(i, 1);
             break;
           }
-        }
-
-        if (lines.length > 0 && lines[0].startsWith("  ")) {
-          const replacement = `${C_GRAY}${PROMPT_GLYPH}${C_RESET} ` + lines[0].slice(2);
-          lines[0] = truncateToWidth(replacement, width);
         }
 
         return lines;
