@@ -35,10 +35,18 @@
       "./index.ts"
     ]
   },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "puppeteer": "^24.0.0"
+  },
   "devDependencies": {
     "@mariozechner/pi-ai": "^0.72.1",
     "@mariozechner/pi-coding-agent": "^0.72.1",
     "@mariozechner/pi-tui": "^0.72.1",
-    "typebox": "^1.1.24"
+    "typebox": "^1.1.24",
+    "vitest": "^4.0.18"
   }
 }

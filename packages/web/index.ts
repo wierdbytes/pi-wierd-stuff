@@ -1,32 +1,27 @@
 /**
  * pi-wierd-web extension entry point.
  *
- * Registers an LLM-callable web_search tool backed by Anthropic's
- * `web_search_20250305` server-side tool.
+ * Registers two tools:
+ *  - `web_search`: Anthropic-server-side web_search_20250305 wrapper
+ *  - `web_fetch`:  headless-Chrome fetch + trafilatura extraction + optional
+ *                  pi sub-agent distillation (ported from pi-web-fetch)
  *
- * Auth flows through ctx.modelRegistry.getApiKeyForProvider("anthropic"),
- * with PI_WIERD_WEB_API_KEY / ANTHROPIC_API_KEY as fallbacks. The tool is a
- * one-shot /v1/messages call; nothing changes the agent loop or main turn
- * stream.
+ * Settings persist in ~/.pi/agent/wierd-web.json (see config.ts). The
+ * `/wierd-web` slash command reads/writes this file.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+  envDefaults,
+  getConfigPath,
+  loadOrInitConfig,
+  saveConfig,
+  type WierdWebConfig,
+} from "./config.ts";
 import { createWebSearchTool } from "./search.ts";
-
-const STATE_TYPE = "wierd-web-config";
-const DEFAULT_MODEL = "claude-haiku-4-5";
-
-interface WierdWebState {
-  model: string;
-}
-
-interface WierdWebConfigEntry extends WierdWebState {}
-
-function envDefaults(): WierdWebState {
-  return {
-    model: process.env.PI_WIERD_WEB_MODEL?.trim() || DEFAULT_MODEL,
-  };
-}
+import { createWebFetchTool } from "./fetch.ts";
+import { shutdownWebFetch, startCacheCleanup } from "./fetch.ts";
+import { detectPythonRunner } from "./extract.ts";
 
 function describeAuthSource(): string {
   if (process.env.PI_WIERD_WEB_API_KEY) return "PI_WIERD_WEB_API_KEY env";
@@ -35,87 +30,139 @@ function describeAuthSource(): string {
 }
 
 export default function piWierdWeb(pi: ExtensionAPI) {
-  let state: WierdWebState = envDefaults();
-  let cliModelOverride: string | undefined;
+  // Initial load — file is created on first run if missing (seeded from env).
+  let config: WierdWebConfig = loadOrInitConfig();
+
+  // CLI flag overrides (boot-time only).
+  let cliSearchModelOverride: string | undefined;
 
   pi.registerFlag("wierd-web-model", {
     description: "Override the Anthropic model used for web_search.",
     type: "string",
   });
 
-  const getModel = () => cliModelOverride ?? state.model ?? DEFAULT_MODEL;
+  const getSearchModel = (): string => cliSearchModelOverride ?? config.searchModel;
+  const getFetchModel = (_ctx: ExtensionContext): string | undefined => config.fetchModel;
+  const getFetchThinkingLevel = (): string | undefined => config.fetchThinkingLevel;
 
-  pi.registerTool(createWebSearchTool({ getModel }));
+  pi.registerTool(createWebSearchTool({ getModel: getSearchModel }));
 
-  // Restore persisted model override from the current branch on session boot
-  // and after tree navigation. Mirrors examples/extensions/tools.ts so a
-  // /wierd-web model selection survives reloads/forks.
-  function restoreFromBranch(ctx: ExtensionContext): void {
-    const flagOverride = pi.getFlag("wierd-web-model");
-    cliModelOverride = typeof flagOverride === "string" && flagOverride ? flagOverride : undefined;
-
-    const branch = ctx.sessionManager.getBranch();
-    let restored: WierdWebConfigEntry | undefined;
-    for (const entry of branch) {
-      if (entry.type === "custom" && entry.customType === STATE_TYPE) {
-        const data = entry.data as WierdWebConfigEntry | undefined;
-        if (data?.model) restored = data;
-      }
-    }
-
-    state = restored ? { model: restored.model } : envDefaults();
-  }
+  pi.registerTool(
+    createWebFetchTool({
+      getFetchModel,
+      getFetchThinkingLevel,
+      getSessionThinkingLevel: () => pi.getThinkingLevel(),
+    }),
+  );
 
   function persist(): void {
-    pi.appendEntry<WierdWebConfigEntry>(STATE_TYPE, { model: state.model });
+    try {
+      saveConfig(config);
+    } catch (err) {
+      // Surface to the next /wierd-web status invocation; not fatal.
+      console.error(
+        `pi-wierd-web: failed to save config to ${getConfigPath()}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   pi.on("session_start", async (_event, ctx) => {
-    restoreFromBranch(ctx);
+    // Refresh from disk in case the user edited it between sessions.
+    config = loadOrInitConfig();
+
+    const flagOverride = pi.getFlag("wierd-web-model");
+    cliSearchModelOverride =
+      typeof flagOverride === "string" && flagOverride ? flagOverride : undefined;
+
+    // Detect Python runner for trafilatura. Notify on failure but don't
+    // block the session — web_fetch will surface a clear error if invoked.
+    const runner = await detectPythonRunner(pi.exec.bind(pi));
+    if (!runner) {
+      ctx.ui.notify(
+        "web_fetch: no Python tool runner found. Install one of: uv (recommended), pipx, or pip-run",
+        "error",
+      );
+    }
+
+    // Cache cleanup interval for web_fetch.
+    startCacheCleanup();
   });
 
-  pi.on("session_tree", async (_event, ctx) => {
-    restoreFromBranch(ctx);
+  pi.on("session_shutdown", async () => {
+    await shutdownWebFetch();
   });
 
   pi.registerCommand("wierd-web", {
     description:
-      "Configure pi-wierd-web. Subcommands: status | model <id> | reset",
+      "Configure pi-wierd-web. Subcommands: status | model <id> | fetch-model <id> | fetch-thinking <level> | reset",
     handler: async (args, ctx) => {
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const cmd = tokens[0]?.toLowerCase() ?? "status";
 
       if (cmd === "status") {
         const lines = [
-          `model: ${getModel()}${cliModelOverride ? " (CLI flag override)" : ""}`,
+          `config: ${getConfigPath()}`,
+          `search model: ${getSearchModel()}${cliSearchModelOverride ? " (CLI flag override)" : ""}`,
+          `fetch model:  ${config.fetchModel ?? "(session model)"}`,
+          `fetch thinking: ${config.fetchThinkingLevel ?? "(session level)"}`,
           `auth source: ${describeAuthSource()}`,
         ];
         ctx.ui.notify(lines.join("\n"), "info");
         return;
       }
 
-      if (cmd === "model") {
+      if (cmd === "model" || cmd === "search-model") {
         const id = tokens.slice(1).join(" ").trim();
         if (!id) {
-          ctx.ui.notify("Usage: /wierd-web model <model-id>", "warning");
+          ctx.ui.notify(`Usage: /wierd-web ${cmd} <model-id>`, "warning");
           return;
         }
-        state = { ...state, model: id };
-        cliModelOverride = undefined;
+        config = { ...config, searchModel: id };
+        cliSearchModelOverride = undefined;
         persist();
-        ctx.ui.notify(`pi-wierd-web model set to ${id}`, "info");
+        ctx.ui.notify(`pi-wierd-web search model set to ${id}`, "info");
+        return;
+      }
+
+      if (cmd === "fetch-model") {
+        const id = tokens.slice(1).join(" ").trim();
+        if (!id) {
+          ctx.ui.notify("Usage: /wierd-web fetch-model <provider/model-id>", "warning");
+          return;
+        }
+        config = { ...config, fetchModel: id };
+        persist();
+        ctx.ui.notify(`pi-wierd-web fetch model set to ${id}`, "info");
+        return;
+      }
+
+      if (cmd === "fetch-thinking") {
+        const level = tokens.slice(1).join(" ").trim();
+        if (!level) {
+          ctx.ui.notify("Usage: /wierd-web fetch-thinking <level>", "warning");
+          return;
+        }
+        config = { ...config, fetchThinkingLevel: level };
+        persist();
+        ctx.ui.notify(`pi-wierd-web fetch thinking level set to ${level}`, "info");
         return;
       }
 
       if (cmd === "reset") {
-        state = envDefaults();
-        cliModelOverride = undefined;
+        config = envDefaults();
+        cliSearchModelOverride = undefined;
         persist();
-        ctx.ui.notify(`pi-wierd-web reset (model: ${state.model})`, "info");
+        ctx.ui.notify(
+          `pi-wierd-web reset (search model: ${config.searchModel}, fetch model: ${config.fetchModel ?? "session"})`,
+          "info",
+        );
         return;
       }
 
-      ctx.ui.notify("Usage: /wierd-web <status | model <id> | reset>", "info");
+      ctx.ui.notify(
+        "Usage: /wierd-web <status | model <id> | fetch-model <id> | fetch-thinking <level> | reset>",
+        "info",
+      );
     },
   });
 }
