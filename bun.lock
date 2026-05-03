@@ -6,11 +6,21 @@
     },
     "packages/statusline": {
       "name": "pi-wierd-statusline",
-      "version": "0.2.0",
+      "version": "0.4.0",
       "devDependencies": {
         "@mariozechner/pi-ai": "^0.72.1",
         "@mariozechner/pi-coding-agent": "^0.72.1",
         "@mariozechner/pi-tui": "^0.72.1",
+      },
+    },
+    "packages/web": {
+      "name": "pi-wierd-web",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@mariozechner/pi-ai": "^0.72.1",
+        "@mariozechner/pi-coding-agent": "^0.72.1",
+        "@mariozechner/pi-tui": "^0.72.1",
+        "typebox": "^1.1.24",
       },
     },
   },
@@ -428,6 +438,8 @@
     "pend": ["pend@1.2.0", "", {}, "sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg=="],
 
     "pi-wierd-statusline": ["pi-wierd-statusline@workspace:packages/statusline"],
+
+    "pi-wierd-web": ["pi-wierd-web@workspace:packages/web"],
 
     "proper-lockfile": ["proper-lockfile@4.1.2", "", { "dependencies": { "graceful-fs": "^4.2.4", "retry": "^0.12.0", "signal-exit": "^3.0.2" } }, "sha512-TjNPblN4BwAWMXU8s9AEz4JmQxnD1NNL7bNOY/AKUzyamc379FWASUhc/K1pL2noVb+XmZKLL68cjzLsiOAMaA=="],
 
