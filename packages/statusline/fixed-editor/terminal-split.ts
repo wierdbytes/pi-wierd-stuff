@@ -203,8 +203,8 @@ function mouseBaseButton(code: number): number {
 function mouseScrollDelta(packet: SgrMousePacket): number {
   if (packet.final !== "M") return 0;
   const baseButton = mouseBaseButton(packet.code);
-  if (baseButton === 64) return 3;
-  if (baseButton === 65) return -3;
+  if (baseButton === 64) return 1;
+  if (baseButton === 65) return -1;
   return 0;
 }
 
