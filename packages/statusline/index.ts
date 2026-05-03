@@ -1,12 +1,14 @@
 import {
   copyToClipboard,
   CustomEditor,
-  type EditorFactory,
   type ExtensionAPI,
   type ExtensionContext,
   type KeybindingsManager,
   type Theme,
 } from "@mariozechner/pi-coding-agent";
+import type { EditorComponent } from "@mariozechner/pi-tui";
+
+type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { Component, EditorTheme, SelectItem, TUI } from "@mariozechner/pi-tui";
 import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
