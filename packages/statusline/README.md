@@ -1,39 +1,53 @@
 # pi-wierd-statusline
 
-Minimal Tokyo Night Storm statusline footer extension for [pi](https://github.com/badlogic/pi-mono).
+Minimal Tokyo Night Storm statusline for [pi](https://github.com/badlogic/pi-mono).
+Renders a compact one-line status row above the editor, with the editor's
+own top/bottom borders stripped so the two visually merge into a single
+cluster.
 
-Renders the statusline directly into the editor's top border (replacing it),
-and prepends a `❱ ` prompt glyph to the input field:
+![pi-wierd-statusline demo](./assets/demo.png)
 
-```
-🤖 opus-4-7 🧠 high │ /Users/me/projects/foo │  main ✓ │ 23%: 38k[▓▓░░░░░░░░]129k │ $0.42 │ ↑38k ↓1.2k R5.7M W194k
-❱ your prompt here
-```
+Sections (each appears only when relevant):
 
-Sections:
+- **Model** — `🤖` plus the active model's display name (e.g. `Opus 4.7`).
+  `Claude ` and `anthropic/` prefixes are stripped for brevity.
+- **Thinking** — `🧠` plus the current thinking level (`min`/`low`/`med`/`high`/`xhigh`),
+  shown only for reasoning-capable models. Honors the model's
+  `thinkingLevelMap` so providers can override the label.
+- **Path** — up to the last three segments of `cwd` with a `…/` prefix.
+  Parent segments in gray, current directory in purple.
+- **Git** — branch name plus a clean/dirty marker (`✓` green / `✗` red).
+  Hidden when not in a git repo.
+- **Context** — percentage of usable context window before autocompaction
+  (33k buffer reserved), printed as `pct%: used[▓░░░]remaining` with a
+  colored progress bar. Color shifts green → yellow → red as you approach
+  the threshold.
+- **Cost** — session total in USD when greater than zero.
+- **Tokens** — cumulative session input/output and cache read/write
+  counters: `↑input ↓output R{cacheRead} W{cacheWrite}`.
+- **Stash** — `📦 N` showing how many prompts are saved in the stash history
+  (see below). Hidden when empty.
 
-- **Path** — last three segments, current directory in purple
-- **Git** — branch + clean/dirty marker (`✓` / `✗`)
-- **Context** — percentage of usable context before autocompaction (33k buffer reserved), current and remaining tokens, with a colored progress bar
-- **Cost** — session total when available
-
-Replaces [`pi-powerline-footer`](https://github.com/nicobailon/pi-powerline-footer);
-this package skips the bash mode, working vibes, and welcome overlay pieces
-and only wires the footer plus an optional fixed editor cluster.
+Inspired by [`pi-powerline-footer`](https://github.com/nicobailon/pi-powerline-footer)
+by [@nicobailon](https://github.com/nicobailon) — the original brought the
+statusline-as-footer idea to pi. This extension is a from-scratch take that
+focuses on just that footer (skipping the bash mode, working vibes, and
+welcome overlay pieces).
 
 ## Editor stash
 
 Press `Alt+S` to save the editor's contents and clear the input, type a quick
-prompt, and the stashed text auto-restores when the agent finishes (only if
-the editor is empty at that point). Pressing `Alt+S` again with text in the
-editor *updates* the live stash slot. A `📦 stash` indicator appears in the
-statusline while a stash is held.
+prompt, and the stashed text auto-restores when the agent finishes — but only
+if the editor is empty at that point (otherwise the stash is preserved and a
+notification reminds you to clear and `Alt+S` to restore). Pressing `Alt+S`
+again with text in the editor *updates* the live stash slot. The statusline's
+`📦 N` indicator reflects the current stash-history depth.
 
-Every stash is also pushed onto a persisted FIFO history (12 entries max,
-stored at `~/.pi/agent/wierd-statusline/stash-history.json`). Press
-`Ctrl+Alt+S` to open a picker; selecting an entry inserts it into the editor
-(replacing or appending if there is already text) and removes it from the
-history.
+Every stash is pushed onto a persisted MRU history (12 entries max, stored at
+`~/.pi/agent/wierd-statusline/stash-history.json`). Press `Ctrl+Alt+S` to
+open a picker overlay; navigate with arrows, `Enter` inserts the selected
+entry (replace/append/cancel prompt if the editor is non-empty), `d` deletes
+the selected entry, and `Esc` cancels.
 
 ## Fixed editor cluster
 
