@@ -22,6 +22,7 @@ import { createWebSearchTool } from "./search.ts";
 import { createWebFetchTool } from "./fetch.ts";
 import { shutdownWebFetch, startCacheCleanup } from "./fetch.ts";
 import { detectPythonRunner } from "./extract.ts";
+import { pickFetchModel, pickSearchModel } from "./model-picker.ts";
 
 function describeAuthSource(): string {
   if (process.env.PI_WIERD_WEB_API_KEY) return "PI_WIERD_WEB_API_KEY env";
@@ -161,6 +162,56 @@ export default function piWierdWeb(pi: ExtensionAPI) {
 
       ctx.ui.notify(
         "Usage: /wierd-web <status | model <id> | fetch-model <id> | fetch-thinking <level> | reset>",
+        "info",
+      );
+    },
+  });
+
+  pi.registerCommand("wierd-web-search-model", {
+    description:
+      "Pick the Anthropic model used for web_search (interactive overlay).",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) {
+        ctx.ui.notify(
+          "/wierd-web-search-model requires an interactive UI. Use `/wierd-web model <id>` in non-interactive mode.",
+          "warning",
+        );
+        return;
+      }
+      const result = await pickSearchModel(ctx, getSearchModel());
+      if (!result) return;
+      config = { ...config, searchModel: result.modelId };
+      cliSearchModelOverride = undefined;
+      persist();
+      ctx.ui.notify(`pi-wierd-web search model set to ${result.modelId}`, "info");
+    },
+  });
+
+  pi.registerCommand("wierd-web-fetch-model", {
+    description:
+      "Pick the Anthropic model + effort used for web_fetch sub-agent (interactive overlay).",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) {
+        ctx.ui.notify(
+          "/wierd-web-fetch-model requires an interactive UI. Use `/wierd-web fetch-model <id>` in non-interactive mode.",
+          "warning",
+        );
+        return;
+      }
+      const result = await pickFetchModel(
+        ctx,
+        config.fetchModel,
+        config.fetchThinkingLevel,
+      );
+      if (!result) return;
+      config = {
+        ...config,
+        fetchModel: result.fetchModelId,
+        fetchThinkingLevel: result.effort,
+      };
+      persist();
+      ctx.ui.notify(
+        `pi-wierd-web fetch model set to ${result.fetchModelId} (effort: ${result.effort})`,
         "info",
       );
     },

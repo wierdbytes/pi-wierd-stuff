@@ -1,6 +1,6 @@
 {
   "name": "pi-wierd-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Anthropic-powered web_search tool for the pi coding agent",
   "type": "module",
   "files": [
