@@ -51,6 +51,17 @@ Behavior:
   to a structured overview when no prompt is provided.
 - Browser pool keeps Chrome warm: one shared instance, up to 6 concurrent
   tabs, idle-shutdown after 60s.
+- **Stealth mode** is enabled by default via
+  [`puppeteer-extra-plugin-stealth`](https://github.com/berstend/puppeteer-extra/tree/master/packages/puppeteer-extra-plugin-stealth):
+  patches `navigator.webdriver`, plugins, languages, WebGL vendor, the
+  `chrome` runtime, and the User-Agent so common bot-detection canaries
+  pass. Pages that refuse to hydrate for headless Chrome (e.g. SPAs behind
+  fingerprinting) render normally. Auth-walled content is still gated by
+  login — stealth doesn't sign you in.
+- **Two-phase load**: navigation waits for `domcontentloaded` (hard cap
+  20s), then opportunistically waits up to 5s for the network to quiet
+  down. Heavy ad/analytics traffic no longer prevents a snapshot — if the
+  network never settles within budget, we capture whatever has rendered.
 
 Prerequisites for `web_fetch`:
 
@@ -62,6 +73,9 @@ Prerequisites for `web_fetch`:
 - Puppeteer's bundled Chromium is downloaded on first install (~300MB).
   Set `PUPPETEER_EXECUTABLE_PATH` to skip the download and use an existing
   Chrome/Chromium binary.
+- `puppeteer-extra` and `puppeteer-extra-plugin-stealth` are installed as
+  regular dependencies. They're loaded lazily — if they fail to import the
+  pool falls back to plain puppeteer with a warning.
 
 ## Auth
 

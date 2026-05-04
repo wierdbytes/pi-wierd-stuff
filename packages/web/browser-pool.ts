@@ -19,10 +19,24 @@ export interface BrowserPoolOptions {
 	maxTabs?: number;
 	/** Close browser after this many ms with no active tabs. Default: 60_000. */
 	idleTimeoutMs?: number;
+	/**
+	 * Apply puppeteer-extra-plugin-stealth evasions to make the headless
+	 * browser harder to fingerprint as a bot. Default: true.
+	 * Set to false for tests or environments where the plugin can't load.
+	 */
+	stealth?: boolean;
+	/**
+	 * User-Agent override applied to every new page. Default: a recent
+	 * desktop Chrome UA. Stealth already strips "HeadlessChrome" from the
+	 * UA, but some sites sniff specific version strings.
+	 */
+	userAgent?: string;
 }
 
 const DEFAULT_MAX_TABS = 6;
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
+const DEFAULT_USER_AGENT =
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 export class BrowserPool {
 	private browser: Browser | null = null;
@@ -31,12 +45,16 @@ export class BrowserPool {
 	private idleTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly maxTabs: number;
 	private readonly idleTimeoutMs: number;
+	private readonly stealth: boolean;
+	private readonly userAgent: string;
 	private waitQueue: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
 	private closed = false;
 
 	constructor(options?: BrowserPoolOptions) {
 		this.maxTabs = options?.maxTabs ?? DEFAULT_MAX_TABS;
 		this.idleTimeoutMs = options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+		this.stealth = options?.stealth ?? true;
+		this.userAgent = options?.userAgent ?? DEFAULT_USER_AGENT;
 	}
 
 	/**
@@ -61,6 +79,12 @@ export class BrowserPool {
 
 		try {
 			const page = await browser.newPage();
+			try {
+				await page.setUserAgent(this.userAgent);
+				await page.setViewport({ width: 1280, height: 800 });
+			} catch {
+				// Non-fatal: page still works with defaults.
+			}
 			return page;
 		} catch (err) {
 			this.activeTabs--;
@@ -128,10 +152,7 @@ export class BrowserPool {
 		// Deduplicate concurrent launches
 		if (this.launching) return this.launching;
 
-		this.launching = puppeteer.launch({
-			headless: true,
-			executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-		});
+		this.launching = this.launchBrowser();
 
 		try {
 			this.browser = await this.launching;
@@ -150,6 +171,41 @@ export class BrowserPool {
 			return this.browser;
 		} finally {
 			this.launching = null;
+		}
+	}
+
+	/**
+	 * Launch the underlying browser. Uses puppeteer-extra + stealth plugin
+	 * when stealth is enabled; falls back to plain puppeteer otherwise.
+	 * The stealth plugin is loaded lazily so non-stealth users (e.g. tests
+	 * that mock puppeteer) don't pay the import cost.
+	 */
+	private async launchBrowser(): Promise<Browser> {
+		const launchOpts = {
+			headless: true,
+			executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+			args: [
+				"--no-sandbox",
+				"--disable-blink-features=AutomationControlled",
+			],
+		};
+
+		if (!this.stealth) {
+			return (await puppeteer.launch(launchOpts)) as unknown as Browser;
+		}
+
+		try {
+			const { default: puppeteerExtra } = await import("puppeteer-extra");
+			const { default: StealthPlugin } = await import(
+				"puppeteer-extra-plugin-stealth"
+			);
+			puppeteerExtra.use(StealthPlugin());
+			return (await puppeteerExtra.launch(launchOpts)) as unknown as Browser;
+		} catch (err) {
+			console.warn(
+				`[BrowserPool] Stealth plugin unavailable, falling back to plain puppeteer: ${(err as Error).message}`,
+			);
+			return (await puppeteer.launch(launchOpts)) as unknown as Browser;
 		}
 	}
 

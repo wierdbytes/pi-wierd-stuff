@@ -1,6 +1,6 @@
 {
   "name": "pi-wierd-web",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Anthropic-powered web_search tool for the pi coding agent",
   "type": "module",
   "files": [
@@ -40,7 +40,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "puppeteer": "^24.0.0"
+    "puppeteer": "^24.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
     "@mariozechner/pi-ai": "^0.72.1",

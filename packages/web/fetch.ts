@@ -62,7 +62,17 @@ function wrapUpdate(
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const CACHE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
-const PAGE_TIMEOUT_MS = 10_000;
+/** Hard ceiling for the initial DOM-ready navigation. */
+const PAGE_TIMEOUT_MS = 20_000;
+/**
+ * After DOM is ready we wait briefly for the SPA to hydrate, but cap how long
+ * we tolerate ongoing trackers/ads. networkidle2 alone can hang indefinitely
+ * on ad-heavy sites. This budget is the longest we'll wait for the network to
+ * quiet down before snapshotting whatever we have.
+ */
+const POST_LOAD_IDLE_TIMEOUT_MS = 5_000;
+/** How long the network must be ~idle before we consider the page settled. */
+const POST_LOAD_IDLE_TIME_MS = 500;
 const EXTRACT_TIMEOUT_MS = 10_000;
 const SUBAGENT_TIMEOUT_MS = 10_000;
 const CONTENT_SIZE_THRESHOLD = 50_000;
@@ -234,10 +244,27 @@ async function fetchPage(
     });
 
     try {
+      // Two-phase load:
+      //   1. Wait for DOMContentLoaded with a hard timeout. This unblocks us
+      //      on heavy sites whose ad/analytics traffic prevents networkidle2
+      //      from ever firing.
+      //   2. Then opportunistically wait up to POST_LOAD_IDLE_TIMEOUT_MS for
+      //      the network to actually quiet down so SPA hydration completes.
+      //      Whichever happens first (idle or timeout) we snapshot.
       await page.goto(url, {
-        waitUntil: "networkidle2",
+        waitUntil: "domcontentloaded",
         timeout: PAGE_TIMEOUT_MS,
       });
+      if (!signal?.aborted) {
+        await page
+          .waitForNetworkIdle({
+            idleTime: POST_LOAD_IDLE_TIME_MS,
+            timeout: POST_LOAD_IDLE_TIMEOUT_MS,
+          })
+          .catch(() => {
+            // Idle never reached within budget — that's fine, snapshot anyway.
+          });
+      }
     } catch (err: any) {
       if (signal?.aborted) return { ok: false, error: "Aborted" };
       if (err.name === "TimeoutError" || err.message?.includes("timeout")) {

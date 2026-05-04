@@ -30,19 +30,24 @@ vi.mock("puppeteer", () => {
 describe("BrowserPool", () => {
 	let pool: BrowserPool;
 
+	// All tests opt out of stealth so they hit the mocked `puppeteer` import.
+	// The stealth path uses `puppeteer-extra`, which isn't mocked here.
+	const makePool = (opts: ConstructorParameters<typeof BrowserPool>[0] = {}) =>
+		new BrowserPool({ stealth: false, ...opts });
+
 	afterEach(async () => {
 		if (pool) await pool.shutdown();
 	});
 
 	it("starts with no active tabs and not running", () => {
-		pool = new BrowserPool();
+		pool = makePool();
 		expect(pool.activeCount).toBe(0);
 		expect(pool.waitingCount).toBe(0);
 		expect(pool.isRunning).toBe(false);
 	});
 
 	it("acquires a page and reports active tab", async () => {
-		pool = new BrowserPool();
+		pool = makePool();
 		const page = await pool.acquire();
 		expect(page).toBeDefined();
 		expect(pool.activeCount).toBe(1);
@@ -55,7 +60,7 @@ describe("BrowserPool", () => {
 	it("reuses the same browser for multiple acquires", async () => {
 		const puppeteer = (await import("puppeteer")).default;
 		const launchCountBefore = vi.mocked(puppeteer.launch).mock.calls.length;
-		pool = new BrowserPool();
+		pool = makePool();
 
 		const page1 = await pool.acquire();
 		const page2 = await pool.acquire();
@@ -69,7 +74,7 @@ describe("BrowserPool", () => {
 	});
 
 	it("acquires up to maxTabs concurrently", async () => {
-		pool = new BrowserPool({ maxTabs: 3 });
+		pool = makePool({ maxTabs: 3 });
 
 		const pages = await Promise.all([
 			pool.acquire(),
@@ -85,7 +90,7 @@ describe("BrowserPool", () => {
 	});
 
 	it("queues requests when at maxTabs", async () => {
-		pool = new BrowserPool({ maxTabs: 2 });
+		pool = makePool({ maxTabs: 2 });
 
 		const page1 = await pool.acquire();
 		const page2 = await pool.acquire();
@@ -114,7 +119,7 @@ describe("BrowserPool", () => {
 	});
 
 	it("respects abort signal when waiting for a slot", async () => {
-		pool = new BrowserPool({ maxTabs: 1 });
+		pool = makePool({ maxTabs: 1 });
 		const page = await pool.acquire();
 
 		const controller = new AbortController();
@@ -130,7 +135,7 @@ describe("BrowserPool", () => {
 	});
 
 	it("respects abort signal on acquire when already aborted", async () => {
-		pool = new BrowserPool();
+		pool = makePool();
 		const controller = new AbortController();
 		controller.abort();
 
@@ -138,14 +143,14 @@ describe("BrowserPool", () => {
 	});
 
 	it("throws on acquire after shutdown", async () => {
-		pool = new BrowserPool();
+		pool = makePool();
 		await pool.shutdown();
 
 		await expect(pool.acquire()).rejects.toThrow("shut down");
 	});
 
 	it("shutdown rejects waiting requests", async () => {
-		pool = new BrowserPool({ maxTabs: 1 });
+		pool = makePool({ maxTabs: 1 });
 		const page = await pool.acquire();
 
 		const waitingPromise = pool.acquire();
@@ -159,7 +164,7 @@ describe("BrowserPool", () => {
 	});
 
 	it("handles release of already-closed page gracefully", async () => {
-		pool = new BrowserPool();
+		pool = makePool();
 		const page = await pool.acquire();
 
 		// Simulate page.close() throwing
@@ -171,7 +176,7 @@ describe("BrowserPool", () => {
 	});
 
 	it("idle timeout closes browser after no activity", async () => {
-		pool = new BrowserPool({ idleTimeoutMs: 50 });
+		pool = makePool({ idleTimeoutMs: 50 });
 		const page = await pool.acquire();
 		expect(pool.isRunning).toBe(true);
 
@@ -186,7 +191,7 @@ describe("BrowserPool", () => {
 		const puppeteer = (await import("puppeteer")).default;
 		vi.mocked(puppeteer.launch).mockClear();
 
-		pool = new BrowserPool({ maxTabs: 4 });
+		pool = makePool({ maxTabs: 4 });
 
 		// Simulate 4 parallel fetches
 		const pages = await Promise.all([
@@ -206,7 +211,7 @@ describe("BrowserPool", () => {
 	});
 
 	it("wakes waiters in FIFO order", async () => {
-		pool = new BrowserPool({ maxTabs: 1 });
+		pool = makePool({ maxTabs: 1 });
 		const page1 = await pool.acquire();
 
 		const order: number[] = [];
