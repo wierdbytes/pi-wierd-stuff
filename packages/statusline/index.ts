@@ -9,7 +9,7 @@ import {
 import type { EditorComponent } from "@mariozechner/pi-tui";
 
 type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model, ThinkingLevelMap } from "@mariozechner/pi-ai";
 import type { Component, EditorTheme, SelectItem, TUI } from "@mariozechner/pi-tui";
 import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -94,6 +94,15 @@ function shortenModelName(model: { id?: string; name?: string } | undefined): st
   return name;
 }
 
+function resolveThinkingLabel(
+  thinkingLevel: string,
+  thinkingLevelMap: ThinkingLevelMap | undefined,
+): string {
+  const mapped = thinkingLevelMap?.[thinkingLevel as keyof ThinkingLevelMap];
+  if (typeof mapped === "string" && mapped.length > 0) return mapped;
+  return THINK_LABELS[thinkingLevel] ?? thinkingLevel;
+}
+
 function buildStatusLine(opts: {
   cwd: string;
   branch: string | null;
@@ -103,6 +112,7 @@ function buildStatusLine(opts: {
   cost: number;
   modelName: string;
   thinkingLevel: string;
+  thinkingLevelMap: ThinkingLevelMap | undefined;
   modelReasoning: boolean;
   totalInput: number;
   totalOutput: number;
@@ -119,6 +129,7 @@ function buildStatusLine(opts: {
     cost,
     modelName,
     thinkingLevel,
+    thinkingLevelMap,
     modelReasoning,
     totalInput,
     totalOutput,
@@ -131,7 +142,7 @@ function buildStatusLine(opts: {
 
   let thinkPart = "";
   if (modelReasoning) {
-    const label = THINK_LABELS[thinkingLevel] ?? thinkingLevel;
+    const label = resolveThinkingLabel(thinkingLevel, thinkingLevelMap);
     const color = THINK_COLORS[thinkingLevel] ?? C_GRAY;
     thinkPart = ` 🧠 ${color}${label}${C_RESET}`;
   }
@@ -221,6 +232,7 @@ function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: num
     : 0;
   const git = getGitStatus(ctx.cwd);
 
+  const model = ctx.model as Model<any> | undefined;
   const status = buildStatusLine({
     cwd: ctx.cwd,
     branch: git.branch,
@@ -230,6 +242,7 @@ function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: num
     cost: stats.cost,
     modelName: shortenModelName(ctx.model),
     thinkingLevel: pi.getThinkingLevel?.() ?? "off",
+    thinkingLevelMap: model?.thinkingLevelMap,
     modelReasoning: ctx.model?.reasoning ?? false,
     totalInput: stats.totalInput,
     totalOutput: stats.totalOutput,
