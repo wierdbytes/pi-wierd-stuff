@@ -577,6 +577,7 @@ export default function (pi: ExtensionAPI) {
   let fixedStatusContainer: any = null;
   let fixedWidgetContainerAbove: any = null;
   let fixedWidgetContainerBelow: any = null;
+  let fixedFooterComponent: any = null;
   let currentCtx: ExtensionContext | undefined;
 
   let footerHidden = true;
@@ -661,6 +662,7 @@ export default function (pi: ExtensionAPI) {
     fixedStatusContainer = null;
     fixedWidgetContainerAbove = null;
     fixedWidgetContainerBelow = null;
+    fixedFooterComponent = null;
   }
 
   function installFixedEditorCompositor(ctx: ExtensionContext, tui: any) {
@@ -682,6 +684,9 @@ export default function (pi: ExtensionAPI) {
         : null;
     fixedWidgetContainerAbove = tuiChildren[editorContainerMatch.index - 1] ?? null;
     fixedWidgetContainerBelow = tuiChildren[editorContainerMatch.index + 1] ?? null;
+    const footerCandidate = tuiChildren[editorContainerMatch.index + 2] ?? null;
+    fixedFooterComponent =
+      footerCandidate && typeof footerCandidate.render === "function" ? footerCandidate : null;
 
     const compositor: TerminalSplitCompositor = new TerminalSplitCompositor({
       tui,
@@ -702,12 +707,15 @@ export default function (pi: ExtensionAPI) {
         const belowWidgetLines = fixedWidgetContainerBelow
           ? compositor.renderHidden(fixedWidgetContainerBelow, width)
           : [];
+        const footerLines = fixedFooterComponent
+          ? compositor.renderHidden(fixedFooterComponent, width).filter((line) => visibleWidth(line) > 0)
+          : [];
         return renderFixedEditorCluster({
           width,
           terminalRows,
           statusLines: [...statusContainerLines, ...aboveWidgetLines],
           editorLines: fixedEditorContainer ? compositor.renderHidden(fixedEditorContainer, width) : [],
-          secondaryLines: belowWidgetLines,
+          secondaryLines: [...belowWidgetLines, ...footerLines],
         });
       },
     });
@@ -717,6 +725,7 @@ export default function (pi: ExtensionAPI) {
     if (fixedWidgetContainerAbove?.render) compositor.hideRenderable(fixedWidgetContainerAbove);
     compositor.hideRenderable(fixedEditorContainer);
     if (fixedWidgetContainerBelow?.render) compositor.hideRenderable(fixedWidgetContainerBelow);
+    if (fixedFooterComponent?.render) compositor.hideRenderable(fixedFooterComponent);
     compositor.install();
     tui.requestRender(true);
   }
@@ -820,6 +829,12 @@ export default function (pi: ExtensionAPI) {
         if (statuslineEnabled) {
           if (footerHidden) hidePiFooter(ctx);
           else restorePiFooter(ctx);
+          // Footer toggle replaces the component in tui.children, so the
+          // compositor's captured reference is stale; reinstall to capture
+          // the new footer (or EmptyFooter) and render it under the editor.
+          if (fixedEditorEnabled && activeTui) {
+            installFixedEditorCompositor(ctx, activeTui);
+          }
         }
         ctx.ui.notify(`pi footer ${footerHidden ? "hidden" : "shown"}`, "info");
         return;
