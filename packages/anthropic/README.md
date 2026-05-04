@@ -26,8 +26,16 @@ refreshed automatically.
 
 - Registers the `anthropic` provider with an OAuth login flow that targets
   `claude.ai` / `platform.claude.com`.
-- Streams responses through `@anthropic-ai/sdk` using Claude-Code-compatible
-  headers, betas and system prompt shaping so Pro/Max sessions are accepted.
+- Reuses pi-ai's built-in Anthropic streamer, which already detects OAuth
+  tokens and applies Claude-Code-compatible headers / betas, the
+  `"You are Claude Code, ..."` identity block, Claude-Code tool-name mapping
+  and adaptive thinking with `output_config.effort` for Opus 4.6 / 4.7 and
+  Sonnet 4.6.
+- Layers two Claude-Code-only tweaks on top via the
+  `before_provider_request` hook: it rewrites Pi-branded paragraphs in the
+  system prompt to Claude Code identity, and prepends the
+  `x-anthropic-billing-header` system block so Pro/Max billing accepts the
+  request.
 - Reuses pi's built-in Anthropic model registry — no custom model list is
   injected, so whatever models ship with your pi version are what you get.
 - Creates a `~/.Claude Code` → `~/.pi` symlink on first load when missing,

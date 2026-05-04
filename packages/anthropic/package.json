@@ -1,6 +1,6 @@
 {
   "name": "pi-wierd-anthropic",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Claude Pro/Max OAuth extension for the pi coding agent",
   "type": "module",
   "files": [
@@ -36,9 +36,6 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.92.0"
   },
   "devDependencies": {
     "@mariozechner/pi-ai": "^0.72.1",
