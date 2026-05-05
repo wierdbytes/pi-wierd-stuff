@@ -1,0 +1,54 @@
+{
+  "name": "pi-wierd-voice",
+  "version": "0.1.0",
+  "description": "Spoken summary after each agent turn for the pi coding agent.",
+  "type": "module",
+  "files": [
+    "*.ts",
+    "*.md",
+    "*.json",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "coding-agent",
+    "extension",
+    "voice",
+    "tts",
+    "gemini"
+  ],
+  "license": "MIT",
+  "author": "wierdbytes",
+  "homepage": "https://github.com/wierdbytes/pi-wierd-stuff/tree/master/packages/voice",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wierdbytes/pi-wierd-stuff.git",
+    "directory": "packages/voice"
+  },
+  "bugs": {
+    "url": "https://github.com/wierdbytes/pi-wierd-stuff/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-ai": "^0.72.1",
+    "@mariozechner/pi-coding-agent": "^0.72.1",
+    "@mariozechner/pi-tui": "^0.72.1",
+    "typebox": "^1.1.24",
+    "vitest": "^4.0.18"
+  }
+}
