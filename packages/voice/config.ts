@@ -7,17 +7,34 @@
  * fields back to the defaults.
  *
  * No env-driven defaults are exposed today (the API-key chain in auth.ts
- * is the only env input). The `disabledReason` field is internal — set by
- * failure handlers, cleared by `/wierd-voice reset`.
+ * is the only env input).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { configPath as defaultConfigPath, ensureVoiceDir } from "./paths.ts";
 
-export const DEFAULT_VOICE = "Kore";
+export const DEFAULT_VOICE = "Umbriel";
 export type Scope = "last" | "sinceUser";
 export const DEFAULT_SCOPE: Scope = "last";
+
+/**
+ * Allowed values for `summarizerThinkingLevel`. Mirrors
+ * `ModelThinkingLevel` from `@mariozechner/pi-ai` — we re-list them here
+ * (instead of importing) so this file stays a pure config module with no
+ * runtime dependency on pi-ai. The picker validates against pi-ai's
+ * `thinkingLevelMap` per-model; this list is just the disk-format
+ * whitelist.
+ */
+export const VALID_THINKING_LEVELS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
+export type SummarizerThinkingLevel = (typeof VALID_THINKING_LEVELS)[number];
 
 export interface WierdVoiceConfig {
   /** When true, every `agent_end` is a no-op until cleared. */
@@ -28,8 +45,19 @@ export interface WierdVoiceConfig {
   scope: Scope;
   /** "<provider>/<id>" id passed to `pi --model`. Unset ⇒ session model. */
   summarizerModel?: string;
-  /** Internal — surfaced in `/wierd-voice status`, cleared by reset. */
-  disabledReason?: string;
+  /**
+   * Reasoning effort passed via `pi --thinking <level>` when spawning the
+   * summarizer sub-agent. Unset ⇒ inherit pi's default for the chosen
+   * model. Mirrors `fetchThinkingLevel` in packages/web/config.ts.
+   */
+  summarizerThinkingLevel?: SummarizerThinkingLevel;
+}
+
+function isThinkingLevel(value: unknown): value is SummarizerThinkingLevel {
+  return (
+    typeof value === "string" &&
+    (VALID_THINKING_LEVELS as readonly string[]).includes(value)
+  );
 }
 
 export function envDefaults(): WierdVoiceConfig {
@@ -62,8 +90,10 @@ function sanitize(raw: unknown): WierdVoiceConfig {
     cfg.summarizerModel = obj.summarizerModel.trim();
   }
 
-  if (typeof obj.disabledReason === "string" && obj.disabledReason.trim()) {
-    cfg.disabledReason = obj.disabledReason.trim();
+  // Anything not in the whitelist (including `""` and unknown levels)
+  // falls through to "unset" ⇒ inherit pi's default.
+  if (isThinkingLevel(obj.summarizerThinkingLevel)) {
+    cfg.summarizerThinkingLevel = obj.summarizerThinkingLevel;
   }
 
   return cfg;
@@ -116,7 +146,9 @@ export function saveConfig(
     scope: cfg.scope,
   };
   if (cfg.summarizerModel) out.summarizerModel = cfg.summarizerModel;
-  if (cfg.disabledReason) out.disabledReason = cfg.disabledReason;
+  if (cfg.summarizerThinkingLevel) {
+    out.summarizerThinkingLevel = cfg.summarizerThinkingLevel;
+  }
 
   writeFileSync(path, JSON.stringify(out, null, 2) + "\n", "utf-8");
   return path;

@@ -418,7 +418,7 @@ describe("config", () => {
 
   it("envDefaults uses the documented baseline", () => {
     const cfg = envDefaults();
-    expect(cfg).toEqual({ muted: false, voice: "Kore", scope: "last" });
+    expect(cfg).toEqual({ muted: false, voice: "Umbriel", scope: "last" });
   });
 
   it("loadConfig returns defaults when file is missing", () => {
@@ -454,7 +454,72 @@ describe("config", () => {
     saveConfig(envDefaults(), configFile);
     const parsed = JSON.parse(readFileSync(configFile, "utf-8"));
     expect("summarizerModel" in parsed).toBe(false);
-    expect("disabledReason" in parsed).toBe(false);
+    expect("summarizerThinkingLevel" in parsed).toBe(false);
+  });
+
+  it("loadConfig drops the legacy disabledReason field", () => {
+    // Older versions of the extension persisted a `disabledReason`
+    // sentinel that silently muted every subsequent session. The field
+    // was removed; configs left over from those versions must load
+    // cleanly without resurrecting it on the typed object.
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        muted: false,
+        voice: "Kore",
+        scope: "last",
+        disabledReason: "Auth error from a previous run",
+      }),
+    );
+    const cfg = loadConfig(configFile);
+    expect((cfg as Record<string, unknown>).disabledReason).toBeUndefined();
+  });
+
+  it("saveConfig + loadConfig round-trip preserves summarizerThinkingLevel", () => {
+    saveConfig(
+      {
+        muted: false,
+        voice: "Kore",
+        scope: "last",
+        summarizerModel: "anthropic/claude-haiku-4-5",
+        summarizerThinkingLevel: "medium",
+      },
+      configFile,
+    );
+    const parsed = JSON.parse(readFileSync(configFile, "utf-8"));
+    expect(parsed.summarizerThinkingLevel).toBe("medium");
+    expect(loadConfig(configFile).summarizerThinkingLevel).toBe("medium");
+  });
+
+  it("loadConfig sanitises unknown summarizerThinkingLevel values to undefined", () => {
+    // Anything off the whitelist (typos, empty string, null) should be
+    // dropped so a corrupted config file can't poison `pi --thinking`.
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        muted: false,
+        voice: "Kore",
+        scope: "last",
+        summarizerThinkingLevel: "super-saiyan",
+      }),
+    );
+    const cfg = loadConfig(configFile);
+    expect(cfg.summarizerThinkingLevel).toBeUndefined();
+  });
+
+  it("loadConfig accepts every documented thinking level", () => {
+    for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+      writeFileSync(
+        configFile,
+        JSON.stringify({
+          muted: false,
+          voice: "Kore",
+          scope: "last",
+          summarizerThinkingLevel: level,
+        }),
+      );
+      expect(loadConfig(configFile).summarizerThinkingLevel).toBe(level);
+    }
   });
 
   it("loadConfig sanitises bad scope values back to default", () => {
@@ -481,49 +546,36 @@ describe("config", () => {
   });
 });
 
-// ── autocomplete fix (regression) ───────────────────────────────────
+// ── autocomplete (post-overlay rework) ──────────────────────────────
 //
-// Bug: `/wierd-voice voice <Tab on Umbriel>` produced
-// `/wierd-voice Umbriel` (the subcommand name was eaten).
+// After the rework, every persisted setting (voice / scope / summarizer
+// model / muted) is configured through the `/wierd-voice` overlay (see
+// config-picker.ts). The only remaining text subcommands are imperative
+// actions: `status`, `mute`, `unmute`, `say <text>`, `replay`, `reset`.
 //
-// Root cause: pi-tui's CombinedAutocompleteProvider.applyCompletion
-// replaces the *entire* argument-text after the slash command with the
-// item's `value`. So when our completion returned `value: "Umbriel"`,
-// the literal `voice ` was overwritten too. Fix: include the subcommand
-// in `value`. This test simulates the same logic our handler implements.
+// `say` is the only one that takes a follow-up argument, so it gets a
+// trailing space (so a typed letter retriggers autocomplete — see the
+// regression below). The other actions don't.
+//
+// We keep the original `applyCompletion` regression check so the
+// "subcommand-eaten by Tab" bug stays fixed.
 
 function simulateGetArgumentCompletions(prefix: string) {
-  const subsWithArgs = new Set(["voice", "scope", "summarizer", "say"]);
+  const subsWithArgs = new Set(["say"]);
   const subsNoArgs = ["status", "mute", "unmute", "replay", "reset"];
   const allSubs = [...subsWithArgs, ...subsNoArgs];
   const tokens = prefix.split(/\s+/);
   const firstToken = tokens[0] ?? "";
   const subcommandFinished =
     allSubs.includes(firstToken) && /\s/.test(prefix);
-  if (!subcommandFinished) {
-    const lcPrefix = prefix.toLowerCase();
-    return allSubs
-      .filter((s) => s.toLowerCase().startsWith(lcPrefix))
-      .map((s) => ({
-        value: subsWithArgs.has(s) ? `${s} ` : s,
-        label: s,
-      }));
-  }
-  const sub = firstToken;
-  if (sub === "voice") {
-    const arg = tokens[1] ?? "";
-    const lcArg = arg.toLowerCase();
-    return PREBUILT_VOICES.map((v) => v.name)
-      .filter((v) => v.toLowerCase().startsWith(lcArg))
-      .map((v) => ({ value: `voice ${v}`, label: v }));
-  }
-  if (sub === "scope") {
-    const arg = tokens[1] ?? "";
-    return ["last", "sinceUser"]
-      .filter((s) => s.startsWith(arg))
-      .map((s) => ({ value: `scope ${s}`, label: s }));
-  }
-  return null;
+  if (subcommandFinished) return null;
+  const lcPrefix = prefix.toLowerCase();
+  return allSubs
+    .filter((s) => s.toLowerCase().startsWith(lcPrefix))
+    .map((s) => ({
+      value: subsWithArgs.has(s) ? `${s} ` : s,
+      label: s,
+    }));
 }
 
 /**
@@ -538,95 +590,54 @@ function simulateApplyCompletion(line: string, value: string): string {
   return cmdPrefix + value;
 }
 
-describe("index.getArgumentCompletions (regression)", () => {
-  it("top-level: subcommands with args end with trailing space; no-arg ones don't", () => {
+describe("index.getArgumentCompletions (post-overlay rework)", () => {
+  it("top-level: only `say` gets a trailing space; the other actions don't", () => {
     const items = simulateGetArgumentCompletions("");
     expect(items).not.toBeNull();
     const byLabel = (label: string) => items!.find((i) => i.label === label);
-    // Subcommands that take a follow-up arg get "<sub> " so the next
-    // letter retriggers autocomplete (bug #2 in the second round of
-    // user feedback).
-    expect(byLabel("voice")?.value).toBe("voice ");
-    expect(byLabel("scope")?.value).toBe("scope ");
-    expect(byLabel("summarizer")?.value).toBe("summarizer ");
     expect(byLabel("say")?.value).toBe("say ");
-    // Subcommands without args don't get a trailing space — user
-    // presses Enter to submit.
     expect(byLabel("status")?.value).toBe("status");
     expect(byLabel("mute")?.value).toBe("mute");
+    expect(byLabel("unmute")?.value).toBe("unmute");
     expect(byLabel("replay")?.value).toBe("replay");
     expect(byLabel("reset")?.value).toBe("reset");
   });
 
-  it('top-level: "vo" filters to subcommand "voice " (with trailing space)', () => {
-    const items = simulateGetArgumentCompletions("vo");
-    expect(items?.map((i) => i.value)).toEqual(["voice "]);
+  it("top-level: removed config subcommands no longer appear in suggestions", () => {
+    // `voice`, `scope`, `summarizer` moved into the overlay. Make sure
+    // they don't sneak back into the autocomplete menu (they'd just
+    // produce a no-op handler now).
+    const items = simulateGetArgumentCompletions("");
+    const labels = items!.map((i) => i.label);
+    expect(labels).not.toContain("voice");
+    expect(labels).not.toContain("scope");
+    expect(labels).not.toContain("summarizer");
   });
 
-  it('voice picker: prefix "voice " returns full "voice <name>" values', () => {
-    const items = simulateGetArgumentCompletions("voice ");
-    expect(items).not.toBeNull();
-    expect(items!.length).toBe(30);
-    for (const item of items!) {
-      expect(item.value.startsWith("voice ")).toBe(true);
-    }
-    expect(items!.map((i) => i.value)).toContain("voice Umbriel");
-    expect(items!.map((i) => i.value)).toContain("voice Kore");
+  it('top-level: "sa" filters to "say " (with trailing space)', () => {
+    const items = simulateGetArgumentCompletions("sa");
+    expect(items?.map((i) => i.value)).toEqual(["say "]);
   });
 
-  it('voice picker: prefix "voice U" filters to names starting with U', () => {
-    const items = simulateGetArgumentCompletions("voice U");
-    expect(items?.map((i) => i.value)).toEqual(["voice Umbriel"]);
+  it("after `say `, no further completions are offered (free-form text)", () => {
+    expect(simulateGetArgumentCompletions("say ")).toBeNull();
+    expect(simulateGetArgumentCompletions("say hello")).toBeNull();
   });
 
-  it("voice picker: applying does NOT eat the subcommand (the reported bug)", () => {
-    const items = simulateGetArgumentCompletions("voice U");
-    const umbriel = items!.find((i) => i.label === "Umbriel");
-    expect(umbriel).toBeDefined();
-    const after = simulateApplyCompletion(
-      "/wierd-voice voice U",
-      umbriel!.value,
-    );
-    expect(after).toBe("/wierd-voice voice Umbriel");
-  });
-
-  it("scope picker: applying does NOT eat the subcommand", () => {
-    const items = simulateGetArgumentCompletions("scope ");
-    const sinceUser = items!.find((i) => i.label === "sinceUser");
-    expect(sinceUser).toBeDefined();
-    const after = simulateApplyCompletion(
-      "/wierd-voice scope ",
-      sinceUser!.value,
-    );
-    expect(after).toBe("/wierd-voice scope sinceUser");
-  });
-
-  it("Tab on subcommand 'voice' lands cursor past a trailing space (bug #2)", () => {
-    // After Tab on 'voice' the editor should hold `/wierd-voice voice `
-    // (with trailing space). Then typing the next letter retriggers the
-    // pi-tui autocomplete and the voice picker opens.
-    const items = simulateGetArgumentCompletions("vo");
-    const voice = items!.find((i) => i.label === "voice");
-    expect(voice).toBeDefined();
-    const after = simulateApplyCompletion(
-      "/wierd-voice vo",
-      voice!.value,
-    );
-    expect(after).toBe("/wierd-voice voice ");
-    // After this state, pi-tui's getSuggestions would call our handler
-    // with prefix `voice ` once a letter is typed — verify that returns
-    // the voice picker.
-    const followUp = simulateGetArgumentCompletions("voice ");
-    expect(followUp).not.toBeNull();
-    expect(followUp!.length).toBe(30);
-  });
-
-  it("Tab on subcommand 'status' does NOT add trailing space (no follow-up arg)", () => {
+  it("applying a no-arg subcommand does NOT add trailing space", () => {
     const items = simulateGetArgumentCompletions("sta");
     const status = items!.find((i) => i.label === "status");
     expect(status?.value).toBe("status");
     const after = simulateApplyCompletion("/wierd-voice sta", status!.value);
     expect(after).toBe("/wierd-voice status");
+  });
+
+  it("Tab on `say` lands cursor past a trailing space (regression: subcommand not eaten)", () => {
+    const items = simulateGetArgumentCompletions("sa");
+    const say = items!.find((i) => i.label === "say");
+    expect(say).toBeDefined();
+    const after = simulateApplyCompletion("/wierd-voice sa", say!.value);
+    expect(after).toBe("/wierd-voice say ");
   });
 });
 
@@ -745,6 +756,55 @@ describe("summarizer.runSummarizer", () => {
     });
     expect(lastCall()?.args).toContain("--model");
     expect(lastCall()?.args).toContain("anthropic/claude-haiku-4-5");
+  });
+
+  it("passes --thinking when thinkingLevel is provided", async () => {
+    summarizerSpawnState.impl = () =>
+      makeFakeProc(
+        [
+          JSON.stringify({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "ok" }],
+            },
+          }) + "\n",
+        ],
+        0,
+      );
+
+    await runSummarizer({
+      text: "some output",
+      model: "anthropic/claude-haiku-4-5",
+      thinkingLevel: "medium",
+    });
+    const args = lastCall()?.args ?? [];
+    expect(args).toContain("--thinking");
+    expect(args[args.indexOf("--thinking") + 1]).toBe("medium");
+    // --model must come before --thinking so the ordering matches
+    // packages/web/subagent.ts (and pi's own arg parser is happy either
+    // way — we just want the two extensions to be visually identical
+    // in process listings / debug logs).
+    expect(args.indexOf("--model")).toBeLessThan(args.indexOf("--thinking"));
+  });
+
+  it("omits --thinking when thinkingLevel is not provided", async () => {
+    summarizerSpawnState.impl = () =>
+      makeFakeProc(
+        [
+          JSON.stringify({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "ok" }],
+            },
+          }) + "\n",
+        ],
+        0,
+      );
+
+    await runSummarizer({ text: "some output" });
+    expect(lastCall()?.args).not.toContain("--thinking");
   });
 
   it("treats SKIP as a skip signal", async () => {

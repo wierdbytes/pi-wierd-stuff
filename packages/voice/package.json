@@ -1,6 +1,6 @@
 {
   "name": "pi-wierd-voice",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Spoken summary after each agent turn for the pi coding agent.",
   "type": "module",
   "files": [

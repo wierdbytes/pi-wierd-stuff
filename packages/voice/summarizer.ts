@@ -66,6 +66,12 @@ export interface SummarizerOptions {
   text: string;
   /** Optional `<provider>/<id>` for `pi --model`. Unset → session model. */
   model?: string;
+  /**
+   * Optional reasoning effort for `pi --thinking <level>`. Same shape as
+   * `packages/web/subagent.ts` — forwarded verbatim, validated by pi at
+   * startup. Unset → inherit pi's default for the chosen model.
+   */
+  thinkingLevel?: string;
   /** AbortSignal — abort kills the subprocess. */
   signal?: AbortSignal;
 }
@@ -102,7 +108,7 @@ function buildPrompt(text: string): string {
  * resolves to `{ ok: true, kind: "skip" }` defensively).
  */
 export function runSummarizer(opts: SummarizerOptions): Promise<SummarizerResult> {
-  const { text, model, signal } = opts;
+  const { text, model, thinkingLevel, signal } = opts;
   if (!text.trim()) {
     return Promise.resolve({ ok: true, kind: "skip" });
   }
@@ -110,6 +116,8 @@ export function runSummarizer(opts: SummarizerOptions): Promise<SummarizerResult
     return Promise.resolve({ ok: false, error: "Aborted" });
   }
 
+  // Order matches `packages/web/subagent.ts` so logs from the two
+  // sub-agents are visually consistent.
   const args = [
     "--mode",
     "json",
@@ -117,6 +125,7 @@ export function runSummarizer(opts: SummarizerOptions): Promise<SummarizerResult
     "--no-session",
     "--no-tools",
     ...(model ? ["--model", model] : []),
+    ...(thinkingLevel ? ["--thinking", thinkingLevel] : []),
     buildPrompt(text),
   ];
 

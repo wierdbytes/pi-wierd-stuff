@@ -23,13 +23,12 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
-import { pickSummarizerModel } from "./model-picker.ts";
+import { pickVoiceConfig } from "./config-picker.ts";
 import {
   envDefaults,
   getConfigPath,
   loadOrInitConfig,
   saveConfig,
-  type Scope,
   type WierdVoiceConfig,
 } from "./config.ts";
 import { resolveGeminiKey } from "./auth.ts";
@@ -48,12 +47,7 @@ import {
   selectSummaryInput,
   type SummaryMessage,
 } from "./messages.ts";
-import {
-  formatVoiceTable,
-  isValidVoice,
-  voiceNames,
-  PREBUILT_VOICES,
-} from "./voices.ts";
+import { isValidVoice } from "./voices.ts";
 
 const STATUS_KEY = "wierd-voice";
 const STATUS_THINKING = "🔊 thinking";
@@ -234,6 +228,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     const summaryResult = await runSummarizer({
       text: inputText,
       model: config.summarizerModel,
+      thinkingLevel: config.summarizerThinkingLevel,
       signal: job.abortController.signal,
     });
 
@@ -299,19 +294,17 @@ export default function piWierdVoice(pi: ExtensionAPI) {
         currentJob = undefined;
         return;
       }
-      // Auth / rate-limit errors → mute the rest of the session.
-      if (/auth/i.test(tts.error) || /rate limited/i.test(tts.error)) {
-        config = { ...config, disabledReason: tts.error };
-        persist(ctx);
-        notifyOnce(
-          ctx,
-          "tts-fatal",
-          `wierd-voice: ${tts.error}. Disabling for this session — fix the key and run /wierd-voice reset.`,
-          "error",
-        );
-      } else {
-        notifyOnce(ctx, "tts-error", `wierd-voice: ${tts.error}`, "warning");
-      }
+      // Every TTS error — including auth and rate-limit — is reported
+      // as a one-shot notification and otherwise ignored. The next
+      // `agent_end` will retry; we don't persist any kill-switch (a
+      // previous version did, which silently stranded users whose key
+      // briefly stopped working).
+      const dedupeKey = /auth/i.test(tts.error)
+        ? "tts-auth"
+        : /rate limited/i.test(tts.error)
+          ? "tts-rate-limited"
+          : "tts-error";
+      notifyOnce(ctx, dedupeKey, `wierd-voice: ${tts.error}`, "warning");
       setStatus(ctx, undefined);
       currentJob = undefined;
       return;
@@ -389,7 +382,6 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
   pi.on("agent_end", async (event, ctx) => {
     if (!isExtensionActive(ctx)) return;
-    if (config.disabledReason) return; // a fatal error has muted us
 
     abortJob(currentJob);
     currentJob = undefined;
@@ -402,22 +394,80 @@ export default function piWierdVoice(pi: ExtensionAPI) {
   const dispatch = async (args: string, ctx: ExtensionContext): Promise<void> => {
     const trimmed = (args ?? "").trim();
     const tokens = trimmed.split(/\s+/).filter(Boolean);
-    const cmd = tokens[0]?.toLowerCase() ?? "status";
+    const cmd = tokens[0]?.toLowerCase() ?? "";
 
+    // Bare `/wierd-voice` opens the configuration overlay (or falls back
+    // to `status` when there's no UI to attach the overlay to). Other
+    // subcommands are imperative actions — they stay text-only.
+    if (!cmd) return openConfigOverlay(ctx);
     if (cmd === "status") return showStatus(ctx);
     if (cmd === "mute") return mute(ctx);
     if (cmd === "unmute") return unmute(ctx);
-    if (cmd === "voice") return setVoice(ctx, tokens.slice(1).join(" ").trim());
-    if (cmd === "scope") return setScope(ctx, tokens[1] ?? "");
-    if (cmd === "summarizer") return setSummarizer(ctx, tokens.slice(1).join(" ").trim());
     if (cmd === "say") return say(ctx, trimmed.slice(cmd.length).trim());
     if (cmd === "replay") return replay(ctx);
     if (cmd === "reset") return reset(ctx);
 
     ctx.ui.notify(
-      "Usage: /wierd-voice <status|mute|unmute|voice <name>|scope <last|sinceUser>|summarizer <id>|say <text>|replay|reset>",
+      "Usage: /wierd-voice [status|mute|unmute|say <text>|replay|reset]  (no args ⇒ open settings overlay)",
       "info",
     );
+  };
+
+  const openConfigOverlay = async (ctx: ExtensionContext): Promise<void> => {
+    if (!ctx.hasUI) {
+      // Non-interactive sessions can't host the overlay. Show the same
+      // text dump as `/wierd-voice status` so the user still sees the
+      // current state and learns where the config lives.
+      showStatus(ctx);
+      return;
+    }
+    await pickVoiceConfig(ctx, config, {
+      onMutedChange: (muted) => {
+        const wasMuted = config.muted;
+        config = { ...config, muted };
+        persist(ctx);
+        if (muted) {
+          // Mute aborts any in-flight job — same semantics as the
+          // `/wierd-voice mute` shortcut below.
+          abortJob(currentJob);
+          currentJob = undefined;
+          setStatus(ctx, STATUS_MUTED);
+        } else if (wasMuted) {
+          setStatus(ctx, undefined);
+        }
+      },
+      onVoiceChange: (voice) => {
+        if (!isValidVoice(voice)) return; // shouldn't happen — list is whitelisted
+        config = { ...config, voice };
+        persist(ctx);
+      },
+      onScopeChange: (scope) => {
+        config = { ...config, scope };
+        persist(ctx);
+      },
+      onSummarizerChange: (modelId) => {
+        if (!modelId) {
+          // Empty ⇒ clear the override and inherit the session model.
+          const next = { ...config };
+          delete next.summarizerModel;
+          config = next;
+        } else {
+          config = { ...config, summarizerModel: modelId };
+        }
+        persist(ctx);
+      },
+      onSummarizerThinkingChange: (level) => {
+        // The picker always hands us a concrete level (clamped to the
+        // model's supported ladder). We persist verbatim and pi will
+        // re-clamp at runtime if the model changes underneath us.
+        config = { ...config, summarizerThinkingLevel: level };
+        persist(ctx);
+      },
+      onClose: () => {
+        // Nothing to do — every change has already been persisted in
+        // the per-field handlers above.
+      },
+    });
   };
 
   const showStatus = (ctx: ExtensionContext): void => {
@@ -428,6 +478,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       `voice:      ${config.voice}${isValidVoice(config.voice) ? "" : " (UNKNOWN — see /wierd-voice voice)"}`,
       `scope:      ${config.scope}`,
       `summarizer: ${config.summarizerModel ?? "(session model)"}`,
+      `thinking:   ${config.summarizerThinkingLevel ?? "(session level)"}`,
       `muted:      ${config.muted}`,
       `cli flag:   ${cliDisabled ? "--no-voice (disabled)" : "(none)"}`,
       `player:     ${
@@ -437,7 +488,6 @@ export default function piWierdVoice(pi: ExtensionAPI) {
             ? "(none found)"
             : playerSpec.label
       }`,
-      `last error: ${config.disabledReason ?? "(none)"}`,
     ];
     ctx.ui.notify(lines.join("\n"), "info");
   };
@@ -456,51 +506,6 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     persist(ctx);
     setStatus(ctx, undefined);
     ctx.ui.notify("wierd-voice unmuted.", "info");
-  };
-
-  const setVoice = (ctx: ExtensionContext, name: string): void => {
-    if (!name) {
-      ctx.ui.notify(`Available voices:\n${formatVoiceTable()}`, "info");
-      return;
-    }
-    if (!isValidVoice(name)) {
-      ctx.ui.notify(
-        `wierd-voice: unknown voice "${name}". Run /wierd-voice voice with no argument to list valid names.`,
-        "warning",
-      );
-      return;
-    }
-    config = { ...config, voice: name };
-    persist(ctx);
-    ctx.ui.notify(`wierd-voice: voice set to ${name}.`, "info");
-  };
-
-  const setScope = (ctx: ExtensionContext, value: string): void => {
-    if (value !== "last" && value !== "sinceUser") {
-      ctx.ui.notify(
-        "Usage: /wierd-voice scope <last|sinceUser>",
-        "warning",
-      );
-      return;
-    }
-    config = { ...config, scope: value as Scope };
-    persist(ctx);
-    ctx.ui.notify(`wierd-voice: scope set to ${value}.`, "info");
-  };
-
-  const setSummarizer = (ctx: ExtensionContext, id: string): void => {
-    if (!id) {
-      // Empty string — clear the override.
-      const next = { ...config };
-      delete next.summarizerModel;
-      config = next;
-      persist(ctx);
-      ctx.ui.notify("wierd-voice: summarizer cleared (will use session model).", "info");
-      return;
-    }
-    config = { ...config, summarizerModel: id };
-    persist(ctx);
-    ctx.ui.notify(`wierd-voice: summarizer set to ${id}.`, "info");
   };
 
   const say = async (ctx: ExtensionContext, text: string): Promise<void> => {
@@ -577,7 +582,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
   pi.registerCommand("wierd-voice", {
     description:
-      "Configure pi-wierd-voice. status | mute | unmute | voice <name> | scope <last|sinceUser> | summarizer <id> | say <text> | replay | reset",
+      "Open the pi-wierd-voice settings overlay (no args). Action subcommands: status | mute | unmute | say <text> | replay | reset",
     handler: dispatch,
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       // The pi-tui autocomplete provider replaces the *entire* argument
@@ -586,23 +591,13 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       // with — not just the last token. (See
       // node_modules/@mariozechner/pi-tui/dist/autocomplete.js:applyCompletion.)
       //
-      // Subcommands that take a follow-up argument get a trailing space
-      // baked into their `value`. After Tab the cursor lands past the
-      // space, and typing the first letter of the next arg re-opens the
-      // menu via the editor's letter-trigger path. Subcommands without
-      // a follow-up argument (status, mute, unmute, replay, reset) do
-      // NOT get a trailing space — the user can press Enter to submit.
-      //
-      // Note: pi-tui only re-triggers autocomplete on letters/digits
-      // (see node_modules/@mariozechner/pi-tui/dist/components/editor.js
-      // around `insertChar` → `tryTriggerAutocomplete`). Pressing space
-      // does not re-open a closed menu. Tab on the slash command itself
-      // (e.g. `/wierd-vo` → `/wierd-voice `) closes the menu via the
-      // framework's apply path — there's no extension hook to keep it
-      // open. The user has to type a letter, e.g. `/wierd-voice s` to
-      // see `status / say / scope / summarizer`. We document this here
-      // so future maintainers don't chase it.
-      const subsWithArgs = new Set(["voice", "scope", "summarizer", "say"]);
+      // Since the rework, every config knob lives behind the overlay —
+      // the only remaining text subcommands are imperative actions.
+      // `say` is the only one that takes a follow-up argument, so it's
+      // also the only one that gets a trailing space (so a typed letter
+      // re-triggers autocomplete; we don't actually offer suggestions
+      // for the body of `say`, the user just types).
+      const subsWithArgs = new Set(["say"]);
       const subsNoArgs = ["status", "mute", "unmute", "replay", "reset"];
       const allSubs = [...subsWithArgs, ...subsNoArgs];
 
@@ -611,74 +606,18 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       const subcommandFinished =
         allSubs.includes(firstToken) && /\s/.test(prefix);
 
-      // ── Stage 1: top-level subcommand completion ────────────────────
-      if (!subcommandFinished) {
-        const lcPrefix = prefix.toLowerCase();
-        return allSubs
-          .filter((s) => s.toLowerCase().startsWith(lcPrefix))
-          .map((s) => ({
-            // Trailing space for subcommands that take a follow-up arg,
-            // so the user can type the next arg's first letter and the
-            // menu re-opens automatically.
-            value: subsWithArgs.has(s) ? `${s} ` : s,
-            label: s,
-          }));
-      }
+      // Once a known action subcommand is followed by a space we have
+      // nothing further to offer — the only such subcommand is `say`,
+      // which takes free-form text.
+      if (subcommandFinished) return null;
 
-      // ── Stage 2: per-subcommand argument completion ─────────────────
-      // These values terminate the command (no further menu) so they
-      // don't get a trailing space. The user presses Enter to submit.
-      const sub = firstToken;
-
-      if (sub === "voice") {
-        const arg = tokens[1] ?? "";
-        const lcArg = arg.toLowerCase();
-        return voiceNames()
-          .filter((v) => v.toLowerCase().startsWith(lcArg))
-          .map((v) => {
-            const descriptor =
-              PREBUILT_VOICES.find((p) => p.name === v)?.descriptor ?? "";
-            return {
-              value: `voice ${v}`,
-              label: `${v} (${descriptor})`,
-              description: `voice ${v}`,
-            };
-          });
-      }
-
-      if (sub === "scope") {
-        const arg = tokens[1] ?? "";
-        return ["last", "sinceUser"]
-          .filter((s) => s.startsWith(arg))
-          .map((s) => ({
-            value: `scope ${s}`,
-            label: s,
-            description: `scope ${s}`,
-          }));
-      }
-
-      // Free-form subcommands (say, summarizer) have no static
-      // completions — user types the text/model id directly.
-      return null;
-    },
-  });
-
-  pi.registerCommand("wierd-voice-summarizer-model", {
-    description:
-      "Pick the summarizer model + effort for pi-wierd-voice (interactive overlay).",
-    handler: async (_args, ctx) => {
-      if (!ctx.hasUI) {
-        ctx.ui.notify(
-          "/wierd-voice-summarizer-model requires an interactive UI. Use `/wierd-voice summarizer <id>` instead.",
-          "warning",
-        );
-        return;
-      }
-      const result = await pickSummarizerModel(ctx, config.summarizerModel);
-      if (!result) return;
-      config = { ...config, summarizerModel: result.modelId };
-      persist(ctx);
-      ctx.ui.notify(`wierd-voice: summarizer set to ${result.modelId}.`, "info");
+      const lcPrefix = prefix.toLowerCase();
+      return allSubs
+        .filter((s) => s.toLowerCase().startsWith(lcPrefix))
+        .map((s) => ({
+          value: subsWithArgs.has(s) ? `${s} ` : s,
+          label: s,
+        }));
     },
   });
 }
