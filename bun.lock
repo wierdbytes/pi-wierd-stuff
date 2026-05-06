@@ -36,9 +36,10 @@
     },
     "packages/voice": {
       "name": "pi-wierd-voice",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@google/genai": "^1.0.0",
+        "pi-wierd-events": "^0.1.0",
       },
       "devDependencies": {
         "@mariozechner/pi-ai": "^0.72.1",

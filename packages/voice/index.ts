@@ -23,6 +23,16 @@ import type {
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
+import {
+  type NotifyLevel,
+  notifyStatus,
+  notifyToast,
+} from "pi-wierd-events";
+
+/** `source` value for every notify:* event we emit. Hard-coded to our
+ *  npm package name so the statusline keys our chip consistently and
+ *  the events log shows a stable identifier. */
+const EVENT_SOURCE = "pi-wierd-voice";
 import { pickVoiceConfig } from "./config-picker.ts";
 import {
   envDefaults,
@@ -108,6 +118,137 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     ctx.ui.setStatus(STATUS_KEY, value);
   };
 
+  // ───────────────────────── notify:* event helpers ───────────────────
+  //
+  // The voice extension owns one chip in the statusline. Every emit
+  // overwrites the previous one (no `id` is set), so the chip is keyed
+  // solely by `source: EVENT_SOURCE`. We never let the chip vanish
+  // mid-flow — idle state is `🔊 ready`, working states reuse the
+  // same icon, and errors switch to `🔇` until something else from
+  // this source replaces them.
+
+  /** Idle armed indicator: `🔊 ready`. */
+  const emitVoiceReady = (): void => {
+    notifyStatus(pi, {
+      source: EVENT_SOURCE,
+      state: "active",
+      icon: "🔊",
+      label: "ready",
+      level: "info",
+    });
+  };
+
+  /** Persistent muted indicator: `🔇 muted`. */
+  const emitVoiceMutedStatus = (): void => {
+    notifyStatus(pi, {
+      source: EVENT_SOURCE,
+      state: "active",
+      icon: "🔇",
+      label: "muted",
+      level: "info",
+    });
+  };
+
+  /** Working state with the sound icon and a custom label
+   *  (`thinking` / `synthesizing` / `speaking`). */
+  const emitVoiceWorking = (label: string): void => {
+    notifyStatus(pi, {
+      source: EVENT_SOURCE,
+      state: "active",
+      icon: "🔊",
+      label,
+      level: "info",
+    });
+  };
+
+  /** Sticky error chip — stays until the next pipeline emit replaces
+   *  it (or the user runs `/wierd-status events clear`). Used for
+   *  genuine runtime failures (TTS, summarizer, player). */
+  const emitVoiceErrorStatus = (label: string, detail?: string): void => {
+    notifyStatus(pi, {
+      source: EVENT_SOURCE,
+      state: "error",
+      icon: "🔇",
+      label,
+      detail,
+      level: "error",
+    });
+  };
+
+  /** Sticky "no GEMINI_API_KEY" chip — uses the muted-speaker icon
+   *  rather than the warning sign because voice is effectively silent,
+   *  not malfunctioning. */
+  const emitVoiceNoKeyStatus = (): void => {
+    notifyStatus(pi, {
+      source: EVENT_SOURCE,
+      state: "error",
+      icon: "🔇",
+      label: "no key",
+      detail: "GEMINI_API_KEY not set",
+      level: "error",
+    });
+  };
+
+  /**
+   * Pick the right idle chip based on current state:
+   *   muted    → `🔇 muted`   (user-chosen takes priority)
+   *   no key   → `🔇 no key`  (sticky error — voice is silent until fixed)
+   *   default  → `🔊 ready`
+   *
+   * Use this whenever the voice extension transitions back to a
+   * waiting-for-next-event state so the chip never lies about the
+   * actual capability of the extension.
+   */
+  const emitVoiceIdleStatus = (): void => {
+    if (config.muted) {
+      emitVoiceMutedStatus();
+      return;
+    }
+    if (!resolveGeminiKey()) {
+      emitVoiceNoKeyStatus();
+      return;
+    }
+    emitVoiceReady();
+  };
+
+  /** Brief `state: "done"` flash so subscribers can react to job
+   *  completion, immediately followed by the appropriate idle chip
+   *  (ready / muted / no-key) so the indicator stays present and
+   *  truthful. */
+  const emitVoiceDoneFlash = (): void => {
+    notifyStatus(pi, {
+      source: EVENT_SOURCE,
+      state: "done",
+      icon: "🔊",
+      label: "done",
+      level: "success",
+    });
+    emitVoiceIdleStatus();
+  };
+
+  /** Remove the voice chip entirely (used on session shutdown). */
+  const emitVoiceCleared = (): void => {
+    notifyStatus(pi, {
+      source: EVENT_SOURCE,
+      state: "cleared",
+      label: "",
+    });
+  };
+
+  /** Convenience wrapper for transient toast notifications. */
+  const emitVoiceToast = (
+    level: NotifyLevel,
+    message: string,
+    title?: string,
+  ): void => {
+    notifyToast(pi, {
+      source: EVENT_SOURCE,
+      level,
+      message,
+      title,
+    });
+  };
+
   const isExtensionActive = (ctx: ExtensionContext): boolean => {
     if (!ctx.hasUI) return false;
     if (cliDisabled) return false;
@@ -164,6 +305,11 @@ export default function piWierdVoice(pi: ExtensionAPI) {
         "wierd-voice: no audio player on PATH (afplay/paplay/aplay/ffplay).",
         "warning",
       );
+      emitVoiceToast(
+        "warning",
+        "no audio player on PATH (afplay/paplay/aplay/ffplay)",
+      );
+      emitVoiceErrorStatus("no player", "audio player not detected");
       setStatus(ctx, undefined);
       if (currentJob?.id === job.id) currentJob = undefined;
       return;
@@ -172,6 +318,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
     job.state = "playing";
     setStatus(ctx, STATUS_SPEAKING);
+    emitVoiceWorking("speaking");
 
     const player = play(playerSpec, wavPath);
     job.player = player;
@@ -184,6 +331,11 @@ export default function piWierdVoice(pi: ExtensionAPI) {
         `wierd-voice: failed to spawn ${playerSpec?.label ?? "player"}: ${err.message}`,
         "error",
       );
+      emitVoiceToast(
+        "error",
+        `failed to spawn ${playerSpec?.label ?? "player"}: ${err.message}`,
+      );
+      emitVoiceErrorStatus("player error", err.message);
       setStatus(ctx, undefined);
       currentJob = undefined;
     });
@@ -197,6 +349,14 @@ export default function piWierdVoice(pi: ExtensionAPI) {
           `wierd-voice: ${playerSpec?.label ?? "player"} exited with code ${code}.`,
           "warning",
         );
+        emitVoiceToast(
+          "warning",
+          `${playerSpec?.label ?? "player"} exited with code ${code}`,
+        );
+        emitVoiceErrorStatus("player exit", `code ${code}`);
+      } else if (!job.abortController.signal.aborted) {
+        // Normal completion — brief done flash, then idle "ready".
+        emitVoiceDoneFlash();
       }
       setStatus(ctx, undefined);
       currentJob = undefined;
@@ -219,11 +379,17 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     const inputText = selectSummaryInput(messages, config.scope);
     if (!inputText) {
       // Nothing to summarise — tool-only turn or empty assistant text.
+      // The previous job (if any) was aborted by `agent_end` before we
+      // got here, so its working chip (`thinking` / `synthesizing` /
+      // `speaking`) would remain stuck on screen if we just returned.
+      // Reset the chip back to idle so it reflects current capability.
+      emitVoiceIdleStatus();
       if (currentJob?.id === job.id) currentJob = undefined;
       return;
     }
 
     setStatus(ctx, STATUS_THINKING);
+    emitVoiceWorking("thinking");
 
     const summaryResult = await runSummarizer({
       text: inputText,
@@ -246,12 +412,22 @@ export default function piWierdVoice(pi: ExtensionAPI) {
           `wierd-voice: summarizer failed (${summaryResult.error}).`,
           "warning",
         );
+        emitVoiceToast(
+          "warning",
+          `summarizer failed: ${summaryResult.error}`,
+        );
+        emitVoiceErrorStatus("summarizer", summaryResult.error);
+      } else {
+        // Aborted: drop back to idle so the chip doesn't get stuck.
+        emitVoiceIdleStatus();
       }
       setStatus(ctx, undefined);
       currentJob = undefined;
       return;
     }
     if (summaryResult.kind === "skip") {
+      // Tool-only / empty turn — quietly return to idle.
+      emitVoiceIdleStatus();
       setStatus(ctx, undefined);
       currentJob = undefined;
       return;
@@ -278,6 +454,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
     job.state = "synthesizing";
     setStatus(ctx, STATUS_THINKING);
+    emitVoiceWorking("synthesizing");
 
     const tts = await synthesize({
       text,
@@ -290,6 +467,8 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
     if (!tts.ok) {
       if (tts.error === "Aborted") {
+        // Aborted: drop back to idle so the chip doesn't get stuck.
+        emitVoiceIdleStatus();
         setStatus(ctx, undefined);
         currentJob = undefined;
         return;
@@ -305,6 +484,8 @@ export default function piWierdVoice(pi: ExtensionAPI) {
           ? "tts-rate-limited"
           : "tts-error";
       notifyOnce(ctx, dedupeKey, `wierd-voice: ${tts.error}`, "warning");
+      emitVoiceToast("error", tts.error);
+      emitVoiceErrorStatus("tts", tts.error);
       setStatus(ctx, undefined);
       currentJob = undefined;
       return;
@@ -327,15 +508,14 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
     if (!ctx.hasUI || cliDisabled) {
       setStatus(ctx, undefined);
+      // No UI / fully disabled — don't claim a chip slot.
+      emitVoiceCleared();
       return;
     }
 
-    if (config.muted) {
-      setStatus(ctx, STATUS_MUTED);
-    } else {
-      setStatus(ctx, undefined);
-    }
-
+    // Surface the missing-key warning *before* emitting the idle chip
+    // so emitVoiceIdleStatus() picks the right state (muted > no-key >
+    // ready) instead of optimistically rendering "ready".
     if (!resolveGeminiKey()) {
       notifyOnce(
         ctx,
@@ -343,7 +523,21 @@ export default function piWierdVoice(pi: ExtensionAPI) {
         "wierd-voice: no GEMINI_API_KEY found; /wierd-voice disabled.",
         "warning",
       );
+      // Error-level so the toast is sticky by default (statusline
+      // config maps `error` to lifetime 0). Voice can't function
+      // without the key, so the user must see this until they fix it.
+      emitVoiceToast(
+        "error",
+        "no GEMINI_API_KEY found; /wierd-voice disabled",
+      );
     }
+
+    if (config.muted) {
+      setStatus(ctx, STATUS_MUTED);
+    } else {
+      setStatus(ctx, undefined);
+    }
+    emitVoiceIdleStatus();
 
     try {
       const exec: ExecLike = async (cmd, args, opts) => {
@@ -358,21 +552,31 @@ export default function piWierdVoice(pi: ExtensionAPI) {
           "wierd-voice: no audio player on PATH (install afplay/paplay/aplay/ffplay).",
           "warning",
         );
+        emitVoiceToast(
+          "warning",
+          "no audio player on PATH (install afplay/paplay/aplay/ffplay)",
+          "voice",
+        );
       }
     } catch (err) {
       playerSpec = null;
+      const message = err instanceof Error ? err.message : String(err);
       notifyOnce(
         ctx,
         "player-detect-error",
-        `wierd-voice: player detection failed (${err instanceof Error ? err.message : String(err)}).`,
+        `wierd-voice: player detection failed (${message}).`,
         "warning",
       );
+      emitVoiceToast("warning", `player detection failed: ${message}`);
     }
   });
 
   pi.on("session_shutdown", async () => {
     abortJob(currentJob);
     currentJob = undefined;
+    // Drop our chip so the statusline doesn't render a stale `🔊 ready`
+    // after the session has gone away.
+    emitVoiceCleared();
   });
 
   pi.on("session_before_switch", async () => {
@@ -432,8 +636,12 @@ export default function piWierdVoice(pi: ExtensionAPI) {
           abortJob(currentJob);
           currentJob = undefined;
           setStatus(ctx, STATUS_MUTED);
+          emitVoiceIdleStatus();
+          emitVoiceToast("info", "muted");
         } else if (wasMuted) {
           setStatus(ctx, undefined);
+          emitVoiceIdleStatus();
+          emitVoiceToast("info", "unmuted");
         }
       },
       onVoiceChange: (voice) => {
@@ -498,6 +706,11 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     abortJob(currentJob);
     currentJob = undefined;
     setStatus(ctx, STATUS_MUTED);
+    // config.muted is now true — emitVoiceIdleStatus() will pick the
+    // muted chip. Going through the helper keeps every "transition to
+    // idle" code path consistent.
+    emitVoiceIdleStatus();
+    emitVoiceToast("info", "muted");
     ctx.ui.notify("wierd-voice muted.", "info");
   };
 
@@ -505,6 +718,10 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     config = { ...config, muted: false };
     persist(ctx);
     setStatus(ctx, undefined);
+    // Reflect actual capability — if the key is missing we want the
+    // no-key error chip, not a misleading "ready".
+    emitVoiceIdleStatus();
+    emitVoiceToast("info", "unmuted");
     ctx.ui.notify("wierd-voice unmuted.", "info");
   };
 
@@ -544,6 +761,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     currentJob = job;
 
     setStatus(ctx, STATUS_THINKING);
+    emitVoiceWorking("synthesizing");
     await synthesizeAndPlay(ctx, job, text);
   };
 
@@ -577,6 +795,8 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     config = envDefaults();
     persist(ctx);
     setStatus(ctx, undefined);
+    emitVoiceIdleStatus();
+    emitVoiceToast("info", "config reset to defaults");
     ctx.ui.notify("wierd-voice: config reset to defaults.", "info");
   };
 
