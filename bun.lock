@@ -24,7 +24,10 @@
     },
     "packages/statusline": {
       "name": "pi-wierd-statusline",
-      "version": "0.4.3",
+      "version": "0.5.0",
+      "dependencies": {
+        "pi-wierd-events": "^0.1.0",
+      },
       "devDependencies": {
         "@mariozechner/pi-ai": "^0.72.1",
         "@mariozechner/pi-coding-agent": "^0.72.1",

@@ -12,11 +12,18 @@ type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsMana
 import type { AssistantMessage, Model, ThinkingLevelMap } from "@mariozechner/pi-ai";
 import type { Component, EditorTheme, SelectItem, TUI } from "@mariozechner/pi-tui";
 import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { NotifyLevel, NotifyStatusEvent, NotifyToastEvent } from "pi-wierd-events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
+import {
+  type EventsConfig,
+  loadEventsConfig,
+  setToastTimeout,
+} from "./events-config.ts";
+import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
 import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
 import { emergencyTerminalModeReset, TerminalSplitCompositor } from "./fixed-editor/terminal-split.ts";
 
@@ -103,6 +110,145 @@ function resolveThinkingLabel(
   return THINK_LABELS[thinkingLevel] ?? thinkingLevel;
 }
 
+/** Maximum visible width for a single chip's label (icon excluded). */
+const CHIP_LABEL_MAX_WIDTH = 16;
+
+/**
+ * Collapse any whitespace (newlines, tabs, runs of spaces) in an
+ * extension-supplied string down to a single space and trim the
+ * result. Used before rendering free-form payload fields
+ * (`title` / `message` / `label`) into a single statusline row —
+ * a stray `\n` would otherwise survive `truncateToWidth` and break
+ * the widget layout. The full original text is still kept in the
+ * tracker's log for `/wierd-status events log`.
+ */
+function oneLine(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/** Default toast-row icon when the payload omits one — keyed by level. */
+const LEVEL_ICONS: Record<NotifyLevel, string> = {
+  debug: "🔍",
+  info: "ℹ️",
+  success: "✅",
+  warning: "⚠️",
+  error: "❌",
+};
+
+/** ANSI color for a notification level. */
+function levelColor(level: NotifyLevel | undefined): string {
+  switch (level) {
+    case "error":
+      return C_RED;
+    case "warning":
+      return C_YELLOW;
+    case "success":
+      return C_GREEN;
+    case "debug":
+      return C_GRAY;
+    case "info":
+    default:
+      return C_BLUE;
+  }
+}
+
+/** Pick a chip icon, preferring the payload's icon, then a level default. */
+function chipIcon(status: NotifyStatusEvent): string {
+  if (status.icon) return status.icon;
+  // For chips, fall back to a level-derived icon. "error" state without
+  // explicit icon gets a warning glyph regardless of the optional `level`
+  // field so the user always sees something is wrong.
+  if (status.state === "error") return LEVEL_ICONS.warning;
+  return LEVEL_ICONS[status.level ?? "info"];
+}
+
+/** Color hint for a chip — `state: "error"` always wins over the
+ *  level so error chips render red even when no level is set. */
+function chipColor(status: NotifyStatusEvent): string {
+  if (status.state === "error") return C_RED;
+  if (status.level) return levelColor(status.level);
+  return C_CYAN;
+}
+
+/** Build the inline progress suffix for a chip. Width-aware: drops
+ *  the unit / total when budget is tight. */
+function formatChipProgress(
+  progress: NotifyStatusEvent["progress"],
+): string {
+  if (!progress) return "";
+  const { current, total, unit } = progress;
+  if (typeof total === "number" && total > 0) {
+    const num = `${current}/${total}`;
+    return unit ? ` ${num}${unit}` : ` ${num}`;
+  }
+  return unit ? ` ${current}${unit}` : ` ${current}`;
+}
+
+/** Render a single chip as `<icon> <colored label><progress>`. */
+function formatChip(status: NotifyStatusEvent): string {
+  const icon = chipIcon(status);
+  const color = chipColor(status);
+  // Strip newlines / tabs from `label` before truncating so a
+  // multi-line payload from any emitter can never split a chip
+  // across rows.
+  const label = truncateToWidth(oneLine(status.label), CHIP_LABEL_MAX_WIDTH, "…");
+  const progressSuffix = formatChipProgress(status.progress);
+  return `${icon} ${color}${label}${C_RESET}${progressSuffix}`;
+}
+
+/** Render the chips segment, including the `│` separator. Empty when no chips. */
+function buildChipsSegment(chips: NotifyStatusEvent[]): string {
+  if (chips.length === 0) return "";
+  const rendered = chips.map(formatChip).join(` ${C_GRAY}·${C_RESET} `);
+  return ` ${C_GRAY}│${C_RESET} ${rendered}`;
+}
+
+/**
+ * Render the toast row. Returns a width-padded line so it occupies a
+ * full terminal row.
+ *
+ * Layout: `<icon> <colored source>:<reset> <title> [— <message>]`
+ *   - `source` is always shown as the colored prefix so the user
+ *     immediately knows which extension fired the toast.
+ *   - `title` is the primary content (when present).
+ *   - `message` is appended after a gray `—` separator when both are
+ *     set; if `title` is omitted, `message` becomes the headline.
+ *
+ * The optional `×` hint is appended for sticky toasts (lifetime 0)
+ * so the user knows the toast stays until dismissed.
+ */
+function buildToastLine(active: ActiveToast, width: number): string {
+  const event = active.event;
+  const level = event.level ?? "info";
+  const color = levelColor(level);
+  const icon = event.icon || LEVEL_ICONS[level];
+  const sticky = !Number.isFinite(active.expiresAt);
+  const hint = sticky ? ` ${C_GRAY}×${C_RESET}` : "";
+
+  // Sanitize free-form payload fields before composition: a stray
+  // newline would otherwise survive `truncateToWidth` and corrupt
+  // the single-row toast layout. Source is also collapsed defensively
+  // even though it's almost always a package name.
+  const safeSource = oneLine(event.source);
+  const safeTitle = event.title ? oneLine(event.title) : "";
+  const safeMessage = oneLine(event.message);
+
+  const head = `${color}${safeSource}${C_RESET}${C_GRAY}:${C_RESET}`;
+  let tail: string;
+  if (safeTitle && safeMessage) {
+    tail = `${safeTitle} ${C_GRAY}—${C_RESET} ${safeMessage}`;
+  } else if (safeTitle) {
+    tail = safeTitle;
+  } else {
+    tail = safeMessage;
+  }
+
+  const body = `${icon} ${head} ${tail}${hint}`;
+  const truncated = truncateToWidth(body, width, "…");
+  const fillWidth = Math.max(0, width - visibleWidth(truncated));
+  return truncated + " ".repeat(fillWidth);
+}
+
 function buildStatusLine(opts: {
   cwd: string;
   branch: string | null;
@@ -119,6 +265,7 @@ function buildStatusLine(opts: {
   totalCacheRead: number;
   totalCacheWrite: number;
   stashCount: number;
+  chipsSegment: string;
 }): string {
   const {
     cwd,
@@ -136,6 +283,7 @@ function buildStatusLine(opts: {
     totalCacheRead,
     totalCacheWrite,
     stashCount,
+    chipsSegment,
   } = opts;
 
   const modelPart = `🤖 ${C_PINK}${modelName}${C_RESET}`;
@@ -191,7 +339,7 @@ function buildStatusLine(opts: {
 
   const stashPart = stashCount > 0 ? ` ${C_GRAY}│${C_RESET} ${C_YELLOW}📦 ${stashCount}${C_RESET}` : "";
 
-  return `${C_GRAY}─${C_RESET} ${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart}${stashPart} `;
+  return `${C_GRAY}─${C_RESET} ${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart}${chipsSegment}${stashPart} `;
 }
 
 function gatherStats(ctx: ExtensionContext) {
@@ -221,7 +369,13 @@ function gatherStats(ctx: ExtensionContext) {
   return { cost, totalInput, totalOutput, totalCacheRead, totalCacheWrite, lastAssistant };
 }
 
-function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: number, stashCount: number): string {
+function renderStatusContent(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  width: number,
+  stashCount: number,
+  events: { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
+): string[] {
   const stats = gatherStats(ctx);
   const contextWindow =
     ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow ?? 0;
@@ -249,11 +403,17 @@ function renderStatusContent(pi: ExtensionAPI, ctx: ExtensionContext, width: num
     totalCacheRead: stats.totalCacheRead,
     totalCacheWrite: stats.totalCacheWrite,
     stashCount,
+    chipsSegment: buildChipsSegment(events.chips),
   });
 
   const truncated = truncateToWidth(status, width);
   const fillWidth = Math.max(0, width - visibleWidth(truncated));
-  return truncated + `${C_GRAY}${"─".repeat(fillWidth)}${C_RESET}`;
+  const statusLine = truncated + `${C_GRAY}${"─".repeat(fillWidth)}${C_RESET}`;
+
+  if (events.toast) {
+    return [buildToastLine(events.toast, width), statusLine];
+  }
+  return [statusLine];
 }
 
 function makeEditorFactory(
@@ -326,6 +486,7 @@ function installStatusWidget(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   getStashCount: () => number,
+  getEventsSnapshot: () => { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
 ) {
   ctx.ui.setWidget(
     "wierd-statusline",
@@ -333,7 +494,13 @@ function installStatusWidget(
       dispose() {},
       invalidate() {},
       render(width: number): string[] {
-        return [renderStatusContent(pi, ctx, width, getStashCount())];
+        return renderStatusContent(
+          pi,
+          ctx,
+          width,
+          getStashCount(),
+          getEventsSnapshot(),
+        );
       },
     }),
     { placement: "aboveEditor" },
@@ -591,6 +758,29 @@ export default function (pi: ExtensionAPI) {
 
   const getStashCount = () => stashedPromptHistory.length;
 
+  // ───────────────────────── events tracker ─────────────────────────
+  //
+  // The tracker subscribes **eagerly at extension load time** — not
+  // from `enableStatusline` — so we don't miss `notify:*` events that
+  // sibling extensions emit from their own `session_start` handlers
+  // when they happen to be loaded before us. Otherwise we'd race the
+  // load order and the statusline could come up showing no chips even
+  // though voice / web / etc. already announced their state.
+  //
+  // Rendering (`onChange → activeTui.requestRender()`) is still bound
+  // to the statusline being mounted, since there's nothing to repaint
+  // when the user has run `/wierd-status off`.
+
+  let eventsConfig: EventsConfig = loadEventsConfig();
+  const eventsTracker = new EventsTracker(pi, () => eventsConfig);
+  eventsTracker.start();
+  let eventsTrackerOff: (() => void) | null = null;
+
+  const getEventsSnapshot = () => {
+    const snap = eventsTracker.getSnapshot();
+    return { chips: snap.chips, toast: snap.toast };
+  };
+
   const removeStashEntry = (text: string) => {
     const idx = stashedPromptHistory.indexOf(text);
     if (idx >= 0) {
@@ -743,6 +933,17 @@ export default function (pi: ExtensionAPI) {
     teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe = null;
+    // Drop only the render hook — do NOT dispose the events tracker.
+    //
+    // pi can run multiple sessions inside one extension-host process
+    // (`session_shutdown` followed by another `session_start`).
+    // Disposing here would tear down the bus subscription too, and a
+    // subsequent session_start only re-attaches the render hook — so
+    // chips and toasts would silently stop arriving for every session
+    // after the first. The tracker is process-scoped on purpose; its
+    // tick timer is `unref`'d so it never blocks process exit.
+    eventsTrackerOff?.();
+    eventsTrackerOff = null;
   });
 
   pi.on("agent_end", async (_event, ctx) => {
@@ -762,10 +963,21 @@ export default function (pi: ExtensionAPI) {
 
   const enableStatusline = (ctx: ExtensionContext) => {
     currentCtx = ctx;
-    installStatusWidget(pi, ctx, getStashCount);
+    installStatusWidget(pi, ctx, getStashCount, getEventsSnapshot);
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
     if (footerHidden) hidePiFooter(ctx);
     else restorePiFooter(ctx);
+
+    // The tracker is already collecting events (started eagerly at
+    // extension load); here we only attach the render hook so chip /
+    // toast changes repaint the statusline. Calling `requestRender()`
+    // once now also flushes any state the tracker accumulated before
+    // the UI was mounted.
+    eventsTrackerOff?.();
+    eventsTrackerOff = eventsTracker.onChange(() => {
+      activeTui?.requestRender();
+    });
+    activeTui?.requestRender();
 
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe =
@@ -793,6 +1005,12 @@ export default function (pi: ExtensionAPI) {
     restorePiFooter(ctx);
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe = null;
+    // Detach the render hook only; keep the tracker subscribed to the
+    // bus so we don't miss events while the statusline is hidden —
+    // when it comes back, the latest chip / toast state is already
+    // there waiting to be rendered.
+    eventsTrackerOff?.();
+    eventsTrackerOff = null;
     currentEditor = null;
   };
 
@@ -800,9 +1018,103 @@ export default function (pi: ExtensionAPI) {
     if (statuslineEnabled) enableStatusline(ctx);
   });
 
+  const handleEventsSubcommand = (
+    ctx: ExtensionContext,
+    tokens: string[],
+  ): void => {
+    const sub = tokens[1];
+
+    if (!sub || sub === "status") {
+      const snap = eventsTracker.getSnapshot();
+      const lines = [
+        `chips:    ${snap.chips.length}`,
+        `toast:    ${snap.toast ? `${snap.toast.event.level ?? "info"} — ${snap.toast.event.message}` : "(none)"}`,
+        `log:      ${eventsTracker.getLog().length} entries`,
+        `timeouts: ${Object.entries(eventsConfig.toastTimeouts)
+          .map(([level, ms]) => `${level}=${ms === 0 ? "sticky" : `${ms}ms`}`)
+          .join(" ")}`,
+      ];
+      ctx.ui.notify(lines.join("\n"), "info");
+      return;
+    }
+
+    if (sub === "log") {
+      const log = eventsTracker.getLog().slice(0, 16);
+      if (log.length === 0) {
+        ctx.ui.notify("events: log is empty", "info");
+        return;
+      }
+      const formatted = log
+        .map((e) => {
+          const ts = e.timestamp ? new Date(e.timestamp).toISOString().slice(11, 19) : "--:--:--";
+          const level = e.level ?? "info";
+          const title = e.title || e.source;
+          return `${ts} [${level}] ${title}: ${e.message}`;
+        })
+        .join("\n");
+      ctx.ui.notify(formatted, "info");
+      return;
+    }
+
+    if (sub === "clear") {
+      eventsTracker.clearAll();
+      ctx.ui.notify("events: cleared chips and toast", "info");
+      return;
+    }
+
+    if (sub === "toast-ms") {
+      const levelArg = tokens[2];
+      const msArg = tokens[3];
+
+      // Bare `events toast-ms` prints the current map.
+      if (!levelArg) {
+        const lines = Object.entries(eventsConfig.toastTimeouts).map(
+          ([level, ms]) => `  ${level.padEnd(8)} ${ms === 0 ? "sticky" : `${ms}ms`}`,
+        );
+        ctx.ui.notify(`toast timeouts:\n${lines.join("\n")}`, "info");
+        return;
+      }
+
+      const validLevels: NotifyLevel[] = ["debug", "info", "success", "warning", "error"];
+      if (!validLevels.includes(levelArg as NotifyLevel)) {
+        ctx.ui.notify(
+          `events toast-ms: unknown level '${levelArg}'. Expected one of: ${validLevels.join(", ")}.`,
+          "warning",
+        );
+        return;
+      }
+      if (!msArg) {
+        ctx.ui.notify(
+          "Usage: /wierd-status events toast-ms <level> <ms>  (use 0 for sticky)",
+          "warning",
+        );
+        return;
+      }
+      const ms = Number.parseInt(msArg, 10);
+      if (!Number.isFinite(ms) || ms < 0) {
+        ctx.ui.notify(
+          `events toast-ms: invalid duration '${msArg}'. Expected a non-negative integer.`,
+          "warning",
+        );
+        return;
+      }
+      eventsConfig = setToastTimeout(eventsConfig, levelArg as NotifyLevel, ms);
+      ctx.ui.notify(
+        `events: ${levelArg} toasts now ${ms === 0 ? "sticky until dismissed" : `expire in ${ms}ms`}`,
+        "info",
+      );
+      return;
+    }
+
+    ctx.ui.notify(
+      "Usage: /wierd-status events [status | log | clear | toast-ms [<level> <ms>]]",
+      "info",
+    );
+  };
+
   pi.registerCommand("wierd-status", {
     description:
-      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle' | 'fixed-editor on|off|toggle' | 'mouse-scroll on|off|toggle'",
+      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle' | 'fixed-editor on|off|toggle' | 'mouse-scroll on|off|toggle' | 'events [status|log|clear|toast-ms]'",
     handler: async (args, ctx) => {
       currentCtx = ctx;
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
@@ -861,6 +1173,11 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      if (cmd === "events") {
+        handleEventsSubcommand(ctx, tokens);
+        return;
+      }
+
       if (cmd === "mouse-scroll") {
         const action = tokens[1] ?? "toggle";
         if (action === "toggle") mouseScrollEnabled = !mouseScrollEnabled;
@@ -878,7 +1195,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       ctx.ui.notify(
-        "Usage: /wierd-status <on|off|toggle> | footer <on|off|toggle> | fixed-editor <on|off|toggle> | mouse-scroll <on|off|toggle>",
+        "Usage: /wierd-status <on|off|toggle> | footer <on|off|toggle> | fixed-editor <on|off|toggle> | mouse-scroll <on|off|toggle> | events [status|log|clear|toast-ms]",
         "info",
       );
     },
