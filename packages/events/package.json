@@ -1,0 +1,45 @@
+{
+  "name": "pi-wierd-events",
+  "version": "0.1.0",
+  "description": "Typed notify:toast / notify:status event bus for pi coding agent extensions.",
+  "type": "module",
+  "files": [
+    "*.ts",
+    "*.md",
+    "*.json",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-wierd",
+    "pi",
+    "events",
+    "notifications"
+  ],
+  "license": "MIT",
+  "author": "wierdbytes",
+  "homepage": "https://github.com/wierdbytes/pi-wierd-stuff/tree/master/packages/events",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wierdbytes/pi-wierd-stuff.git",
+    "directory": "packages/events"
+  },
+  "bugs": {
+    "url": "https://github.com/wierdbytes/pi-wierd-stuff/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./events": "./events.ts",
+    "./helpers": "./helpers.ts"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.72.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.72.1"
+  }
+}

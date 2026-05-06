@@ -12,6 +12,16 @@
         "@mariozechner/pi-coding-agent": "^0.72.1",
       },
     },
+    "packages/events": {
+      "name": "pi-wierd-events",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@mariozechner/pi-coding-agent": "^0.72.1",
+      },
+      "peerDependencies": {
+        "@mariozechner/pi-coding-agent": ">=0.72.0",
+      },
+    },
     "packages/statusline": {
       "name": "pi-wierd-statusline",
       "version": "0.4.3",
@@ -23,7 +33,7 @@
     },
     "packages/voice": {
       "name": "pi-wierd-voice",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@google/genai": "^1.0.0",
       },
@@ -684,6 +694,8 @@
     "pend": ["pend@1.2.0", "", {}, "sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg=="],
 
     "pi-wierd-anthropic": ["pi-wierd-anthropic@workspace:packages/anthropic"],
+
+    "pi-wierd-events": ["pi-wierd-events@workspace:packages/events"],
 
     "pi-wierd-statusline": ["pi-wierd-statusline@workspace:packages/statusline"],
 
