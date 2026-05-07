@@ -28,7 +28,7 @@ import type { Scope } from "./config.ts";
 const MAX_INPUT_CHARS = 8_000;
 
 // Minimal structural types — we only depend on what we read. Matches
-// `@mariozechner/pi-ai` `AssistantMessage` / `UserMessage` /
+// `@earendil-works/pi-ai` `AssistantMessage` / `UserMessage` /
 // `ToolResultMessage` shapes. Using a structural shape keeps tests
 // trivial (plain object literals) and avoids a hard runtime dep on
 // pi-ai for downstream consumers of `messages.ts`.

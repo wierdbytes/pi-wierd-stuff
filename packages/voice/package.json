@@ -1,5 +1,5 @@
 {
-  "name": "pi-wierd-voice",
+  "name": "@wierdbytes/pi-voice",
   "version": "0.3.0",
   "description": "Spoken summary after each agent turn for the pi coding agent.",
   "type": "module",
@@ -43,12 +43,12 @@
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
-    "pi-wierd-events": "^0.1.0"
+    "@wierdbytes/pi-events": "^0.1.0"
   },
   "devDependencies": {
-    "@mariozechner/pi-ai": "^0.72.1",
-    "@mariozechner/pi-coding-agent": "^0.72.1",
-    "@mariozechner/pi-tui": "^0.72.1",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
     "typebox": "^1.1.24",
     "vitest": "^4.0.18"
   }

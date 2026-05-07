@@ -1,0 +1,93 @@
+# Auto-publish workflow for @wierdbytes/pi-* packages.
+#
+# Plan: docs/plans/auto-publish.md
+#
+# IMPORTANT: the filename of this workflow (`publish.yml`) is registered on
+# npmjs.com under each package's Trusted Publisher config. If you rename this
+# file you MUST update every package's Trusted Publisher row on npmjs.com to
+# match the new filename, otherwise `npm publish` will 404 during OIDC
+# handshake.
+
+name: publish
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: # manual re-run for any commit
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.scan.outputs.packages }}
+      any: ${{ steps.scan.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          registry-url: https://registry.npmjs.org
+      - id: scan
+        name: Detect packages whose local version is not yet on npm
+        run: |
+          set -euo pipefail
+          changed=()
+          for dir in packages/*/; do
+            [ -f "$dir/package.json" ] || continue
+            name=$(jq -r .name "$dir/package.json")
+            local_v=$(jq -r .version "$dir/package.json")
+            if ! npm view "$name@$local_v" version >/dev/null 2>&1; then
+              changed+=("$(basename "$dir")")
+              echo "  + $name@$local_v (will publish)"
+            else
+              echo "  = $name@$local_v (already on npm, skip)"
+            fi
+          done
+          json=$(printf '%s\n' "${changed[@]}" | jq -R . | jq -cs .)
+          echo "packages=$json" >> "$GITHUB_OUTPUT"
+          if [ "${#changed[@]}" -gt 0 ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Detected: $json"
+
+  publish:
+    needs: detect
+    if: needs.detect.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: ${{ fromJson(needs.detect.outputs.packages) }}
+    permissions:
+      contents: read
+      id-token: write # OIDC (Trusted Publishing)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest # OIDC requires npm >= 11.5.1
+      - run: bun install --frozen-lockfile
+
+      - name: Test (if package has a test script)
+        working-directory: packages/${{ matrix.pkg }}
+        run: |
+          if jq -e '.scripts.test' package.json >/dev/null; then
+            bun run test
+          else
+            echo "no test script — skipping"
+          fi
+
+      - name: Publish
+        working-directory: packages/${{ matrix.pkg }}
+        run: npm publish

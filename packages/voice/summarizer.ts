@@ -1,5 +1,5 @@
 /**
- * Summarizer sub-agent for pi-wierd-voice.
+ * Summarizer sub-agent for @wierdbytes/pi-voice.
  *
  * Spawns `pi --mode json -p --no-session --no-tools [--model <id>] <prompt>`
  * and parses the streaming JSON event protocol exactly the way

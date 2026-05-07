@@ -21,7 +21,7 @@ import {
   PI_WIERD_EVENTS,
   type NotifyStatusEvent,
   type NotifyToastEvent,
-} from "pi-wierd-events";
+} from "@wierdbytes/pi-events";
 
 import type { EventsConfig } from "./events-config.ts";
 

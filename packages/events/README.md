@@ -1,9 +1,9 @@
-# pi-wierd-events
+# @wierdbytes/pi-events
 
 Typed event bus for [pi](https://github.com/badlogic/pi-mono) extensions.
 Defines exactly **two** public event names that any extension can emit
 through pi's existing `pi.events` bus, and that
-[`pi-wierd-statusline`](../statusline) (or anyone else) can subscribe to.
+[`@wierdbytes/pi-statusline`](../statusline) (or anyone else) can subscribe to.
 
 | Event           | Purpose                                                         | Statusline rendering             |
 | --------------- | --------------------------------------------------------------- | -------------------------------- |
@@ -17,7 +17,7 @@ authors can integrate with one emit call.
 ## Install
 
 ```bash
-npm install pi-wierd-events
+npm install @wierdbytes/pi-events
 ```
 
 `pi-coding-agent ≥ 0.72.0` is a peer dep — every pi extension already has it.
@@ -25,8 +25,8 @@ npm install pi-wierd-events
 ## Quick start (emitter)
 
 ```ts
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { notifyStatus, notifyToast } from "pi-wierd-events";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { notifyStatus, notifyToast } from "@wierdbytes/pi-events";
 
 // Pass your own module id (typically your npm package name) as `source`
 // on every emit. There's no central registry — the field is just a
@@ -63,7 +63,7 @@ Most extensions never need to listen — the statusline does that for you.
 But if you do, the typed subscribers return an unsubscribe function:
 
 ```ts
-import { onStatus, onToast } from "pi-wierd-events";
+import { onStatus, onToast } from "@wierdbytes/pi-events";
 
 const offStatus = onStatus(pi, (event) => {
   // event is fully typed: NotifyStatusEvent
@@ -139,7 +139,7 @@ npm package name (or any other stable identifier you'd be happy seeing
 in the statusline / events log).
 
 ```ts
-const SOURCE = "pi-wierd-voice"; // or your own package name
+const SOURCE = "@wierdbytes/pi-voice"; // or your own package name
 
 notifyStatus(pi, { source: SOURCE, state: "active", label: "ready", icon: "🔊" });
 ```

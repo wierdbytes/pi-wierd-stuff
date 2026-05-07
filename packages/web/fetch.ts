@@ -11,15 +11,15 @@ import type {
   AgentToolUpdateCallback,
   ExtensionContext,
   ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
-import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import {
   defineTool,
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
   truncateHead,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { BrowserPool } from "./browser-pool.ts";
 import { extractContent, withTimeout } from "./extract.ts";

@@ -1,5 +1,5 @@
 {
-  "name": "pi-wierd-web",
+  "name": "@wierdbytes/pi-web",
   "version": "0.2.0",
   "description": "Anthropic-powered web_search tool for the pi coding agent",
   "type": "module",
@@ -45,9 +45,9 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
-    "@mariozechner/pi-ai": "^0.72.1",
-    "@mariozechner/pi-coding-agent": "^0.72.1",
-    "@mariozechner/pi-tui": "^0.72.1",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
     "typebox": "^1.1.24",
     "vitest": "^4.0.18"
   }

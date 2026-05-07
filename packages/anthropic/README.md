@@ -1,4 +1,4 @@
-# pi-wierd-anthropic
+# @wierdbytes/pi-anthropic
 
 Claude Pro/Max OAuth extension for the [pi](https://github.com/badlogic/pi-mono) coding agent.
 
@@ -8,7 +8,7 @@ Anthropic API key.
 ## Install
 
 ```bash
-pi install npm:pi-wierd-anthropic
+pi install npm:@wierdbytes/pi-anthropic
 ```
 
 ## Usage

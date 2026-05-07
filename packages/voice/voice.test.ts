@@ -1,5 +1,5 @@
 /**
- * Unit tests for pi-wierd-voice.
+ * Unit tests for @wierdbytes/pi-voice.
  *
  * Coverage targets (per voice-v3.md §8):
  *   - wav.ts        — pcmToWav byte layout
@@ -541,7 +541,7 @@ describe("config", () => {
 
   it("getConfigPath points inside the per-package directory", () => {
     const path = getConfigPath();
-    expect(path).toContain("pi-wierd-voice");
+    expect(path).toContain("wierd-voice");
     expect(path.endsWith("config.json")).toBe(true);
   });
 });
@@ -582,7 +582,7 @@ function simulateGetArgumentCompletions(prefix: string) {
  * Simulate pi-tui's argument-completion replacement: when an item is
  * applied, the whole text after the slash command is replaced by the
  * item's `value`. (See
- * node_modules/@mariozechner/pi-tui/dist/autocomplete.js:applyCompletion.)
+ * node_modules/@earendil-works/pi-tui/dist/autocomplete.js:applyCompletion.)
  */
 function simulateApplyCompletion(line: string, value: string): string {
   const cmdPrefix = "/wierd-voice ";

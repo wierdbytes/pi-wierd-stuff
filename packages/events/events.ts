@@ -1,5 +1,5 @@
 /**
- * pi-wierd-events — public event-name constants and payload types.
+ * @wierdbytes/pi-events — public event-name constants and payload types.
  *
  * The package defines exactly **two** public event channels on
  * `pi.events`:
@@ -48,7 +48,7 @@ export type NotifyLevel = "debug" | "info" | "success" | "warning" | "error";
  */
 export interface NotifyToastEvent {
   /** Emitting module id (typically the npm package name, e.g.
-   *  `"pi-wierd-voice"`). Required so the UI can group / filter. */
+   *  `"@wierdbytes/pi-voice"`). Required so the UI can group / filter. */
   source: string;
 
   /** Short headline. Rendered bold in the toast. Optional — falls back
@@ -93,7 +93,7 @@ export interface NotifyToastEvent {
  */
 export interface NotifyStatusEvent {
   /** Emitting module id (typically the npm package name, e.g.
-   *  `"pi-wierd-voice"`). One chip per `(source, id)` pair. */
+   *  `"@wierdbytes/pi-voice"`). One chip per `(source, id)` pair. */
   source: string;
 
   /** Sub-key when one source has multiple concurrent statuses (e.g. a

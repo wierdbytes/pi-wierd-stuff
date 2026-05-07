@@ -12,8 +12,8 @@ import type {
   AgentToolResult,
   Theme,
   ToolRenderResultOptions,
-} from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import type { WebSearchToolDetails, WebSearchParams } from "./search.ts";
 
 const EXPANDED_SOURCES_MAX = 20;

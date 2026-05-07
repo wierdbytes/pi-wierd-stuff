@@ -1,5 +1,5 @@
 /**
- * Gemini API key resolution for pi-wierd-voice.
+ * Gemini API key resolution for @wierdbytes/pi-voice.
  *
  * Resolution order (first non-empty, trimmed value wins):
  *

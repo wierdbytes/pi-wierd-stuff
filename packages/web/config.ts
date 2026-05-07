@@ -1,5 +1,5 @@
 /**
- * Persistent config for pi-wierd-web.
+ * Persistent config for @wierdbytes/pi-web.
  *
  * Stored at ~/.pi/agent/wierd-web.json. Holds settings for both web_search
  * and web_fetch tools so the user has a single config surface.

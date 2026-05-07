@@ -1,7 +1,7 @@
 /**
- * Persistent config for pi-wierd-voice.
+ * Persistent config for @wierdbytes/pi-voice.
  *
- * Stored at `<piAgentDir>/pi-wierd-voice/config.json` (see paths.ts).
+ * Stored at `<piAgentDir>/wierd-voice/config.json` (see paths.ts).
  * Pattern mirrors `packages/web/config.ts`: the file is created on first
  * run with environment-seeded defaults; subsequent loads sanitise unknown
  * fields back to the defaults.
@@ -20,7 +20,7 @@ export const DEFAULT_SCOPE: Scope = "last";
 
 /**
  * Allowed values for `summarizerThinkingLevel`. Mirrors
- * `ModelThinkingLevel` from `@mariozechner/pi-ai` — we re-list them here
+ * `ModelThinkingLevel` from `@earendil-works/pi-ai` — we re-list them here
  * (instead of importing) so this file stays a pure config module with no
  * runtime dependency on pi-ai. The picker validates against pi-ai's
  * `thinkingLevelMap` per-model; this list is just the disk-format

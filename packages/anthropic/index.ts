@@ -1,8 +1,8 @@
 import { existsSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import type { OAuthCredentials } from "@mariozechner/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { OAuthCredentials } from "@earendil-works/pi-ai";
 import { loginAnthropic, refreshAnthropicToken } from "./auth.ts";
 import { sanitizeSystemBlocksForClaudeCode } from "./prompt.ts";
 

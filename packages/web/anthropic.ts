@@ -1,10 +1,10 @@
 /**
- * Auth resolution + transport for pi-wierd-web.
+ * Auth resolution + transport for @wierdbytes/pi-web.
  *
  * Single place that knows about HTTP. web_search flows through callMessages().
  */
 
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   AnthropicWebError,
   type AnthropicAuth,

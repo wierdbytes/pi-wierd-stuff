@@ -1,5 +1,5 @@
 /**
- * Audio player detection + spawn helper for pi-wierd-voice.
+ * Audio player detection + spawn helper for @wierdbytes/pi-voice.
  *
  * We rely on whatever the host already has — no bundled binary. Probe
  * order is platform-specific:

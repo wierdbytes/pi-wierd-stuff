@@ -1,5 +1,5 @@
 /**
- * pi-wierd-web extension entry point.
+ * @wierdbytes/pi-web extension entry point.
  *
  * Registers two tools:
  *  - `web_search`: Anthropic-server-side web_search_20250305 wrapper
@@ -10,7 +10,7 @@
  * `/wierd-web` slash command reads/writes this file.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   envDefaults,
   getConfigPath,
@@ -62,7 +62,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
     } catch (err) {
       // Surface to the next /wierd-web status invocation; not fatal.
       console.error(
-        `pi-wierd-web: failed to save config to ${getConfigPath()}: ${err instanceof Error ? err.message : String(err)}`,
+        `@wierdbytes/pi-web: failed to save config to ${getConfigPath()}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -95,7 +95,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
 
   pi.registerCommand("wierd-web", {
     description:
-      "Configure pi-wierd-web. Subcommands: status | model <id> | fetch-model <id> | fetch-thinking <level> | reset",
+      "Configure @wierdbytes/pi-web. Subcommands: status | model <id> | fetch-model <id> | fetch-thinking <level> | reset",
     handler: async (args, ctx) => {
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const cmd = tokens[0]?.toLowerCase() ?? "status";
@@ -121,7 +121,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
         config = { ...config, searchModel: id };
         cliSearchModelOverride = undefined;
         persist();
-        ctx.ui.notify(`pi-wierd-web search model set to ${id}`, "info");
+        ctx.ui.notify(`@wierdbytes/pi-web search model set to ${id}`, "info");
         return;
       }
 
@@ -133,7 +133,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
         }
         config = { ...config, fetchModel: id };
         persist();
-        ctx.ui.notify(`pi-wierd-web fetch model set to ${id}`, "info");
+        ctx.ui.notify(`@wierdbytes/pi-web fetch model set to ${id}`, "info");
         return;
       }
 
@@ -145,7 +145,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
         }
         config = { ...config, fetchThinkingLevel: level };
         persist();
-        ctx.ui.notify(`pi-wierd-web fetch thinking level set to ${level}`, "info");
+        ctx.ui.notify(`@wierdbytes/pi-web fetch thinking level set to ${level}`, "info");
         return;
       }
 
@@ -154,7 +154,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
         cliSearchModelOverride = undefined;
         persist();
         ctx.ui.notify(
-          `pi-wierd-web reset (search model: ${config.searchModel}, fetch model: ${config.fetchModel ?? "session"})`,
+          `@wierdbytes/pi-web reset (search model: ${config.searchModel}, fetch model: ${config.fetchModel ?? "session"})`,
           "info",
         );
         return;
@@ -183,7 +183,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
       config = { ...config, searchModel: result.modelId };
       cliSearchModelOverride = undefined;
       persist();
-      ctx.ui.notify(`pi-wierd-web search model set to ${result.modelId}`, "info");
+      ctx.ui.notify(`@wierdbytes/pi-web search model set to ${result.modelId}`, "info");
     },
   });
 
@@ -211,7 +211,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
       };
       persist();
       ctx.ui.notify(
-        `pi-wierd-web fetch model set to ${result.fetchModelId} (effort: ${result.effort})`,
+        `@wierdbytes/pi-web fetch model set to ${result.fetchModelId} (effort: ${result.effort})`,
         "info",
       );
     },

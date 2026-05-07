@@ -1,5 +1,5 @@
 /**
- * pi-wierd-voice extension entry point.
+ * @wierdbytes/pi-voice extension entry point.
  *
  * Subscribes to `agent_end` and (when configured) speaks a 1–2 sentence
  * summary of the assistant's reply through `gemini-3.1-flash-tts-preview`.
@@ -21,18 +21,18 @@ import type {
   AgentEndEvent,
   ExtensionAPI,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import type { AutocompleteItem } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import {
   type NotifyLevel,
   notifyStatus,
   notifyToast,
-} from "pi-wierd-events";
+} from "@wierdbytes/pi-events";
 
 /** `source` value for every notify:* event we emit. Hard-coded to our
  *  npm package name so the statusline keys our chip consistently and
  *  the events log shows a stable identifier. */
-const EVENT_SOURCE = "pi-wierd-voice";
+const EVENT_SOURCE = "@wierdbytes/pi-voice";
 import { pickVoiceConfig } from "./config-picker.ts";
 import {
   envDefaults,
@@ -83,7 +83,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
   pi.registerFlag("no-voice", {
     type: "boolean",
-    description: "Disable pi-wierd-voice playback for this session.",
+    description: "Disable @wierdbytes/pi-voice playback for this session.",
     default: false,
   });
 
@@ -802,14 +802,14 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
   pi.registerCommand("wierd-voice", {
     description:
-      "Open the pi-wierd-voice settings overlay (no args). Action subcommands: status | mute | unmute | say <text> | replay | reset",
+      "Open the @wierdbytes/pi-voice settings overlay (no args). Action subcommands: status | mute | unmute | say <text> | replay | reset",
     handler: dispatch,
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       // The pi-tui autocomplete provider replaces the *entire* argument
       // string (everything after `/wierd-voice `) with `value`. So our
       // `value` must be the full argument we want the editor to end up
       // with — not just the last token. (See
-      // node_modules/@mariozechner/pi-tui/dist/autocomplete.js:applyCompletion.)
+      // node_modules/@earendil-works/pi-tui/dist/autocomplete.js:applyCompletion.)
       //
       // Since the rework, every config knob lives behind the overlay —
       // the only remaining text subcommands are imperative actions.

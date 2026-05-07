@@ -1,4 +1,4 @@
-# pi-wierd-web
+# @wierdbytes/pi-web
 
 Web tools for the [pi](https://github.com/badlogic/pi-mono) coding agent:
 
@@ -98,7 +98,7 @@ the Claude Code identity block, matching pi-mono's built-in carve-out.
 ## Install
 
 ```bash
-pi install npm:pi-wierd-web
+pi install npm:@wierdbytes/pi-web
 ```
 
 Restart pi to activate. Verify with `/wierd-web status`.
@@ -148,7 +148,7 @@ first run, seeded from environment variables. Shape:
 ## Tests
 
 ```bash
-bun --filter pi-wierd-web test
+bun --filter @wierdbytes/pi-web test
 ```
 
 ## Architecture

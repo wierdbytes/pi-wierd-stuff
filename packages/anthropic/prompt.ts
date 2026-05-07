@@ -4,7 +4,7 @@ const BILLING_HEADER_MARKER = "x-anthropic-billing-header";
 
 const PI_REMOVAL_ANCHORS = [
   // "pi-coding-agent",
-  // "@mariozechner/pi-coding-agent",
+  // "@earendil-works/pi-coding-agent",
   // "badlogic/pi-mono",
   "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI)",
 ] as const;

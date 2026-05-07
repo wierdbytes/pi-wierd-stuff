@@ -1,4 +1,4 @@
-import { matchesKey, type KeyId } from "@mariozechner/pi-tui";
+import { matchesKey, type KeyId } from "@earendil-works/pi-tui";
 
 const SUPER_SHORTCUT_PATTERNS = new Map<string, RegExp>([
   ["super+up", /^\x1b\[(?:1;9(?::[12])?[AH]|574(?:19|23);9(?::[12])?u|7;9(?::[12])?~|27;9;65~)$/],

@@ -7,11 +7,11 @@
  * selector controlled by ←/→.
  */
 
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { getSelectListTheme } from "@mariozechner/pi-coding-agent";
-import type { Component, SelectItem } from "@mariozechner/pi-tui";
-import { matchesKey, SelectList, truncateToWidth } from "@mariozechner/pi-tui";
-import type { Api, Model, ModelThinkingLevel } from "@mariozechner/pi-ai";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
+import type { Component, SelectItem } from "@earendil-works/pi-tui";
+import { matchesKey, SelectList, truncateToWidth } from "@earendil-works/pi-tui";
+import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 
 export const ALL_THINKING_LEVELS: ModelThinkingLevel[] = [
   "off",

@@ -1,5 +1,5 @@
 /**
- * pi-wierd-statusline — persistent config for the events tracker.
+ * @wierdbytes/pi-statusline — persistent config for the events tracker.
  *
  * Stored at `~/.pi/agent/wierd-statusline/events.json` so it lives
  * alongside the existing stash-history file.
@@ -8,7 +8,7 @@
  * are per-level toast lifetimes and the stale-chip safety-net window.
  */
 
-import type { NotifyLevel } from "pi-wierd-events";
+import type { NotifyLevel } from "@wierdbytes/pi-events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,11 +16,39 @@ import { dirname, join } from "node:path";
 /** Toast lifetime in ms keyed by level. `0` means sticky-until-dismissed. */
 export type ToastTimeoutMap = Record<NotifyLevel, number>;
 
+/**
+ * Settings for the subagents bridge (see `subagents-tracker.ts`).
+ *
+ * The tracker only renders + emits when `enabled === true`. The
+ * `longCompletionMs` threshold suppresses success toasts for fast
+ * agents (where the chip already gave the user enough feedback).
+ */
+export interface SubagentsConfig {
+  /** Master switch. When false the tracker stays subscribed but
+   *  silently drops every event. Default: true. */
+  enabled: boolean;
+  /** Minimum duration in ms before a successful completion produces
+   *  a toast. Failures always toast (when `toastOnFailure` is on)
+   *  regardless of duration. Default: 30_000. */
+  longCompletionMs: number;
+  /** Toast on terminal-error states (failed / stopped / aborted).
+   *  Default: true. */
+  toastOnFailure: boolean;
+  /** Toast on non-error completions whose `durationMs` ≥
+   *  `longCompletionMs`. Default: true. */
+  toastOnLongCompletion: boolean;
+  /** Toast when a subagent is scheduled (cron / interval / one-shot).
+   *  Useful as an audit trail; off by default to avoid noise. */
+  toastOnScheduled: boolean;
+}
+
 /** Persisted schema. Bumped via `version` on incompatible changes. */
 export interface EventsConfig {
   version: 1;
   /** Per-level toast lifetime in ms. `0` means sticky. */
   toastTimeouts: ToastTimeoutMap;
+  /** Subagents bridge settings — see `SubagentsConfig`. */
+  subagents: SubagentsConfig;
 }
 
 /** Built-in defaults — used when the config file is missing or invalid. */
@@ -33,6 +61,13 @@ export const DEFAULT_EVENTS_CONFIG: EventsConfig = Object.freeze({
   warning: 5000,
   error: 0, // sticky until dismissed
   }) as ToastTimeoutMap,
+  subagents: Object.freeze({
+    enabled: true,
+    longCompletionMs: 30_000,
+    toastOnFailure: true,
+    toastOnLongCompletion: true,
+    toastOnScheduled: false,
+  }) as SubagentsConfig,
 }) as EventsConfig;
 
 /** Resolve `~/.pi/agent/wierd-statusline/events.json`. */
@@ -86,11 +121,35 @@ export function setToastTimeout(
   return next;
 }
 
+/**
+ * Patch the `subagents` slice and persist. Pass any subset of
+ * `SubagentsConfig` keys; missing keys keep their current value.
+ * Numeric values are clamped to non-negative integers.
+ */
+export function setSubagentsConfig(
+  config: EventsConfig,
+  patch: Partial<SubagentsConfig>,
+): EventsConfig {
+  const next: EventsConfig = {
+    ...config,
+    subagents: {
+      ...config.subagents,
+      ...patch,
+      ...(typeof patch.longCompletionMs === "number"
+        ? { longCompletionMs: Math.max(0, Math.floor(patch.longCompletionMs)) }
+        : {}),
+    },
+  };
+  saveEventsConfig(next);
+  return next;
+}
+
 /** Internal: deep-clone the frozen defaults so callers can mutate. */
 function cloneDefaults(): EventsConfig {
   return {
     version: 1,
     toastTimeouts: { ...DEFAULT_EVENTS_CONFIG.toastTimeouts },
+    subagents: { ...DEFAULT_EVENTS_CONFIG.subagents },
   };
 }
 
@@ -110,6 +169,28 @@ function mergeWithDefaults(raw: Partial<EventsConfig>): EventsConfig {
       if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
         merged.toastTimeouts[level] = Math.floor(value);
       }
+    }
+  }
+
+  if (raw.subagents && typeof raw.subagents === "object") {
+    // `Partial<EventsConfig>['subagents']` resolves to `SubagentsConfig`,
+    // which has no index signature — route through `unknown` so the
+    // hand-edited JSON case (extra / missing keys) stays valid.
+    const sub = raw.subagents as unknown as Record<string, unknown>;
+    if (typeof sub.enabled === "boolean") merged.subagents.enabled = sub.enabled;
+    if (
+      typeof sub.longCompletionMs === "number" &&
+      Number.isFinite(sub.longCompletionMs) &&
+      sub.longCompletionMs >= 0
+    ) {
+      merged.subagents.longCompletionMs = Math.floor(sub.longCompletionMs);
+    }
+    if (typeof sub.toastOnFailure === "boolean") merged.subagents.toastOnFailure = sub.toastOnFailure;
+    if (typeof sub.toastOnLongCompletion === "boolean") {
+      merged.subagents.toastOnLongCompletion = sub.toastOnLongCompletion;
+    }
+    if (typeof sub.toastOnScheduled === "boolean") {
+      merged.subagents.toastOnScheduled = sub.toastOnScheduled;
     }
   }
 

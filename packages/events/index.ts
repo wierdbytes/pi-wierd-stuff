@@ -1,8 +1,8 @@
 /**
- * pi-wierd-events — public entry point.
+ * @wierdbytes/pi-events — public entry point.
  *
  * Two events, sized for any extension that wants to surface state in
- * `pi-wierd-statusline` (or any future consumer of the same event
+ * `@wierdbytes/pi-statusline` (or any future consumer of the same event
  * names):
  *
  *   `notify:toast`  — one-shot transient notification.

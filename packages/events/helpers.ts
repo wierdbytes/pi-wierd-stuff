@@ -1,5 +1,5 @@
 /**
- * pi-wierd-events — typed safe-emit / safe-on wrappers around the
+ * @wierdbytes/pi-events — typed safe-emit / safe-on wrappers around the
  * `pi.events` event bus.
  *
  * Every helper:
@@ -28,7 +28,7 @@ import {
  * Declared structurally so callers can pass a real `ExtensionAPI`, a
  * test stub, or anything that exposes the same `events.emit` / `events.on`
  * shape — without us taking a peer-dep import on
- * `@mariozechner/pi-coding-agent`'s deep types.
+ * `@earendil-works/pi-coding-agent`'s deep types.
  */
 export interface PiEventBusHost {
   events: {
@@ -83,7 +83,7 @@ function safeOn<T>(
  * @example
  * ```ts
  * notifyToast(pi, {
- *   source: "pi-wierd-voice",
+ *   source: "@wierdbytes/pi-voice",
  *   level: "warning",
  *   title: "voice",
  *   message: "no GEMINI_API_KEY found",
@@ -119,7 +119,7 @@ export function notifyToast(pi: PiEventBusHost, payload: NotifyToastEvent): void
  * @example
  * ```ts
  * notifyStatus(pi, {
- *   source: "pi-wierd-voice",
+ *   source: "@wierdbytes/pi-voice",
  *   state: "active",
  *   icon: "🔊",
  *   label: "speaking",

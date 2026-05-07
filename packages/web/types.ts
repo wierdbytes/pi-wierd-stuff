@@ -1,5 +1,5 @@
 /**
- * Shared types for pi-wierd-web.
+ * Shared types for @wierdbytes/pi-web.
  *
  * Defines the parsed shapes returned by search.ts plus a tiny subset of
  * Anthropic's raw content-block schema that we actually demux.

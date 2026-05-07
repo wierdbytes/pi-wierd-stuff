@@ -1,11 +1,11 @@
-# pi-wierd-statusline
+# @wierdbytes/pi-statusline
 
 Minimal Tokyo Night Storm statusline for [pi](https://github.com/badlogic/pi-mono).
 Renders a compact one-line status row above the editor, with the editor's
 own top/bottom borders stripped so the two visually merge into a single
 cluster.
 
-![pi-wierd-statusline demo](./assets/demo.png)
+![@wierdbytes/pi-statusline demo](./assets/demo.png)
 
 Sections (each appears only when relevant):
 
@@ -27,6 +27,11 @@ Sections (each appears only when relevant):
   counters: `↑input ↓output R{cacheRead} W{cacheWrite}`.
 - **Stash** — `📦 N` showing how many prompts are saved in the stash history
   (see below). Hidden when empty.
+- **Subagents** — `🤖 agents N/M` chip when [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-subagents)
+  is loaded and at least one agent is active. `N` is the number currently
+  running, `M = N + queued`. The chip clears as soon as every agent
+  reaches a terminal state. Failures and long-running completions surface
+  as one-shot toasts above the row — see [Subagents bridge](#subagents-bridge).
 
 Inspired by [`pi-powerline-footer`](https://github.com/nicobailon/pi-powerline-footer)
 by [@nicobailon](https://github.com/nicobailon) — the original brought the
@@ -63,7 +68,7 @@ selection.
 ## Install
 
 ```bash
-pi install npm:pi-wierd-statusline
+pi install npm:@wierdbytes/pi-statusline
 ```
 
 Restart pi to activate.
@@ -76,6 +81,33 @@ Restart pi to activate.
 - `/wierd-status footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)
 - `/wierd-status fixed-editor on|off|toggle` — keep the editor cluster fixed at the bottom while chat scrolls above (on by default)
 - `/wierd-status mouse-scroll on|off|toggle` — enable wheel/drag scrolling and selection inside the fixed editor (on by default)
+- `/wierd-status events [status|log|clear|toast-ms <level> <ms>]` — inspect / tune the chip+toast pipeline
+- `/wierd-status subagents [status|on|off|long-ms <ms>|toast-failure <on|off>|toast-long <on|off>|toast-scheduled <on|off>]` — control the subagents bridge (see below)
+
+## Subagents bridge
+
+When [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-subagents)
+is installed alongside this extension, the statusline subscribes to the
+`subagents:*` lifecycle events on `pi.events` and renders an aggregated
+`🤖 agents N/M` chip in the chips segment whenever at least one agent is
+active. The bridge runs entirely on the statusline side — no changes are
+required in pi-subagents itself, and the existing `🔴 Agents …` widget
+above the editor keeps rendering its rich tree.
+
+Defaults:
+
+| Behaviour | Default |
+|---|---|
+| Show summary chip while agents are running | on |
+| Toast on failure / abort / stop | on (error level, sticky until dismissed) |
+| Toast on completions ≥ 30 s | on (success level) |
+| Toast on `subagents:scheduled` | off |
+| Long-completion threshold | 30 000 ms |
+
+Tune via `/wierd-status subagents …`. Settings persist in
+`~/.pi/agent/wierd-statusline/events.json` next to the toast-timeout map.
+`/wierd-status subagents status` prints the live counts plus the current
+config.
 
 ## Shortcuts
 

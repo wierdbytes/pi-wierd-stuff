@@ -1,5 +1,5 @@
 {
-  "name": "pi-wierd-anthropic",
+  "name": "@wierdbytes/pi-anthropic",
   "version": "0.2.1",
   "description": "Claude Pro/Max OAuth extension for the pi coding agent",
   "type": "module",
@@ -38,7 +38,7 @@
     ]
   },
   "devDependencies": {
-    "@mariozechner/pi-ai": "^0.72.1",
-    "@mariozechner/pi-coding-agent": "^0.72.1"
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0"
   }
 }

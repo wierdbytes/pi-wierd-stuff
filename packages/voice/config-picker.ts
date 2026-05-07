@@ -1,5 +1,5 @@
 /**
- * Single overlay that configures every persisted pi-wierd-voice setting.
+ * Single overlay that configures every persisted @wierdbytes/pi-voice setting.
  *
  * Visual reference: `/wierd-web-fetch-model` (see
  * packages/web/model-picker.ts:pickFetchModel) — same centered bordered
@@ -27,19 +27,19 @@
  * `(session model)` so the row never looks blank.
  */
 
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   getSelectListTheme,
   getSettingsListTheme,
-} from "@mariozechner/pi-coding-agent";
-import type { Component, SelectItem, SettingItem } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import type { Component, SelectItem, SettingItem } from "@earendil-works/pi-tui";
 import {
   matchesKey,
   SelectList,
   SettingsList,
   truncateToWidth,
-} from "@mariozechner/pi-tui";
-import type { Api, Model, ModelThinkingLevel } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-tui";
+import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { PREBUILT_VOICES } from "./voices.ts";
 import type {
   Scope,
@@ -462,7 +462,7 @@ export function pickVoiceConfig(
           lines.push(border(`╭${"─".repeat(innerWidth)}╮`));
           lines.push(
             wrapRow(
-              theme.fg("accent", theme.bold("pi-wierd-voice settings")),
+              theme.fg("accent", theme.bold("@wierdbytes/pi-voice settings")),
               innerWidth,
             ),
           );

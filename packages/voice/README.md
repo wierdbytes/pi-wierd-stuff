@@ -1,4 +1,4 @@
-# pi-wierd-voice
+# @wierdbytes/pi-voice
 
 Spoken summary after each agent turn for the [pi](https://github.com/badlogic/pi-mono) coding agent.
 
@@ -15,7 +15,7 @@ print/RPC mode and when no Gemini API key is configured.
 ## Install
 
 ```bash
-pi install npm:pi-wierd-voice
+pi install npm:@wierdbytes/pi-voice
 ```
 
 Restart pi to activate. Verify with `/wierd-voice status`.
@@ -41,7 +41,12 @@ If none is set, the extension stays silent on every `agent_end` and
 
 ## Configuration
 
-State lives in `~/.pi/agent/pi-wierd-voice/`:
+State lives in `~/.pi/agent/wierd-voice/`:
+
+> Migrating from a previous version? On first run after upgrading,
+> the extension silently renames the legacy `~/.pi/agent/pi-wierd-voice/`
+> directory to `~/.pi/agent/wierd-voice/` so you keep your config and
+> last-played audio.
 
 - `config.json` — settings (created on first save).
 - `last.wav` — most recent synthesized audio. Overwritten each turn and

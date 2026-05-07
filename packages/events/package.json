@@ -1,5 +1,5 @@
 {
-  "name": "pi-wierd-events",
+  "name": "@wierdbytes/pi-events",
   "version": "0.1.0",
   "description": "Typed notify:toast / notify:status event bus for pi coding agent extensions.",
   "type": "module",
@@ -37,9 +37,9 @@
     "./helpers": "./helpers.ts"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": ">=0.72.0"
+    "@earendil-works/pi-coding-agent": ">=0.74.0"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.72.1"
+    "@earendil-works/pi-coding-agent": "^0.74.0"
   }
 }

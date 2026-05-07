@@ -5,14 +5,14 @@ import {
   type ExtensionContext,
   type KeybindingsManager,
   type Theme,
-} from "@mariozechner/pi-coding-agent";
-import type { EditorComponent } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import type { EditorComponent } from "@earendil-works/pi-tui";
 
 type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
-import type { AssistantMessage, Model, ThinkingLevelMap } from "@mariozechner/pi-ai";
-import type { Component, EditorTheme, SelectItem, TUI } from "@mariozechner/pi-tui";
-import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import type { NotifyLevel, NotifyStatusEvent, NotifyToastEvent } from "pi-wierd-events";
+import type { AssistantMessage, Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
+import type { Component, EditorTheme, SelectItem, TUI } from "@earendil-works/pi-tui";
+import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { NotifyLevel, NotifyStatusEvent, NotifyToastEvent } from "@wierdbytes/pi-events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -21,9 +21,11 @@ import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
 import {
   type EventsConfig,
   loadEventsConfig,
+  setSubagentsConfig,
   setToastTimeout,
 } from "./events-config.ts";
 import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
+import { SubagentsTracker } from "./subagents-tracker.ts";
 import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
 import { emergencyTerminalModeReset, TerminalSplitCompositor } from "./fixed-editor/terminal-split.ts";
 
@@ -776,6 +778,22 @@ export default function (pi: ExtensionAPI) {
   eventsTracker.start();
   let eventsTrackerOff: (() => void) | null = null;
 
+  // ───────────────────────── subagents bridge ─────────────────────────
+  //
+  // Same eager-subscribe rationale as `eventsTracker`: pi-subagents
+  // emits `subagents:created` / `started` etc. from its own session_start
+  // handler, and depending on extension load order those can fire
+  // before our `session_start` hook runs. Subscribing at extension
+  // load means we never miss the very first agent of a session.
+  //
+  // The tracker doesn't render anything itself — it re-emits
+  // `notify:status` (chip) and `notify:toast` events back onto the bus,
+  // and the existing `eventsTracker` above picks them up and feeds the
+  // chip / toast into the statusline like any other notify-event
+  // emitter.
+  const subagentsTracker = new SubagentsTracker(pi, () => eventsConfig.subagents);
+  subagentsTracker.start();
+
   const getEventsSnapshot = () => {
     const snap = eventsTracker.getSnapshot();
     return { chips: snap.chips, toast: snap.toast };
@@ -1112,9 +1130,104 @@ export default function (pi: ExtensionAPI) {
     );
   };
 
+  /** Handler for `/wierd-status subagents […]` — toggles the bridge
+   *  to pi-subagents and tunes its toast knobs. */
+  const handleSubagentsSubcommand = (
+    ctx: ExtensionContext,
+    tokens: string[],
+  ): void => {
+    const sub = tokens[1];
+    const cfg = eventsConfig.subagents;
+
+    if (!sub || sub === "status") {
+      const counts = subagentsTracker.getCounts();
+      const lines = [
+        `enabled:               ${cfg.enabled ? "yes" : "no"}`,
+        `running / queued / total: ${counts.running} / ${counts.created} / ${counts.total}`,
+        `long completion ms:    ${cfg.longCompletionMs}`,
+        `toast on failure:      ${cfg.toastOnFailure ? "yes" : "no"}`,
+        `toast on long compl.:  ${cfg.toastOnLongCompletion ? "yes" : "no"}`,
+        `toast on scheduled:    ${cfg.toastOnScheduled ? "yes" : "no"}`,
+      ];
+      ctx.ui.notify(lines.join("\n"), "info");
+      return;
+    }
+
+    if (sub === "on" || sub === "off" || sub === "toggle") {
+      const next = sub === "toggle" ? !cfg.enabled : sub === "on";
+      eventsConfig = setSubagentsConfig(eventsConfig, { enabled: next });
+      // Drop any pending state when muting so a re-enable starts clean.
+      if (!next) subagentsTracker.reset();
+      ctx.ui.notify(`subagents bridge ${next ? "enabled" : "disabled"}`, "info");
+      return;
+    }
+
+    if (sub === "long-ms") {
+      const msArg = tokens[2];
+      if (!msArg) {
+        ctx.ui.notify(
+          `subagents long-ms: currently ${cfg.longCompletionMs}ms. Usage: /wierd-status subagents long-ms <ms>`,
+          "info",
+        );
+        return;
+      }
+      const ms = Number.parseInt(msArg, 10);
+      if (!Number.isFinite(ms) || ms < 0) {
+        ctx.ui.notify(
+          `subagents long-ms: invalid duration '${msArg}'. Expected a non-negative integer.`,
+          "warning",
+        );
+        return;
+      }
+      eventsConfig = setSubagentsConfig(eventsConfig, { longCompletionMs: ms });
+      ctx.ui.notify(
+        `subagents: completion toast threshold now ${ms}ms`,
+        "info",
+      );
+      return;
+    }
+
+    // Boolean toast toggles share a tiny helper.
+    const toggleToast = (
+      key: "toastOnFailure" | "toastOnLongCompletion" | "toastOnScheduled",
+      label: string,
+    ): boolean => {
+      const action = tokens[2] ?? "toggle";
+      let value: boolean;
+      if (action === "toggle") value = !cfg[key];
+      else if (action === "on") value = true;
+      else if (action === "off") value = false;
+      else {
+        ctx.ui.notify(`Unknown ${label} action: ${action}`, "warning");
+        return false;
+      }
+      eventsConfig = setSubagentsConfig(eventsConfig, { [key]: value } as never);
+      ctx.ui.notify(`subagents ${label}: ${value ? "on" : "off"}`, "info");
+      return true;
+    };
+
+    if (sub === "toast-failure") {
+      toggleToast("toastOnFailure", "toast-failure");
+      return;
+    }
+    if (sub === "toast-long") {
+      toggleToast("toastOnLongCompletion", "toast-long");
+      return;
+    }
+    if (sub === "toast-scheduled") {
+      toggleToast("toastOnScheduled", "toast-scheduled");
+      return;
+    }
+
+    ctx.ui.notify(
+      "Usage: /wierd-status subagents [status | on | off | toggle | long-ms <ms> | toast-failure <on|off|toggle> | toast-long <on|off|toggle> | toast-scheduled <on|off|toggle>]",
+      "info",
+    );
+  };
+
   pi.registerCommand("wierd-status", {
     description:
-      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle' | 'fixed-editor on|off|toggle' | 'mouse-scroll on|off|toggle' | 'events [status|log|clear|toast-ms]'",
+      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle' | 'fixed-editor on|off|toggle' | 'mouse-scroll on|off|toggle' | 'events [status|log|clear|toast-ms]' | 'subagents [status|on|off|long-ms|toast-failure|toast-long|toast-scheduled]'",
     handler: async (args, ctx) => {
       currentCtx = ctx;
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
@@ -1178,6 +1291,11 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      if (cmd === "subagents") {
+        handleSubagentsSubcommand(ctx, tokens);
+        return;
+      }
+
       if (cmd === "mouse-scroll") {
         const action = tokens[1] ?? "toggle";
         if (action === "toggle") mouseScrollEnabled = !mouseScrollEnabled;
@@ -1195,7 +1313,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       ctx.ui.notify(
-        "Usage: /wierd-status <on|off|toggle> | footer <on|off|toggle> | fixed-editor <on|off|toggle> | mouse-scroll <on|off|toggle> | events [status|log|clear|toast-ms]",
+        "Usage: /wierd-status <on|off|toggle> | footer <on|off|toggle> | fixed-editor <on|off|toggle> | mouse-scroll <on|off|toggle> | events [status|log|clear|toast-ms] | subagents [status|on|off|long-ms|toast-failure|toast-long|toast-scheduled]",
         "info",
       );
     },
