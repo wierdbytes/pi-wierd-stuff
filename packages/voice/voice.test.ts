@@ -329,7 +329,11 @@ describe("messages.selectSummaryInput", () => {
 
 // ────────────────────────────────────────────────────────────────── auth
 
-import { resolveGeminiKey } from "./auth.ts";
+import {
+  clearRegistryCache,
+  refreshFromRegistry,
+  resolveGeminiKey,
+} from "./auth.ts";
 
 describe("auth.resolveGeminiKey", () => {
   const ENV_KEYS = ["PI_VOICE_GEMINI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"];
@@ -340,6 +344,7 @@ describe("auth.resolveGeminiKey", () => {
       saved[k] = process.env[k];
       delete process.env[k];
     }
+    clearRegistryCache();
   });
 
   afterEach(() => {
@@ -347,7 +352,10 @@ describe("auth.resolveGeminiKey", () => {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
     }
+    clearRegistryCache();
   });
+
+  // ── env-only fallback path (cache empty) ───────────────────────────
 
   it("returns undefined when no env var is set", () => {
     expect(resolveGeminiKey()).toBeUndefined();
@@ -386,6 +394,88 @@ describe("auth.resolveGeminiKey", () => {
   it("trims surrounding whitespace from the resolved value", () => {
     process.env.GEMINI_API_KEY = "  spaced  ";
     expect(resolveGeminiKey()).toEqual({ key: "spaced", source: "GEMINI_API_KEY" });
+  });
+
+  // ── registry-cache path ────────────────────────────────────────────
+
+  /** Build a minimal stub `ExtensionContext` whose `modelRegistry`
+   *  resolves to the supplied value. */
+  const fakeCtx = (
+    apiKey: string | undefined | (() => string | undefined),
+    opts: { throws?: boolean } = {},
+  ) =>
+    ({
+      modelRegistry: {
+        getApiKeyForProvider: async (_provider: string) => {
+          if (opts.throws) throw new Error("registry boom");
+          return typeof apiKey === "function" ? apiKey() : apiKey;
+        },
+      },
+    }) as unknown as Parameters<typeof refreshFromRegistry>[0];
+
+  it("refreshFromRegistry populates the cache from modelRegistry", async () => {
+    await refreshFromRegistry(fakeCtx("stored-key"));
+    expect(resolveGeminiKey()).toEqual({
+      key: "stored-key",
+      source: "pi:google",
+    });
+  });
+
+  it("pi:google cache wins over GEMINI_API_KEY env", async () => {
+    process.env.GEMINI_API_KEY = "env-key";
+    await refreshFromRegistry(fakeCtx("stored-key"));
+    expect(resolveGeminiKey()).toEqual({
+      key: "stored-key",
+      source: "pi:google",
+    });
+  });
+
+  it("PI_VOICE_GEMINI_API_KEY beats the cached pi:google value", async () => {
+    await refreshFromRegistry(fakeCtx("stored-key"));
+    process.env.PI_VOICE_GEMINI_API_KEY = "override";
+    expect(resolveGeminiKey()).toEqual({
+      key: "override",
+      source: "PI_VOICE_GEMINI_API_KEY",
+    });
+  });
+
+  it("refreshFromRegistry clears the cache when the override is set", async () => {
+    await refreshFromRegistry(fakeCtx("stored-key"));
+    process.env.PI_VOICE_GEMINI_API_KEY = "override";
+    // Calling refresh while the override is set must drop the stale
+    // cached value so a later override unset doesn't surface it.
+    await refreshFromRegistry(fakeCtx("never-read"));
+    delete process.env.PI_VOICE_GEMINI_API_KEY;
+    expect(resolveGeminiKey()).toBeUndefined();
+  });
+
+  it("empty/whitespace registry values do not populate the cache", async () => {
+    await refreshFromRegistry(fakeCtx("   "));
+    expect(resolveGeminiKey()).toBeUndefined();
+  });
+
+  it("trims whitespace returned by the registry", async () => {
+    await refreshFromRegistry(fakeCtx("  trimmed  "));
+    expect(resolveGeminiKey()).toEqual({
+      key: "trimmed",
+      source: "pi:google",
+    });
+  });
+
+  it("registry exceptions fall through to env", async () => {
+    process.env.GEMINI_API_KEY = "env-fallback";
+    await refreshFromRegistry(fakeCtx(undefined, { throws: true }));
+    expect(resolveGeminiKey()).toEqual({
+      key: "env-fallback",
+      source: "GEMINI_API_KEY",
+    });
+  });
+
+  it("undefined ctx clears the cache", async () => {
+    await refreshFromRegistry(fakeCtx("stored"));
+    expect(resolveGeminiKey()?.source).toBe("pi:google");
+    await refreshFromRegistry(undefined);
+    expect(resolveGeminiKey()).toBeUndefined();
   });
 });
 

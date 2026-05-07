@@ -41,7 +41,7 @@ import {
   saveConfig,
   type WierdVoiceConfig,
 } from "./config.ts";
-import { resolveGeminiKey } from "./auth.ts";
+import { refreshFromRegistry, resolveGeminiKey } from "./auth.ts";
 import { ensureVoiceDir, lastWavPath } from "./paths.ts";
 import { runSummarizer } from "./summarizer.ts";
 import { synthesize } from "./tts.ts";
@@ -506,6 +506,12 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     resetPlayerCache();
     playerSpec = undefined;
 
+    // Pull pi's stored Google credential into the auth cache so the
+    // sync chip-rendering paths below (and every later command) see
+    // the right state. Best-effort — a missing/failed registry just
+    // leaves the cache empty and resolution falls through to env.
+    await refreshFromRegistry(ctx);
+
     if (!ctx.hasUI || cliDisabled) {
       setStatus(ctx, undefined);
       // No UI / fully disabled — don't claim a chip slot.
@@ -520,7 +526,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       notifyOnce(
         ctx,
         "no-key",
-        "wierd-voice: no GEMINI_API_KEY found; /wierd-voice disabled.",
+        "wierd-voice: no Google credential available; run `/login google`, set GEMINI_API_KEY, or set PI_VOICE_GEMINI_API_KEY.",
         "warning",
       );
       // Error-level so the toast is sticky by default (statusline
@@ -528,7 +534,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       // without the key, so the user must see this until they fix it.
       emitVoiceToast(
         "error",
-        "no GEMINI_API_KEY found; /wierd-voice disabled",
+        "no Google credential available; /wierd-voice disabled",
       );
     }
 
@@ -585,6 +591,11 @@ export default function piWierdVoice(pi: ExtensionAPI) {
   });
 
   pi.on("agent_end", async (event, ctx) => {
+    // Re-prime the auth cache so a credential rotated mid-session
+    // (`/login google`, env var change, `pi auth set ...`) is picked
+    // up before we decide whether to fire the pipeline.
+    await refreshFromRegistry(ctx);
+
     if (!isExtensionActive(ctx)) return;
 
     abortJob(currentJob);
@@ -596,6 +607,11 @@ export default function piWierdVoice(pi: ExtensionAPI) {
   // ───────────────────────────────────────────────── slash commands ──
 
   const dispatch = async (args: string, ctx: ExtensionContext): Promise<void> => {
+    // Refresh the auth cache before any subcommand runs so /wierd-voice
+    // status, /wierd-voice say, etc. all see the latest stored Google
+    // credential.
+    await refreshFromRegistry(ctx);
+
     const trimmed = (args ?? "").trim();
     const tokens = trimmed.split(/\s+/).filter(Boolean);
     const cmd = tokens[0]?.toLowerCase() ?? "";
@@ -740,7 +756,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     const keyEntry = resolveGeminiKey();
     if (!keyEntry) {
       ctx.ui.notify(
-        "wierd-voice: no GEMINI_API_KEY found.",
+        "wierd-voice: no Google credential available. Run `/login google`, set GEMINI_API_KEY, or set PI_VOICE_GEMINI_API_KEY.",
         "warning",
       );
       return;

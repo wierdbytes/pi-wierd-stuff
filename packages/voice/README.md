@@ -32,12 +32,28 @@ You also need:
 
 Resolved in this order, first hit wins:
 
-1. `PI_VOICE_GEMINI_API_KEY` — package-specific override.
-2. `GEMINI_API_KEY`
-3. `GOOGLE_API_KEY`
+1. **`PI_VOICE_GEMINI_API_KEY`** — package-specific override env var.
+   Always wins, useful for power users who want voice to use a
+   different Google credential than the rest of pi.
+2. **pi's stored Google credential** — read via
+   `ctx.modelRegistry.getApiKeyForProvider("google")`. This covers:
+   - any key set with `pi auth set google <key>` (stored in pi's
+     `auth.json`),
+   - custom-provider Google entries in `models.json`,
+   - the `GEMINI_API_KEY` environment variable that pi-ai falls back on.
+   The cached value is refreshed on `session_start`, on every
+   `agent_end`, and on every `/wierd-voice` subcommand, so a credential
+   rotated mid-session is picked up without restarting pi.
+3. **`GOOGLE_API_KEY`** — last-resort env fallback. pi-ai's registry
+   only maps `GEMINI_API_KEY` to the `google` provider, so we keep
+   `GOOGLE_API_KEY` as a separate hop for users who only have that one
+   exported.
 
-If none is set, the extension stays silent on every `agent_end` and
-`/wierd-voice status` shows `key: none`.
+If none of the above resolves to a non-empty key, the extension stays
+silent on every `agent_end` and `/wierd-voice status` shows
+`key: none`. The status row labels each successful resolution with its
+source (`PI_VOICE_GEMINI_API_KEY` / `pi:google` / `GEMINI_API_KEY` /
+`GOOGLE_API_KEY`).
 
 ## Configuration
 
