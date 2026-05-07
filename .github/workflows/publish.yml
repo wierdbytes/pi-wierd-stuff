@@ -26,10 +26,10 @@ jobs:
       packages: ${{ steps.scan.outputs.packages }}
       any: ${{ steps.scan.outputs.any }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20.x
+          node-version: 24.x
           registry-url: https://registry.npmjs.org
       - id: scan
         name: Detect packages whose local version is not yet on npm
@@ -68,13 +68,13 @@ jobs:
       contents: read
       id-token: write # OIDC (Trusted Publishing)
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20.x
+          node-version: 24.x
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@latest # OIDC requires npm >= 11.5.1
       - run: bun install --frozen-lockfile
