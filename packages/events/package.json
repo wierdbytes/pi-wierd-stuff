@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-events",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typed notify:toast / notify:status event bus for pi coding agent extensions.",
   "type": "module",
   "files": [

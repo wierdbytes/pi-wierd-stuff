@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-voice",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Spoken summary after each agent turn for the pi coding agent.",
   "type": "module",
   "files": [
