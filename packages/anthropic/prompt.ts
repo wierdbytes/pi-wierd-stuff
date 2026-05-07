@@ -3,9 +3,10 @@ const BILLING_HEADER_LINE =
 const BILLING_HEADER_MARKER = "x-anthropic-billing-header";
 
 const PI_REMOVAL_ANCHORS = [
-  "pi-coding-agent",
-  "@mariozechner/pi-coding-agent",
-  "badlogic/pi-mono",
+  // "pi-coding-agent",
+  // "@mariozechner/pi-coding-agent",
+  // "badlogic/pi-mono",
+  "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI)",
 ] as const;
 
 type SystemBlock = { type: string; text?: string; [key: string]: unknown };
@@ -65,7 +66,5 @@ function sanitizeSystemText(text: string): string {
 
   return filtered
     .join("\n\n")
-    .replace(/\bpi\b/g, "Claude Code")
-    .replace(/\bPi\b/g, "Claude Code")
     .trim();
 }
