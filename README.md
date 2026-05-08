@@ -10,3 +10,4 @@ Monorepo for various extensions for the [pi](https://github.com/badlogic/pi-mono
 - [`packages/voice`](packages/voice) — `@wierdbytes/pi-voice`: spoken summary after each agent turn via Gemini 3.1 Flash TTS.
 - [`packages/events`](packages/events) — `@wierdbytes/pi-events`: typed `notify:toast` / `notify:status` event bus that lets any extension surface chips and toasts in the statusline.
 - [`packages/common`](packages/common) — `@wierdbytes/pi-common`: shared TUI building blocks for sibling packages — today, a one-call settings modal (ratatui-style frame, built-in field types, model + reasoning-effort widget).
+- [`packages/facelift`](packages/facelift) — `@wierdbytes/pi-facelift`: cosmetic facelift for built-in pi tool output — open-right rounded frames, syntax-highlighted reads, status-aware bash summaries with execution duration, themed `ls`/`find`/`grep` rendering.
