@@ -30,6 +30,7 @@ import {
 } from "@wierdbytes/pi-events";
 
 import type { SubagentsConfig } from "./events-config.ts";
+import { DEFAULT_ICON_SET, type IconSet, resolveIcon } from "./icons.ts";
 
 /** Channel constants for the subagents lifecycle. Mirrors the names
  *  emitted by pi-subagents (see its src/index.ts). Keeping them as
@@ -85,6 +86,12 @@ interface SubagentEventLike {
 export class SubagentsTracker {
   private readonly pi: TrackerHost;
   private readonly getConfig: () => SubagentsConfig;
+  /** Resolves the active icon set on every emit. Lets the user flip
+   *  `iconSet` at runtime without restarting pi — the *next* chip /
+   *  toast we emit picks up the new glyphs. Defaults to the current
+   *  built-in set so older callers (smoke tests, etc.) don't have to
+   *  pass it. */
+  private readonly getIconSet: () => IconSet;
 
   /** Agents we've seen `subagents:created` for but no `started` yet. */
   private created = new Set<string>();
@@ -105,9 +112,14 @@ export class SubagentsTracker {
    *  back to false so `start()` can re-attach later. */
   private active = false;
 
-  constructor(pi: TrackerHost, getConfig: () => SubagentsConfig) {
+  constructor(
+    pi: TrackerHost,
+    getConfig: () => SubagentsConfig,
+    getIconSet: () => IconSet = () => DEFAULT_ICON_SET,
+  ) {
     this.pi = pi;
     this.getConfig = getConfig;
+    this.getIconSet = getIconSet;
   }
 
   /** Subscribe to the bus. Idempotent — safe to call repeatedly.
@@ -266,7 +278,7 @@ export class SubagentsTracker {
     this.emitToast({
       title,
       message,
-      icon: "⏰",
+      icon: resolveIcon(this.getIconSet(), "scheduled"),
       level: "info",
       id: event.id ?? title,
     });
@@ -310,7 +322,7 @@ export class SubagentsTracker {
       id: SUMMARY_CHIP_ID,
       state: "active",
       label: "agents",
-      icon: "🤖",
+      icon: resolveIcon(this.getIconSet(), "agents"),
       level: "info",
       progress: { current: running, total },
       timestamp: Date.now(),
@@ -328,7 +340,7 @@ export class SubagentsTracker {
     this.emitToast({
       title: `${typeLabel} ${verb}`,
       message,
-      icon: "✗",
+      icon: resolveIcon(this.getIconSet(), "error"),
       level: "error",
       id: event.id ?? `${typeLabel}:${verb}`,
     });
@@ -344,7 +356,7 @@ export class SubagentsTracker {
     this.emitToast({
       title: `${typeLabel} completed`,
       message,
-      icon: "✓",
+      icon: resolveIcon(this.getIconSet(), "success"),
       level: "success",
       id: event.id ?? `${typeLabel}:completed`,
     });

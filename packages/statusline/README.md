@@ -82,17 +82,39 @@ Restart pi to activate.
 - `/statusline fixed-editor on|off|toggle` — keep the editor cluster fixed at the bottom while chat scrolls above (on by default)
 - `/statusline mouse-scroll on|off|toggle` — enable wheel/drag scrolling and selection inside the fixed editor (on by default)
 - `/statusline events [status|log|clear|toast-ms <level> <ms>]` — inspect / tune the chip+toast pipeline
+- `/statusline icons [nerd-font|plain|ascii|minimal|emoji|status]` — switch the icon set used for model / thinking / stash / toast levels / subagents chip
 - `/statusline subagents [status|on|off|long-ms <ms>|toast-failure <on|off>|toast-long <on|off>|toast-scheduled <on|off>]` — control the subagents bridge (see below)
+
+## Icon sets
+
+The statusline ships five built-in icon sets you can swap with
+`/statusline icons <set>` (or via the **Icon set** field on the
+Display tab of the settings overlay). The choice persists in
+`~/.pi/agent/wierd-statusline/events.json`.
+
+| Set | Sample row | Notes |
+|---|---|---|
+| `nerd-font` (default) | `─  sonnet-4.5  medium │ … │ master ✓ │ 45%: … │ $0.12 │  2` | Nerd Font glyphs (PUA codepoints). Requires a Nerd Font configured in your terminal. |
+| `plain` | `─ ◆ sonnet-4.5 ◇ medium │ … │ master ✓ │ 45%: … │ $0.12 │ ▤ 2` | Geometric Unicode glyphs that ship with every modern font. No install required. |
+| `ascii` | `- [m] sonnet-4.5 [t] medium \| … \| master ok \| 45%: … \| $0.12 \| [s] 2` | Bracketed ASCII labels. Survives broken fontconfig, ssh sessions, and log files. |
+| `minimal` | `─ ▸ sonnet-4.5 ··· medium │ … │ master ✓ │ 45%: … │ $0.12 │ ≡ 2` | Single-character symbolic glyphs. Powerline / starship aesthetic. |
+| `emoji` | `─ 🤖 sonnet-4.5 🧠 medium │ … │ master ✓ │ 45%: … │ $0.12 │ 📦 2` | Original pre-facelift look. Kept for users who prefer emoji. |
+
+`git` (✓ / ✗) and the inline subagent completion / failure marks
+(✓ / ✗) intentionally stay plain Unicode regardless of the active
+set — they look identical everywhere and read as state, not
+decoration.
 
 ## Subagents bridge
 
 When [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-subagents)
 is installed alongside this extension, the statusline subscribes to the
 `subagents:*` lifecycle events on `pi.events` and renders an aggregated
-`🤖 agents N/M` chip in the chips segment whenever at least one agent is
-active. The bridge runs entirely on the statusline side — no changes are
-required in pi-subagents itself, and the existing `🔴 Agents …` widget
-above the editor keeps rendering its rich tree.
+`agents N/M` chip in the chips segment whenever at least one agent is
+active (the chip's icon follows the active icon set). The bridge runs
+entirely on the statusline side — no changes are required in
+pi-subagents itself, and the existing `🔴 Agents …` widget above the
+editor keeps rendering its rich tree.
 
 Defaults:
 

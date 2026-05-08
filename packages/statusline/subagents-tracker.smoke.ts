@@ -12,11 +12,18 @@
 
 import { PI_WIERD_EVENTS } from "@wierdbytes/pi-events";
 import { DEFAULT_EVENTS_CONFIG } from "./events-config.ts";
+import { DEFAULT_ICON_SET, ICON_SETS } from "./icons.ts";
 import {
   SUBAGENT_EVENTS,
   SUBAGENT_SOURCE,
   SubagentsTracker,
 } from "./subagents-tracker.ts";
+
+// Tracker resolves icons against the active icon set on every emit.
+// The smoke test always runs against the default set so the assertions
+// stay deterministic; if the default set changes, the resolved icons
+// here update with it.
+const DEFAULT_ICONS = ICON_SETS[DEFAULT_ICON_SET];
 
 interface RecordedEmit {
   channel: string;
@@ -103,7 +110,10 @@ console.log("──────────── SubagentsTracker smoke ──�
   let chip = lastStatus(emitted);
   assert(chip?.state === "active", "chip is active while running");
   assert(chip?.progress?.current === 1 && chip?.progress?.total === 1, "1/1 running/total");
-  assert(chip?.icon === "🤖", "chip uses 🤖 icon");
+  assert(
+    chip?.icon === DEFAULT_ICONS.agents,
+    `chip uses default-set agents icon (${DEFAULT_ICONS.agents})`,
+  );
   assert(chip?.source === SUBAGENT_SOURCE, `source is ${SUBAGENT_SOURCE}`);
 
   fire(SUBAGENT_EVENTS.COMPLETED, {
@@ -173,7 +183,10 @@ console.log("──────────── SubagentsTracker smoke ──�
   const toast = lastToast(emitted);
   assert(toast?.level === "error", "failure toast is error level");
   assert(typeof toast?.message === "string" && toast.message.includes("tool returned"), "message includes error string");
-  assert(toast?.icon === "✗", "uses ✗ icon");
+  assert(
+    toast?.icon === DEFAULT_ICONS.error,
+    `uses default-set error icon (${DEFAULT_ICONS.error})`,
+  );
 }
 
 // ─────────────────── long completion toasts (green)
