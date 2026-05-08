@@ -374,7 +374,7 @@ export class SubagentsTracker {
 
   // ───────────────────────── helpers ─────────────────────────
 
-  /** Master switch — when the user has run `/wierd-status subagents
+  /** Master switch — when the user has run `/statusline subagents
    *  off`, every handler short-circuits before mutating state or
    *  emitting events. */
   private shouldRender(): boolean {

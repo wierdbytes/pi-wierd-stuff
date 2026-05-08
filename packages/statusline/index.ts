@@ -124,7 +124,7 @@ const CHIP_LABEL_MAX_WIDTH = 16;
  * (`title` / `message` / `label`) into a single statusline row —
  * a stray `\n` would otherwise survive `truncateToWidth` and break
  * the widget layout. The full original text is still kept in the
- * tracker's log for `/wierd-status events log`.
+ * tracker's log for `/statusline events log`.
  */
 function oneLine(s: string): string {
   return s.replace(/\s+/g, " ").trim();
@@ -782,7 +782,7 @@ export default function (pi: ExtensionAPI) {
   //
   // Rendering (`onChange → activeTui.requestRender()`) is still bound
   // to the statusline being mounted, since there's nothing to repaint
-  // when the user has run `/wierd-status off`.
+  // when the user has run `/statusline off`.
 
   const eventsTracker = new EventsTracker(pi, () => eventsConfig);
   eventsTracker.start();
@@ -1351,7 +1351,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify(formatted, "info");
   };
 
-  pi.registerCommand("wierd-status", {
+  pi.registerCommand("statusline", {
     description:
       "Open the @wierdbytes/pi-statusline settings overlay (no args). Action subcommands: on | off | toggle | status | events log | events clear",
     handler: async (args, ctx) => {
@@ -1359,7 +1359,7 @@ export default function (pi: ExtensionAPI) {
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const cmd = tokens[0];
 
-      // Bare `/wierd-status` opens the overlay.
+      // Bare `/statusline` opens the overlay.
       if (!cmd) return openConfigOverlay(ctx);
 
       // Imperative master-switch shortcuts — single keystroke beats
@@ -1386,12 +1386,12 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("events: cleared chips and toast", "info");
           return;
         }
-        ctx.ui.notify("Usage: /wierd-status events [log|clear]", "info");
+        ctx.ui.notify("Usage: /statusline events [log|clear]", "info");
         return;
       }
 
       ctx.ui.notify(
-        "Usage: /wierd-status [on|off|toggle|status|events log|events clear]  (no args ⇒ open settings overlay)",
+        "Usage: /statusline [on|off|toggle|status|events log|events clear]  (no args ⇒ open settings overlay)",
         "info",
       );
     },

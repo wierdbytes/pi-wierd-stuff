@@ -61,8 +61,8 @@ statusline, editor, and any extension-supplied widget rows. Scroll chat with
 the mouse wheel, PageUp/PageDown, Command+PageUp/PageDown, or Ctrl+Shift+Up/Down;
 the editor stays put. Drag text to copy it, drag a selection to the viewport
 edge to scroll, double-click a line to select it, and right-click to open the
-terminal context menu. Use `/wierd-status fixed-editor off` for pi's regular
-scrolling layout, or `/wierd-status mouse-scroll off` for native terminal
+terminal context menu. Use `/statusline fixed-editor off` for pi's regular
+scrolling layout, or `/statusline mouse-scroll off` for native terminal
 selection.
 
 ## Install
@@ -75,14 +75,14 @@ Restart pi to activate.
 
 ## Commands
 
-- `/wierd-status on` — enable the statusline
-- `/wierd-status off` — disable, restoring pi's default editor and footer
-- `/wierd-status toggle` — toggle
-- `/wierd-status footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)
-- `/wierd-status fixed-editor on|off|toggle` — keep the editor cluster fixed at the bottom while chat scrolls above (on by default)
-- `/wierd-status mouse-scroll on|off|toggle` — enable wheel/drag scrolling and selection inside the fixed editor (on by default)
-- `/wierd-status events [status|log|clear|toast-ms <level> <ms>]` — inspect / tune the chip+toast pipeline
-- `/wierd-status subagents [status|on|off|long-ms <ms>|toast-failure <on|off>|toast-long <on|off>|toast-scheduled <on|off>]` — control the subagents bridge (see below)
+- `/statusline on` — enable the statusline
+- `/statusline off` — disable, restoring pi's default editor and footer
+- `/statusline toggle` — toggle
+- `/statusline footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)
+- `/statusline fixed-editor on|off|toggle` — keep the editor cluster fixed at the bottom while chat scrolls above (on by default)
+- `/statusline mouse-scroll on|off|toggle` — enable wheel/drag scrolling and selection inside the fixed editor (on by default)
+- `/statusline events [status|log|clear|toast-ms <level> <ms>]` — inspect / tune the chip+toast pipeline
+- `/statusline subagents [status|on|off|long-ms <ms>|toast-failure <on|off>|toast-long <on|off>|toast-scheduled <on|off>]` — control the subagents bridge (see below)
 
 ## Subagents bridge
 
@@ -104,9 +104,9 @@ Defaults:
 | Toast on `subagents:scheduled` | off |
 | Long-completion threshold | 30 000 ms |
 
-Tune via `/wierd-status subagents …`. Settings persist in
+Tune via `/statusline subagents …`. Settings persist in
 `~/.pi/agent/wierd-statusline/events.json` next to the toast-timeout map.
-`/wierd-status subagents status` prints the live counts plus the current
+`/statusline subagents status` prints the live counts plus the current
 config.
 
 ## Shortcuts

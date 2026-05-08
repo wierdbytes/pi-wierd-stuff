@@ -80,7 +80,7 @@ export class EventsTracker {
   /** True once the bus subscriptions are live and the tick timer is
    *  running. `dispose()` flips this back to false so `start()` can
    *  re-attach later (e.g. when the user toggles
-   *  `/wierd-status off` then `on`). */
+   *  `/statusline off` then `on`). */
   private running = false;
 
   constructor(pi: TrackerHost, getConfig: () => EventsConfig) {
@@ -165,7 +165,7 @@ export class EventsTracker {
     };
   }
 
-  /** Recent toasts (newest first) — used by `/wierd-status events log`. */
+  /** Recent toasts (newest first) — used by `/statusline events log`. */
   getLog(): NotifyToastEvent[] {
     // Return a copy newest-first so callers can render directly.
     return [...this.log].reverse();
