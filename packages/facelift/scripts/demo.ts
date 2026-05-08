@@ -260,6 +260,56 @@ async function demoBashTimeout(): Promise<void> {
 	);
 }
 
+async function demoBashMultiline(): Promise<void> {
+	header("bash multi-line command — sub-tree title + \\r-safe body rails");
+	// Multi-line shell command (line continuations with `\`). The title
+	// renders as a sub-tree with `│`/`╰` connectors aligned under the first
+	// arg of the first row; continuation lines stay in the same accent
+	// color as the first row.
+	const command = [
+		"cd /Users/mentor/me/dev/pi-wierd-stuff && \\",
+		'  echo "=== before ===" && \\',
+		"  git log --oneline -3 origin/master && \\",
+		"  git pull --rebase && \\",
+		'  echo "=== after ==="',
+	].join("\n");
+
+	// Body intentionally contains `Rebasing (1/1)\rSuccessfully rebased…`,
+	// the exact pattern `git rebase` writes to stderr. Without terminal-style
+	// `\r` handling, the embedded carriage return would clobber the `│` rail
+	// when the terminal honors `\r` as cursor-reset.
+	const bodyText = [
+		"=== before ===",
+		"981c12d facelift: add @wierdbytes/pi-facelift v0.1.0",
+		"4517d9c README: fix stale npm package names",
+		"046a5c2 web: rename slash command from /wierd-web to /web, bump to 0.3.1",
+		"Rebasing (1/1)\rSuccessfully rebased and updated refs/heads/master.",
+		"=== after ===",
+		"8770a5e facelift: add @wierdbytes/pi-facelift v0.1.0",
+		"046a5c2 web: rename slash command from /wierd-web to /web, bump to 0.3.1",
+		"f87cbcf voice: rename slash command from /wierd-voice to /voice, bump to 0.4.1",
+	].join("\n");
+
+	const tools = loadTools({
+		bash: async () => ({
+			content: [{ type: "text", text: bodyText }],
+			details: { _type: "bashResult", text: bodyText, exitCode: 0, command },
+		}),
+	});
+	const bash = tools.get("bash");
+	const state: { startedAt?: number; endedAt?: number } = { startedAt: Date.now() - 1200 };
+
+	const callCtx = makeCtx({ state, expanded: true });
+	console.log(bash.renderCall({ command }, theme, callCtx).getText());
+
+	const result = await bash.execute("t1", { command }, undefined, undefined, {});
+	state.endedAt = Date.now();
+	const resCtx = makeCtx({ state, expanded: true });
+	console.log(
+		bash.renderResult(result, { isPartial: false, expanded: true }, theme, resCtx).getText(),
+	);
+}
+
 async function demoLs(): Promise<void> {
 	header("ls — tree view with Nerd Font icons");
 	const tools = loadTools({
@@ -344,6 +394,7 @@ async function main(): Promise<void> {
 	await demoBashError();
 	await demoBashStreaming();
 	await demoBashTimeout();
+	await demoBashMultiline();
 	await demoLs();
 	await demoFind();
 	await demoGrep();

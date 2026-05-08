@@ -251,26 +251,111 @@ function bodyW(): number {
 }
 
 /**
+ * Find the visible column of the first space character in an ANSI-formatted
+ * string, ignoring ANSI escape sequences. Returns -1 if no space is found
+ * before a newline (or end of string).
+ *
+ * Used by `frameTop` to align continuation rows under the first argument of
+ * the tool title (e.g., the column where `cd` starts in `bash cd …`).
+ */
+function firstVisibleSpace(s: string): number {
+	let visiblePos = 0;
+	let i = 0;
+	while (i < s.length) {
+		const ch = s[i];
+		if (ch === "\x1b") {
+			const next = s[i + 1];
+			if (next === "[") {
+				const end = s.indexOf("m", i + 2);
+				if (end < 0) return -1;
+				i = end + 1;
+				continue;
+			}
+			// Unknown escape — bail out
+			return -1;
+		}
+		if (ch === "\n") return -1;
+		if (ch === " ") return visiblePos;
+		visiblePos += 1;
+		i += 1;
+	}
+	return -1;
+}
+
+/**
  * Render the top border of the frame: `╭── <title> ─────`.
  * The title may contain ANSI codes; visible width is measured with pi-tui.
  * Truncated with `…` if it would overflow the terminal width.
+ *
+ * Multi-line titles (e.g., a multi-line bash command) are rendered with the
+ * first line as the top border and remaining lines as rail-prefixed
+ * continuation rows in a sub-tree:
+ *
+ *     ╭── bash cd /…/pi-wierd-stuff && \ ──────────────
+ *     │      │ echo "line 1" \
+ *     │      ╚ echo "line 2"
+ *
+ * Each continuation row is composed of:
+ *   • the outer frame rail `│` (frame status color)
+ *   • padding sized so the sub-tree connector lines up with the first arg
+ *     character of the first row
+ *   • a sub-tree connector (`│` for non-last rows, `╰` for the last)
+ *   • a single separator space
+ *   • the row's content (callers are expected to wrap each line in the
+ *     same color as the first-row args so the sub-tree text matches)
+ *
+ * Trailing dashes are only emitted on the first row so continuation rows
+ * stay clean.
  */
 function frameTop(titleAnsi: string, status: FrameStatus): string {
 	const color = getFrameColor(status);
 	const w = termW();
+	const titleLines = titleAnsi.split("\n");
+	const firstTitle = titleLines[0];
+	const continuations = titleLines.slice(1);
+
 	// Layout: `╭` (1) + `──` (2) + ` ` (1) + title + ` ` (1) + trailing dashes (≥1)
 	const minTrailing = 1;
 	const fixed = 1 + 2 + 1 + 1 + minTrailing;
 	const maxTitleW = Math.max(0, w - fixed);
 
-	let title = titleAnsi;
-	let tw = visibleWidth(titleAnsi);
+	let title = firstTitle;
+	let tw = visibleWidth(firstTitle);
 	if (tw > maxTitleW) {
-		title = truncateToWidth(titleAnsi, maxTitleW, "…");
+		title = truncateToWidth(firstTitle, maxTitleW, "…");
 		tw = visibleWidth(title);
 	}
 	const trailing = Math.max(minTrailing, w - 1 - 2 - 1 - tw - 1);
-	return `${color}╭──${RST} ${title} ${color}${"─".repeat(trailing)}${RST}`;
+	const firstLine = `${color}╭──${RST} ${title} ${color}${"─".repeat(trailing)}${RST}`;
+
+	if (continuations.length === 0) return firstLine;
+
+	// Continuation rows: rail + padding + sub-tree connector + space + content.
+	// First line layout:
+	//   col 1: `╭`
+	//   cols 2-3: `──`
+	//   col 4: literal space
+	//   cols 5..: title (toolName + space + args…)
+	// If the toolName ends at visible-offset N (i.e., the space is at offset N),
+	// the first arg char sits at column N + 6 (1-indexed). We align the sub-tree
+	// connector two columns before it (at contentCol - 2) and put the content
+	// itself at the same column as the first row's first arg char, so the rows
+	// read as a tree hanging off the title.
+	const toolNameEnd = firstVisibleSpace(firstTitle);
+	const contentCol = toolNameEnd >= 0 ? toolNameEnd + 6 : 6;
+	const padBetween = " ".repeat(Math.max(0, contentCol - 4));
+	const rail = `${color}│${RST}`;
+	const innerW = Math.max(1, w - contentCol + 1);
+	const lastIdx = continuations.length - 1;
+
+	const contLines = continuations.map((line, idx) => {
+		const connectorChar = idx === lastIdx ? "╰" : "│";
+		const connector = `${color}${connectorChar}${RST}`;
+		const fitted = visibleWidth(line) > innerW ? truncateToWidth(line, innerW, "…") : line;
+		return `${rail}${padBetween}${connector} ${fitted}`;
+	});
+
+	return [firstLine, ...contLines].join("\n");
 }
 
 /** Render the bottom border of the frame: `╰─────────────`. */
@@ -306,6 +391,13 @@ function frameBottomWithLabel(labelAnsi: string, status: FrameStatus): string {
  * Prefix every line in `text` with the frame's left rail (`│`).
  * Each logical line is right-truncated to `bodyW()` so the visible width
  * including the rail never exceeds `termW()`.
+ *
+ * Embedded carriage returns (`\r`) are collapsed using terminal-style
+ * overwrite semantics: only the content after the last `\r` on a line is
+ * kept. Without this, sequences like `git rebase`'s
+ * `Rebasing (1/1)\rSuccessfully rebased…` would clobber the rail when the
+ * terminal honors `\r` as cursor-reset, leaving the line visibly
+ * unprefixed.
  */
 function frameBodyLines(text: string, status: FrameStatus): string {
 	const color = getFrameColor(status);
@@ -314,7 +406,11 @@ function frameBodyLines(text: string, status: FrameStatus): string {
 	return text
 		.split("\n")
 		.map((line) => {
-			const fitted = line && visibleWidth(line) > w ? truncateToWidth(line, w, "") : line;
+			// Terminal-style \r handling: keep only what survives after the last
+			// carriage return so the rail isn't overwritten by progress messages.
+			const lastCR = line.lastIndexOf("\r");
+			const safeLine = lastCR >= 0 ? line.slice(lastCR + 1) : line;
+			const fitted = safeLine && visibleWidth(safeLine) > w ? truncateToWidth(safeLine, w, "") : safeLine;
 			return `${rail}${fitted}`;
 		})
 		.join("\n");
@@ -1226,7 +1322,18 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				}
 				const timeout = args.timeout ? ` ${theme.fg("muted", `(${args.timeout}s timeout)`)}` : "";
 				const displayCmd = ctx.expanded || cmd.length <= 80 ? cmd : `${cmd.slice(0, 77)}…`;
-				const title = `${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", displayCmd)}${timeout}`;
+
+				// Multi-line bash commands (shell line continuations with `\`, here-docs,
+				// or embedded newlines) need each line wrapped in the accent color
+				// separately so the color survives line splitting in `frameTop`. Leading
+				// whitespace on continuation lines is dropped — the sub-tree connector
+				// already provides visual indentation, so the user's heredoc indent
+				// would just push content right and misalign the tree.
+				const cmdLines = displayCmd.split("\n");
+				const firstCmd = cmdLines[0];
+				const restCmd = cmdLines.slice(1).map((line) => line.replace(/^\s+/, ""));
+				const firstTitle = `${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", firstCmd)}${timeout}`;
+				const title = [firstTitle, ...restCmd.map((line) => theme.fg("accent", line))].join("\n");
 				t.setText(frameTop(title, getFrameStatus(ctx)));
 				return t;
 			},
