@@ -1,0 +1,56 @@
+{
+  "name": "@wierdbytes/pi-common",
+  "version": "0.1.0",
+  "description": "Shared TUI building blocks for pi coding agent extensions — settings modal, frame helpers, common field renderers.",
+  "type": "module",
+  "files": [
+    "*.ts",
+    "settings/**/*.ts",
+    "*.md",
+    "*.json",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-wierd",
+    "pi",
+    "coding-agent",
+    "tui",
+    "settings",
+    "modal"
+  ],
+  "license": "MIT",
+  "author": "wierdbytes",
+  "homepage": "https://github.com/wierdbytes/pi-wierd-stuff/tree/master/packages/common",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wierdbytes/pi-wierd-stuff.git",
+    "directory": "packages/common"
+  },
+  "bugs": {
+    "url": "https://github.com/wierdbytes/pi-wierd-stuff/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./settings": "./settings/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.74.0",
+    "@earendil-works/pi-coding-agent": ">=0.74.0",
+    "@earendil-works/pi-tui": ">=0.74.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
+    "vitest": "^4.0.18"
+  }
+}

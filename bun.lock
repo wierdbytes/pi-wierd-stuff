@@ -6,15 +6,30 @@
     },
     "packages/anthropic": {
       "name": "@wierdbytes/pi-anthropic",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "devDependencies": {
         "@earendil-works/pi-ai": "^0.74.0",
         "@earendil-works/pi-coding-agent": "^0.74.0",
       },
     },
+    "packages/common": {
+      "name": "@wierdbytes/pi-common",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@earendil-works/pi-ai": "^0.74.0",
+        "@earendil-works/pi-coding-agent": "^0.74.0",
+        "@earendil-works/pi-tui": "^0.74.0",
+        "vitest": "^4.0.18",
+      },
+      "peerDependencies": {
+        "@earendil-works/pi-ai": ">=0.74.0",
+        "@earendil-works/pi-coding-agent": ">=0.74.0",
+        "@earendil-works/pi-tui": ">=0.74.0",
+      },
+    },
     "packages/events": {
       "name": "@wierdbytes/pi-events",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "@earendil-works/pi-coding-agent": "^0.74.0",
       },
@@ -24,7 +39,7 @@
     },
     "packages/statusline": {
       "name": "@wierdbytes/pi-statusline",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "dependencies": {
         "@wierdbytes/pi-events": "^0.1.0",
       },
@@ -36,7 +51,7 @@
     },
     "packages/voice": {
       "name": "@wierdbytes/pi-voice",
-      "version": "0.3.0",
+      "version": "0.3.2",
       "dependencies": {
         "@google/genai": "^1.0.0",
         "@wierdbytes/pi-events": "^0.1.0",
@@ -51,7 +66,7 @@
     },
     "packages/web": {
       "name": "@wierdbytes/pi-web",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "puppeteer": "^24.0.0",
         "puppeteer-extra": "^3.3.6",
@@ -384,6 +399,8 @@
     "@vitest/utils": ["@vitest/utils@4.1.5", "", { "dependencies": { "@vitest/pretty-format": "4.1.5", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-76wdkrmfXfqGjueGgnb45ITPyUi1ycZ4IHgC2bhPDUfWHklY/q3MdLOAB+TF1e6xfl8NxNY0ZYaPCFNWSsw3Ug=="],
 
     "@wierdbytes/pi-anthropic": ["@wierdbytes/pi-anthropic@workspace:packages/anthropic"],
+
+    "@wierdbytes/pi-common": ["@wierdbytes/pi-common@workspace:packages/common"],
 
     "@wierdbytes/pi-events": ["@wierdbytes/pi-events@workspace:packages/events"],
 
