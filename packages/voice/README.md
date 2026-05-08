@@ -18,7 +18,7 @@ print/RPC mode and when no Gemini API key is configured.
 pi install npm:@wierdbytes/pi-voice
 ```
 
-Restart pi to activate. Verify with `/wierd-voice status`.
+Restart pi to activate. Verify with `/voice status`.
 
 You also need:
 
@@ -42,7 +42,7 @@ Resolved in this order, first hit wins:
    - custom-provider Google entries in `models.json`,
    - the `GEMINI_API_KEY` environment variable that pi-ai falls back on.
    The cached value is refreshed on `session_start`, on every
-   `agent_end`, and on every `/wierd-voice` subcommand, so a credential
+   `agent_end`, and on every `/voice` subcommand, so a credential
    rotated mid-session is picked up without restarting pi.
 3. **`GOOGLE_API_KEY`** — last-resort env fallback. pi-ai's registry
    only maps `GEMINI_API_KEY` to the `google` provider, so we keep
@@ -50,7 +50,7 @@ Resolved in this order, first hit wins:
    exported.
 
 If none of the above resolves to a non-empty key, the extension stays
-silent on every `agent_end` and `/wierd-voice status` shows
+silent on every `agent_end` and `/voice status` shows
 `key: none`. The status row labels each successful resolution with its
 source (`PI_VOICE_GEMINI_API_KEY` / `pi:google` / `GEMINI_API_KEY` /
 `GOOGLE_API_KEY`).
@@ -66,7 +66,7 @@ State lives in `~/.pi/agent/wierd-voice/`:
 
 - `config.json` — settings (created on first save).
 - `last.wav` — most recent synthesized audio. Overwritten each turn and
-  by `/wierd-voice say`. Used by `/wierd-voice replay`.
+  by `/voice say`. Used by `/voice replay`.
 
 `config.json` shape:
 
@@ -80,7 +80,7 @@ State lives in `~/.pi/agent/wierd-voice/`:
 }
 ```
 
-- `muted` — when true, no playback (still kept current via /wierd-voice unmute).
+- `muted` — when true, no playback (still kept current via /voice unmute).
 - `voice` — one of 30 prebuilt voices (see the overlay's Voice row).
 - `scope` — `last` (final assistant message only) or `sinceUser`
   (assistant text + tool-call digests since the last user message).
@@ -91,36 +91,36 @@ State lives in `~/.pi/agent/wierd-voice/`:
   `off | minimal | low | medium | high | xhigh`. Unset ⇒ inherit pi's
   default for the chosen model. The overlay clamps the value to whatever
   the highlighted model advertises in its `thinkingLevelMap` (same
-  contract as `/wierd-web-fetch-model`).
+  contract as `/web fetch-model`).
 
 The TTS model itself is hardcoded to `gemini-3.1-flash-tts-preview`.
 
 ## Commands
 
 Every persisted setting (voice, scope, summarizer model, mute) is
-configured through a single centered overlay. Bare `/wierd-voice` opens
+configured through a single centered overlay. Bare `/voice` opens
 it; the rest of the surface is imperative actions.
 
-| Command                   | What it does                                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `/wierd-voice`            | Open the settings overlay (Up/Down between rows, Enter/Space cycles or opens submenu, Esc closes). Falls back to `status` in non-interactive sessions. |
-| `/wierd-voice status`     | Show config path, key source, voice, scope, summarizer, thinking level, muted, audio player.                       |
-| `/wierd-voice mute`       | Shortcut for the overlay's `Muted` row. Sets `muted=true` and aborts any in-flight job.                            |
-| `/wierd-voice unmute`     | Shortcut for the overlay's `Muted` row. Sets `muted=false`.                                                        |
-| `/wierd-voice say <text>` | Synthesize and play `<text>` directly. Bypasses the summarizer.                                                    |
-| `/wierd-voice replay`     | Re-spawn the audio player on the stored `last.wav`.                                                                |
-| `/wierd-voice reset`      | Restore defaults (`muted=false`, voice=Umbriel, scope=last, summarizer cleared).                                      |
+| Command            | What it does                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `/voice`           | Open the settings overlay (Up/Down between rows, Enter/Space cycles or opens submenu, Esc closes). Falls back to `status` in non-interactive sessions. |
+| `/voice status`    | Show config path, key source, voice, scope, summarizer, thinking level, muted, audio player.                       |
+| `/voice mute`      | Shortcut for the overlay's `Muted` row. Sets `muted=true` and aborts any in-flight job.                            |
+| `/voice unmute`    | Shortcut for the overlay's `Muted` row. Sets `muted=false`.                                                        |
+| `/voice say <text>`| Synthesize and play `<text>` directly. Bypasses the summarizer.                                                    |
+| `/voice replay`    | Re-spawn the audio player on the stored `last.wav`.                                                                |
+| `/voice reset`     | Restore defaults (`muted=false`, voice=Umbriel, scope=last, summarizer cleared).                                   |
 
 The overlay rows:
 
-- **Muted** — cycle `false` / `true`. Same effect as `/wierd-voice mute`.
+- **Muted** — cycle `false` / `true`. Same effect as `/voice mute`.
 - **Voice** — Enter opens a picker showing all 30 prebuilt Gemini
   voices with their descriptors (`Umbriel  Easy-going`, `Kore  Firm`,
   `Puck  Upbeat`, …). Up/Down to scroll, Enter saves, Esc cancels. The
   parent row label shows both, e.g. `Umbriel  ·  Easy-going`.
 - **Summary scope** — cycle `last` / `sinceUser`.
 - **Summarizer model** — Enter opens a dual model + effort picker (a
-  port of `/wierd-web-fetch-model`):
+  port of `/web fetch-model`):
   - Up/Down moves through every model with configured auth (mirrors
     `/models`), plus a `(session model)` entry at the top that clears
     the override.

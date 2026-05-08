@@ -101,7 +101,7 @@ function sanitize(raw: unknown): WierdVoiceConfig {
 
 /**
  * Get the path to the persisted config JSON. Wrapper around `paths.ts` so
- * tests and `/wierd-voice status` can show a single canonical location.
+ * tests and `/voice status` can show a single canonical location.
  */
 export function getConfigPath(): string {
   return defaultConfigPath();

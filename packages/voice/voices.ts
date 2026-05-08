@@ -6,7 +6,7 @@
  *
  * The names are case-sensitive — the API expects them exactly as listed.
  * The descriptors are taken verbatim from the docs and surfaced by
- * `/wierd-voice voice` (no-arg form) so users can pick a vibe before they
+ * `/voice voice` (no-arg form) so users can pick a vibe before they
  * pick a name.
  */
 
@@ -61,7 +61,7 @@ export function voiceNames(): string[] {
 }
 
 /**
- * Format the full table for `/wierd-voice voice` (no-arg form).
+ * Format the full table for `/voice voice` (no-arg form).
  *
  * Two-column layout, padded to the widest name in the list. Returns a
  * plain string — caller wraps it in `ctx.ui.notify`.

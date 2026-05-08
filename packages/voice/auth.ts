@@ -25,7 +25,7 @@
  *   - Async `refreshFromRegistry(ctx)` populates the cache from
  *     `ctx.modelRegistry.getApiKeyForProvider("google")`. Call it from
  *     every lifecycle hook / command handler that already has `ctx`
- *     (session_start, /wierd-voice subcommands, before each TTS call).
+ *     (session_start, /voice subcommands, before each TTS call).
  *
  * If the cache hasn't been primed yet (boot, tests, or pi without a
  * registry), resolution falls through to direct env reads, preserving

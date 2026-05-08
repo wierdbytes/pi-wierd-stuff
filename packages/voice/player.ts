@@ -21,7 +21,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
 export interface PlayerSpec {
-  /** Display label for `/wierd-voice status`. */
+  /** Display label for `/voice status`. */
   label: string;
   /** Executable name as found on $PATH. */
   command: string;

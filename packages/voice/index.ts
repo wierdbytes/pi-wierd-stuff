@@ -8,11 +8,13 @@
  *
  *   idle → summarizing → synthesizing → playing → idle
  *
- * A fresh `agent_end` (or `/wierd-voice mute`, session shutdown, etc.)
+ * A fresh `agent_end` (or `/voice mute`, session shutdown, etc.)
  * aborts whatever stage the previous job is in and starts over.
  *
- * Slash commands all live under the `/wierd-voice` prefix to match the
- * repo-wide `wierd-` convention.
+ * Slash commands all live under the `/voice` prefix.
+ * (Storage paths, package name, and notify tags still use the
+ * `wierd-voice` prefix to keep the existing `~/.pi/agent/wierd-voice/`
+ * state directory and the `pi-wierd-voice` brand.)
  */
 
 import { existsSync, writeFileSync } from "node:fs";
@@ -73,7 +75,7 @@ interface VoiceJob {
   abortController: AbortController;
   player?: ChildProcess;
   state: "summarizing" | "synthesizing" | "playing";
-  /** True when this job came from `/wierd-voice say` — bypasses summarizer. */
+  /** True when this job came from `/voice say` — bypasses summarizer. */
   isAdHoc: boolean;
 }
 
@@ -166,7 +168,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
   };
 
   /** Sticky error chip — stays until the next pipeline emit replaces
-   *  it (or the user runs `/wierd-status events clear`). Used for
+   *  it (or the user runs `/statusline events clear`). Used for
    *  genuine runtime failures (TTS, summarizer, player). */
   const emitVoiceErrorStatus = (label: string, detail?: string): void => {
     notifyStatus(pi, {
@@ -302,7 +304,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
   ): void => {
     if (!playerSpec) {
       // No player but we still wrote last.wav — user can install a
-      // player later and `/wierd-voice replay`.
+      // player later and `/voice replay`.
       notifyOnce(
         ctx,
         "no-player",
@@ -538,7 +540,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       // without the key, so the user must see this until they fix it.
       emitVoiceToast(
         "error",
-        "no Google credential available; /wierd-voice disabled",
+        "no Google credential available; /voice disabled",
       );
     }
 
@@ -611,8 +613,8 @@ export default function piWierdVoice(pi: ExtensionAPI) {
   // ───────────────────────────────────────────────── slash commands ──
 
   const dispatch = async (args: string, ctx: ExtensionContext): Promise<void> => {
-    // Refresh the auth cache before any subcommand runs so /wierd-voice
-    // status, /wierd-voice say, etc. all see the latest stored Google
+    // Refresh the auth cache before any subcommand runs so /voice
+    // status, /voice say, etc. all see the latest stored Google
     // credential.
     await refreshFromRegistry(ctx);
 
@@ -620,7 +622,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     const tokens = trimmed.split(/\s+/).filter(Boolean);
     const cmd = tokens[0]?.toLowerCase() ?? "";
 
-    // Bare `/wierd-voice` opens the configuration overlay (or falls back
+    // Bare `/voice` opens the configuration overlay (or falls back
     // to `status` when there's no UI to attach the overlay to). Other
     // subcommands are imperative actions — they stay text-only.
     if (!cmd) return openConfigOverlay(ctx);
@@ -632,7 +634,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     if (cmd === "reset") return reset(ctx);
 
     ctx.ui.notify(
-      "Usage: /wierd-voice [status|mute|unmute|say <text>|replay|reset]  (no args ⇒ open settings overlay)",
+      "Usage: /voice [status|mute|unmute|say <text>|replay|reset]  (no args ⇒ open settings overlay)",
       "info",
     );
   };
@@ -640,7 +642,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
   const openConfigOverlay = async (ctx: ExtensionContext): Promise<void> => {
     if (!ctx.hasUI) {
       // Non-interactive sessions can't host the overlay. Show the same
-      // text dump as `/wierd-voice status` so the user still sees the
+      // text dump as `/voice status` so the user still sees the
       // current state and learns where the config lives.
       showStatus(ctx);
       return;
@@ -705,7 +707,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
           persist(ctx);
           if (config.muted) {
             // Mute aborts any in-flight job — same semantics as the
-            // `/wierd-voice mute` shortcut below.
+            // `/voice mute` shortcut below.
             abortJob(currentJob);
             currentJob = undefined;
             setStatus(ctx, STATUS_MUTED);
@@ -749,7 +751,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     const lines = [
       `config:     ${getConfigPath()}`,
       `key:        ${keyEntry ? keyEntry.source : "none"}`,
-      `voice:      ${config.voice}${isValidVoice(config.voice) ? "" : " (UNKNOWN — see /wierd-voice voice)"}`,
+      `voice:      ${config.voice}${isValidVoice(config.voice) ? "" : " (UNKNOWN — see /voice voice)"}`,
       `scope:      ${config.scope}`,
       `summarizer: ${config.summarizerModel ?? "(session model)"}`,
       `thinking:   ${config.summarizerThinkingLevel ?? "(session level)"}`,
@@ -793,12 +795,12 @@ export default function piWierdVoice(pi: ExtensionAPI) {
 
   const say = async (ctx: ExtensionContext, text: string): Promise<void> => {
     if (!text) {
-      ctx.ui.notify("Usage: /wierd-voice say <text>", "warning");
+      ctx.ui.notify("Usage: /voice say <text>", "warning");
       return;
     }
     if (!ctx.hasUI) {
       ctx.ui.notify(
-        "/wierd-voice say requires an interactive UI.",
+        "/voice say requires an interactive UI.",
         "warning",
       );
       return;
@@ -812,7 +814,7 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       return;
     }
     if (config.muted) {
-      ctx.ui.notify("wierd-voice is muted; run /wierd-voice unmute first.", "info");
+      ctx.ui.notify("wierd-voice is muted; run /voice unmute first.", "info");
       return;
     }
 
@@ -866,13 +868,13 @@ export default function piWierdVoice(pi: ExtensionAPI) {
     ctx.ui.notify("wierd-voice: config reset to defaults.", "info");
   };
 
-  pi.registerCommand("wierd-voice", {
+  pi.registerCommand("voice", {
     description:
       "Open the @wierdbytes/pi-voice settings overlay (no args). Action subcommands: status | mute | unmute | say <text> | replay | reset",
     handler: dispatch,
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       // The pi-tui autocomplete provider replaces the *entire* argument
-      // string (everything after `/wierd-voice `) with `value`. So our
+      // string (everything after `/voice `) with `value`. So our
       // `value` must be the full argument we want the editor to end up
       // with — not just the last token. (See
       // node_modules/@earendil-works/pi-tui/dist/autocomplete.js:applyCompletion.)

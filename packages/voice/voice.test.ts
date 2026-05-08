@@ -639,7 +639,7 @@ describe("config", () => {
 // ── autocomplete (post-overlay rework) ──────────────────────────────
 //
 // After the rework, every persisted setting (voice / scope / summarizer
-// model / muted) is configured through the `/wierd-voice` overlay (see
+// model / muted) is configured through the `/voice` overlay (see
 // config-picker.ts). The only remaining text subcommands are imperative
 // actions: `status`, `mute`, `unmute`, `say <text>`, `replay`, `reset`.
 //
@@ -675,7 +675,7 @@ function simulateGetArgumentCompletions(prefix: string) {
  * node_modules/@earendil-works/pi-tui/dist/autocomplete.js:applyCompletion.)
  */
 function simulateApplyCompletion(line: string, value: string): string {
-  const cmdPrefix = "/wierd-voice ";
+  const cmdPrefix = "/voice ";
   if (!line.startsWith(cmdPrefix)) return line;
   return cmdPrefix + value;
 }
@@ -718,16 +718,16 @@ describe("index.getArgumentCompletions (post-overlay rework)", () => {
     const items = simulateGetArgumentCompletions("sta");
     const status = items!.find((i) => i.label === "status");
     expect(status?.value).toBe("status");
-    const after = simulateApplyCompletion("/wierd-voice sta", status!.value);
-    expect(after).toBe("/wierd-voice status");
+    const after = simulateApplyCompletion("/voice sta", status!.value);
+    expect(after).toBe("/voice status");
   });
 
   it("Tab on `say` lands cursor past a trailing space (regression: subcommand not eaten)", () => {
     const items = simulateGetArgumentCompletions("sa");
     const say = items!.find((i) => i.label === "say");
     expect(say).toBeDefined();
-    const after = simulateApplyCompletion("/wierd-voice sa", say!.value);
-    expect(after).toBe("/wierd-voice say ");
+    const after = simulateApplyCompletion("/voice sa", say!.value);
+    expect(after).toBe("/voice say ");
   });
 });
 

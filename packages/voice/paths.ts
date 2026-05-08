@@ -6,8 +6,8 @@
  *
  * - `config.json` — user-editable settings (see config.ts).
  * - `last.wav`    — most recent synthesized audio, overwritten on every
- *                   summary playback and on `/wierd-voice say`. Read by
- *                   `/wierd-voice replay`.
+ *                   summary playback and on `/voice say`. Read by
+ *                   `/voice replay`.
  *
  * The directory is created lazily on first write — we never call
  * `mkdirSync` from module load.

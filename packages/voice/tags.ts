@@ -87,7 +87,7 @@ export function countCharsExcludingTags(text: string): number {
  * don't leave double spaces in the spoken text.
  *
  * Returns the cleaned text plus the list of dropped tokens (for logging
- * / `/wierd-voice status` debugging).
+ * / `/voice status` debugging).
  */
 export function validateTags(text: string): { text: string; dropped: string[] } {
   const dropped: string[] = [];
