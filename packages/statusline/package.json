@@ -38,7 +38,7 @@
     ]
   },
   "dependencies": {
-    "@wierdbytes/pi-common": "^0.1.0",
+    "@wierdbytes/pi-common": "^0.3.0",
     "@wierdbytes/pi-events": "^0.1.0"
   },
   "devDependencies": {

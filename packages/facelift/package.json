@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-facelift",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "description": "Cosmetic facelift for built-in pi tool output — open-right rounded frames, syntax-highlighted reads, status-aware bash summaries, find/grep.",
   "type": "module",
   "files": [
@@ -52,7 +52,8 @@
     "demo": "bun scripts/demo.ts"
   },
   "dependencies": {
-    "@shikijs/cli": "^4.0.2"
+    "@shikijs/cli": "^4.0.2",
+    "@wierdbytes/pi-common": "^0.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.74.0",

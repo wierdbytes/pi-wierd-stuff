@@ -2,8 +2,18 @@
 
 Shared TUI building blocks for [pi coding agent](https://github.com/badlogic/pi-mono) extensions inside this monorepo.
 
-## Features:
-a settings modal — a one-call API for letting users tweak an extension's persisted config from inside Pi.
+## Features
+
+Two independent submodules ship today, each behind its own subpath
+export:
+
+- `@wierdbytes/pi-common/settings` — a centred **settings modal** for
+  letting users tweak an extension's persisted config from inside pi.
+- `@wierdbytes/pi-common/tool-frame` — the open-right rounded
+  **tool-frame** primitives used by `@wierdbytes/pi-facelift` and
+  `@wierdbytes/pi-web` to wrap `renderShell: "self"` tool output.
+
+### Settings modal
 
 ```text
 ╭── @wierdbytes/pi-voice ─────────────────────────────────-────────╮
@@ -190,6 +200,91 @@ ctx.ui.custom((tui, theme, _keybindings, done) => {
   return body;
 }, { overlay: true, overlayOptions: { anchor: "center" } });
 ```
+
+## Tool-frame
+
+The open-right rounded box used by extensions that draw their own
+tool output (`renderShell: "self"`):
+
+```text
+╭── read /some/file.ext ─────
+│   12 lines
+│ 535 │ const x = 1;
+│ 536 │ const y = 2;
+╰─────────────────────────
+```
+
+- The right side is intentionally open so long lines fade out
+  naturally instead of being clipped by a closing rail.
+- Status colour is sourced from host theme tokens — `success` for
+  finished tools, `warning` while still streaming, `error` on
+  failure — so the chrome inherits the user's palette.
+- Multi-line titles render as a sub-tree, useful for batch shapes
+  (`web_fetch 5 pages` with one URL per continuation row) and shell
+  line continuations (`bash cd /tmp && \` followed by `│ echo …`).
+
+### Quickstart
+
+```ts
+import {
+  frameTop,
+  frameResult,
+  frameResultWithBottomLabel,
+  getDefaultFrameWidth,
+  getFrameStatus,
+  renderToolError,
+} from "@wierdbytes/pi-common/tool-frame";
+
+pi.registerTool({
+  name: "my_tool",
+  // ...
+  renderShell: "self",
+
+  renderCall(args, theme, ctx) {
+    const w = getDefaultFrameWidth();
+    const title = `${theme.fg("toolTitle", theme.bold("my_tool"))} ${theme.fg(
+      "accent",
+      args.target,
+    )}`;
+    return new Text(frameTop(title, getFrameStatus(ctx), theme, w), 0, 0);
+  },
+
+  renderResult(result, options, theme, ctx) {
+    const w = getDefaultFrameWidth();
+    const status = getFrameStatus(ctx);
+    if (ctx.isError)  return new Text(renderToolError(text, theme, w), 0, 0);
+    if (options.isPartial)
+      return new Text(frameResult("working…", "pending", theme, w), 0, 0);
+    if (!options.expanded)
+      return new Text(
+        frameResultWithBottomLabel(
+          preview,
+          theme.fg("dim", "ctrl+o to expand"),
+          status,
+          theme,
+          w,
+        ),
+        0,
+        0,
+      );
+    return new Text(frameResult(body, status, theme, w), 0, 0);
+  },
+});
+```
+
+### API summary
+
+| Helper                              | Returns                                                              |
+| ----------------------------------- | -------------------------------------------------------------------- |
+| `frameTop(title, status, theme, w)` | top border `╭── title ───`, multi-line titles render as a sub-tree |
+| `frameBottom(status, theme, w)`     | bottom border `╰─────────`                                       |
+| `frameBottomWithLabel(label, ...)`  | `╰── label ──────` (use for inline summaries / hints)              |
+| `frameBodyLines(text, ...)`         | rail-prefixes each line, terminal-style `\r` collapsing              |
+| `frameResult(body, ...)`            | `frameBodyLines` + `frameBottom`                                     |
+| `frameResultWithBottomLabel(...)`   | `frameBodyLines` + `frameBottomWithLabel`                            |
+| `renderToolError(message, theme, w)`| sugar for `frameResult(theme.fg("error", …), "error", …)`             |
+| `getFrameStatus(ctx)`               | `"pending" \| "success" \| "error"` from `ctx.isError`/`ctx.isPartial` |
+| `getDefaultFrameWidth(maxCap?)`     | `process.stdout.columns` (or fallbacks) clamped to optional cap      |
 
 ## License
 

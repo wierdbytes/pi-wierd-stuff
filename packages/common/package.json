@@ -1,11 +1,12 @@
 {
   "name": "@wierdbytes/pi-common",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "description": "Shared TUI building blocks for pi coding agent extensions — settings modal, frame helpers, common field renderers.",
   "type": "module",
   "files": [
     "*.ts",
     "settings/**/*.ts",
+    "tool-frame/**/*.ts",
     "*.md",
     "*.json",
     "LICENSE"
@@ -36,7 +37,8 @@
   "types": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./settings": "./settings/index.ts"
+    "./settings": "./settings/index.ts",
+    "./tool-frame": "./tool-frame/index.ts"
   },
   "scripts": {
     "test": "vitest run",

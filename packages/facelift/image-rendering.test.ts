@@ -30,6 +30,15 @@ class MockText {
 	}
 }
 
+// Minimal duck-typed theme: the new shared frame helpers in
+// `@wierdbytes/pi-common/tool-frame` invoke `theme.fg(token, str)` to colour
+// the chrome, so the empty-object placeholder this test used previously no
+// longer suffices. Pass-through `fg` keeps assertions focused on structure.
+const mockTheme = {
+	fg: (_key: string, text: string) => text,
+	bold: (text: string) => text,
+};
+
 function mockToolFactory(exec: any) {
 	return (_cwd: string) => ({
 		name: "mock",
@@ -136,7 +145,7 @@ describe("image rendering terminal detection", () => {
 		}));
 
 		const result = await readTool.execute("t1", { path: "media/inline-image.png" }, null, null, {});
-		const rendered = readTool.renderResult(result, {}, {}, {
+		const rendered = readTool.renderResult(result, {}, mockTheme, {
 			lastComponent: new MockText(),
 			isError: false,
 			state: {},

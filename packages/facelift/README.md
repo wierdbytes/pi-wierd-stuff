@@ -14,10 +14,19 @@ tool output.
 - **`bash`** — open-right frame with the duration + status pinned to the
   bottom border
 
-  Status color follows pi: **green** on success, **yellow** while still
-  running, **red** on non-zero / timeout / abort. The exit summary is
-  consistent across statuses (`✓ exit 0`, `✗ exit N`, `⚡ timed out`,
-  `⚡ aborted`). Duration is shown as `3.3s` / `1m3s` / `2h5m`.
+  Status colour follows the host theme tokens (`success` while finished,
+  `warning` while running, `error` on non-zero / timeout / abort) so the
+  chrome blends with whatever palette the user is running. The exit
+  summary is consistent across statuses (`✓ exit 0`, `✗ exit N`,
+  `⚡ timed out`, `⚡ aborted`). Duration is shown as `3.3s` / `1m3s` /
+  `2h5m`.
+
+  > Frame primitives (top/bottom borders, rail, multi-line title
+  > sub-tree) live in [`@wierdbytes/pi-common/tool-frame`][cf] and are
+  > shared with `@wierdbytes/pi-web` so every tool that opts into
+  > `renderShell: "self"` looks the same.
+
+  [cf]: ../common/README.md#tool-frame
 - **`ls`** — Nerd Font file icons + tree-oriented rendering.
 - **`find` / `grep`** — grouped / highlighted rendering on top of pi's
   built-in tool implementations (no extra search backend, no extra

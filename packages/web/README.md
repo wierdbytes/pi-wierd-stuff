@@ -10,6 +10,29 @@ Web tools for the [pi](https://github.com/badlogic/pi-mono) coding agent:
 
 ## Tools
 
+Both tools render with the open-right rounded chrome from
+[`@wierdbytes/pi-common/tool-frame`][cf] (`renderShell: "self"`) so
+output sits in a status-coloured frame that matches
+`@wierdbytes/pi-facelift`'s `read` / `bash` / `ls` / `find` / `grep`:
+
+```text
+╭── web_search "query" ────────────────────────
+│   2 sources · 3 cites
+╰── ctrl+o to expand ───────────────────────────
+```
+
+For batch `web_fetch` calls, the URLs render as a sub-tree under the
+top border:
+
+```text
+╭── web_fetch 3 pages ─────────────────────────
+│           │ a.example.com/one
+│           │ b.example.com/two
+│           ╰ c.example.com/three
+```
+
+[cf]: ../common/README.md#tool-frame
+
 ### `web_search`
 
 A one-shot `POST /v1/messages` call backed by Anthropic's server-side

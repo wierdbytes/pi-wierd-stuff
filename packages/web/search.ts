@@ -270,9 +270,19 @@ export function createWebSearchTool(
     description: TOOL_DESCRIPTION,
     promptSnippet: "web_search - Web search via Anthropic's Claude with citations",
     parameters: WebSearchSchema,
-    renderShell: "default",
+    // we draw our own open-right rounded frame via @wierdbytes/pi-common/tool-frame
+    renderShell: "self",
 
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      // Heartbeat: web_search makes a single blocking POST to /v1/messages
+      // and returns; without an early `onUpdate` call, pi-tui never invokes
+      // `renderResult` during the pending phase, so the user only sees the
+      // top border (from `renderCall`) until the API resolves. A no-op
+      // `onUpdate({ content: [] })` kicks off `renderResult`, which in turn
+      // sets up the 1 s `setInterval(invalidate, ...)` timer that keeps
+      // the elapsed-time bottom-label live.
+      onUpdate?.({ content: [] });
+
       try {
         const auth = await resolveAuth(ctx);
         const model = options.getModel() || DEFAULT_MODEL;

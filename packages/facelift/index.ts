@@ -40,8 +40,21 @@ import type {
 	ReadToolInput,
 	ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { codeToANSI } from "@shikijs/cli";
+import {
+	formatDuration,
+	frameBodyLines,
+	frameBottom,
+	frameBottomWithLabel,
+	frameResult,
+	frameResultWithBottomLabel,
+	frameTop,
+	getFrameStatus,
+	renderToolError,
+	type FrameStatus,
+} from "@wierdbytes/pi-common/tool-frame";
 import type { BundledLanguage, BundledTheme } from "shiki";
 
 // ---------------------------------------------------------------------------
@@ -149,10 +162,6 @@ function resolveBaseBackground(theme: BgTheme | null | undefined): void {
 	RST = `\x1b[0m${BG_BASE}`;
 }
 
-function renderToolError(error: string, theme: FgTheme): string {
-	return frameResult(theme.fg("error", error), "error");
-}
-
 const ESC_RE = "\u001b";
 const ANSI_CAPTURE_RE = new RegExp(`${ESC_RE}\\[([0-9;]*)m`, "g");
 
@@ -207,228 +216,10 @@ function lnum(n: number, w: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Frame — open-right rounded box for tool output.
-//
-// Replaces pi core's `toolSuccessBg` fill (the green left rail in the
-// default tool shell) with a status-aware single-line frame that reads
-// the same way as the settings modal in pi-wierd-stuff
-// (`packages/common/settings/frame.ts`), but with the right side left
-// open so long lines fade out naturally:
-//
-//     ╭── read /some/file.ext ─────
-//     │   12 lines
-//     │ 535 │ const x = 1;
-//     │ 536 │ const y = 2;
-//     ╰─────────────────────────
-//
-// Tools opt in by setting `renderShell: "self"` on their definition,
-// which tells pi core to skip the colored Box wrapper and let the tool
-// draw its own framing.
+// Frame helpers now live in `@wierdbytes/pi-common/tool-frame`. Status
+// border colours follow host theme tokens (`success` / `warning` /
+// `error`) instead of the previous fixed RGB palette.
 // ---------------------------------------------------------------------------
-
-type FrameStatus = "pending" | "success" | "error";
-
-function getFrameStatus(ctx: { isError?: boolean; isPartial?: boolean }): FrameStatus {
-	if (ctx.isError) return "error";
-	if (ctx.isPartial) return "pending";
-	return "success";
-}
-
-function getFrameColor(status: FrameStatus): string {
-	switch (status) {
-		case "error":
-			return FG_RED;
-		case "pending":
-			return FG_YELLOW;
-		default:
-			return FG_GREEN;
-	}
-}
-
-/** Inner content width — terminal width minus the `│` left rail (1 col). */
-function bodyW(): number {
-	return Math.max(1, termW() - 1);
-}
-
-/**
- * Find the visible column of the first space character in an ANSI-formatted
- * string, ignoring ANSI escape sequences. Returns -1 if no space is found
- * before a newline (or end of string).
- *
- * Used by `frameTop` to align continuation rows under the first argument of
- * the tool title (e.g., the column where `cd` starts in `bash cd …`).
- */
-function firstVisibleSpace(s: string): number {
-	let visiblePos = 0;
-	let i = 0;
-	while (i < s.length) {
-		const ch = s[i];
-		if (ch === "\x1b") {
-			const next = s[i + 1];
-			if (next === "[") {
-				const end = s.indexOf("m", i + 2);
-				if (end < 0) return -1;
-				i = end + 1;
-				continue;
-			}
-			// Unknown escape — bail out
-			return -1;
-		}
-		if (ch === "\n") return -1;
-		if (ch === " ") return visiblePos;
-		visiblePos += 1;
-		i += 1;
-	}
-	return -1;
-}
-
-/**
- * Render the top border of the frame: `╭── <title> ─────`.
- * The title may contain ANSI codes; visible width is measured with pi-tui.
- * Truncated with `…` if it would overflow the terminal width.
- *
- * Multi-line titles (e.g., a multi-line bash command) are rendered with the
- * first line as the top border and remaining lines as rail-prefixed
- * continuation rows in a sub-tree:
- *
- *     ╭── bash cd /…/pi-wierd-stuff && \ ──────────────
- *     │      │ echo "line 1" \
- *     │      ╚ echo "line 2"
- *
- * Each continuation row is composed of:
- *   • the outer frame rail `│` (frame status color)
- *   • padding sized so the sub-tree connector lines up with the first arg
- *     character of the first row
- *   • a sub-tree connector (`│` for non-last rows, `╰` for the last)
- *   • a single separator space
- *   • the row's content (callers are expected to wrap each line in the
- *     same color as the first-row args so the sub-tree text matches)
- *
- * Trailing dashes are only emitted on the first row so continuation rows
- * stay clean.
- */
-function frameTop(titleAnsi: string, status: FrameStatus): string {
-	const color = getFrameColor(status);
-	const w = termW();
-	const titleLines = titleAnsi.split("\n");
-	const firstTitle = titleLines[0];
-	const continuations = titleLines.slice(1);
-
-	// Layout: `╭` (1) + `──` (2) + ` ` (1) + title + ` ` (1) + trailing dashes (≥1)
-	const minTrailing = 1;
-	const fixed = 1 + 2 + 1 + 1 + minTrailing;
-	const maxTitleW = Math.max(0, w - fixed);
-
-	let title = firstTitle;
-	let tw = visibleWidth(firstTitle);
-	if (tw > maxTitleW) {
-		title = truncateToWidth(firstTitle, maxTitleW, "…");
-		tw = visibleWidth(title);
-	}
-	const trailing = Math.max(minTrailing, w - 1 - 2 - 1 - tw - 1);
-	const firstLine = `${color}╭──${RST} ${title} ${color}${"─".repeat(trailing)}${RST}`;
-
-	if (continuations.length === 0) return firstLine;
-
-	// Continuation rows: rail + padding + sub-tree connector + space + content.
-	// First line layout:
-	//   col 1: `╭`
-	//   cols 2-3: `──`
-	//   col 4: literal space
-	//   cols 5..: title (toolName + space + args…)
-	// If the toolName ends at visible-offset N (i.e., the space is at offset N),
-	// the first arg char sits at column N + 6 (1-indexed). We align the sub-tree
-	// connector two columns before it (at contentCol - 2) and put the content
-	// itself at the same column as the first row's first arg char, so the rows
-	// read as a tree hanging off the title.
-	const toolNameEnd = firstVisibleSpace(firstTitle);
-	const contentCol = toolNameEnd >= 0 ? toolNameEnd + 6 : 6;
-	const padBetween = " ".repeat(Math.max(0, contentCol - 4));
-	const rail = `${color}│${RST}`;
-	const innerW = Math.max(1, w - contentCol + 1);
-	const lastIdx = continuations.length - 1;
-
-	const contLines = continuations.map((line, idx) => {
-		const connectorChar = idx === lastIdx ? "╰" : "│";
-		const connector = `${color}${connectorChar}${RST}`;
-		const fitted = visibleWidth(line) > innerW ? truncateToWidth(line, innerW, "…") : line;
-		return `${rail}${padBetween}${connector} ${fitted}`;
-	});
-
-	return [firstLine, ...contLines].join("\n");
-}
-
-/** Render the bottom border of the frame: `╰─────────────`. */
-function frameBottom(status: FrameStatus): string {
-	const color = getFrameColor(status);
-	const w = termW();
-	return `${color}╰${"─".repeat(Math.max(1, w - 1))}${RST}`;
-}
-
-/**
- * Render the bottom border with an inline label, mirroring `frameTop`:
- * `╰── <label> ──────`. Used by the bash renderer to keep the exit
- * summary attached to the frame instead of as the first body line.
- */
-function frameBottomWithLabel(labelAnsi: string, status: FrameStatus): string {
-	const color = getFrameColor(status);
-	const w = termW();
-	const minTrailing = 1;
-	const fixed = 1 + 2 + 1 + 1 + minTrailing;
-	const maxLabelW = Math.max(0, w - fixed);
-
-	let label = labelAnsi;
-	let lw = visibleWidth(labelAnsi);
-	if (lw > maxLabelW) {
-		label = truncateToWidth(labelAnsi, maxLabelW, "…");
-		lw = visibleWidth(label);
-	}
-	const trailing = Math.max(minTrailing, w - 1 - 2 - 1 - lw - 1);
-	return `${color}╰──${RST} ${label} ${color}${"─".repeat(trailing)}${RST}`;
-}
-
-/**
- * Prefix every line in `text` with the frame's left rail (`│`).
- * Each logical line is right-truncated to `bodyW()` so the visible width
- * including the rail never exceeds `termW()`.
- *
- * Embedded carriage returns (`\r`) are collapsed using terminal-style
- * overwrite semantics: only the content after the last `\r` on a line is
- * kept. Without this, sequences like `git rebase`'s
- * `Rebasing (1/1)\rSuccessfully rebased…` would clobber the rail when the
- * terminal honors `\r` as cursor-reset, leaving the line visibly
- * unprefixed.
- */
-function frameBodyLines(text: string, status: FrameStatus): string {
-	const color = getFrameColor(status);
-	const rail = `${color}│${RST}`;
-	const w = bodyW();
-	return text
-		.split("\n")
-		.map((line) => {
-			// Terminal-style \r handling: keep only what survives after the last
-			// carriage return so the rail isn't overwritten by progress messages.
-			const lastCR = line.lastIndexOf("\r");
-			const safeLine = lastCR >= 0 ? line.slice(lastCR + 1) : line;
-			const fitted = safeLine && visibleWidth(safeLine) > w ? truncateToWidth(safeLine, w, "") : safeLine;
-			return `${rail}${fitted}`;
-		})
-		.join("\n");
-}
-
-/** Wrap `body` as the result-side of the frame: rail-prefixed lines + bottom border.
- *  An empty `body` collapses to just the bottom border, mirroring
- *  `frameResultWithBottomLabel` so the frame doesn't show an empty rail row. */
-function frameResult(body: string, status: FrameStatus): string {
-	const body_ = body ? `${frameBodyLines(body, status)}\n` : "";
-	return `${body_}${frameBottom(status)}`;
-}
-
-/** Same as `frameResult` but embeds `label` inline in the bottom border. */
-function frameResultWithBottomLabel(body: string, labelAnsi: string, status: FrameStatus): string {
-	const body_ = body ? `${frameBodyLines(body, status)}\n` : "";
-	return `${body_}${frameBottomWithLabel(labelAnsi, status)}`;
-}
 
 // ---------------------------------------------------------------------------
 // Language detection
@@ -645,21 +436,6 @@ export const __imageInternals = {
 };
 
 /**
- * Compact human-readable duration: `3.3s`, `1m3s`, `2h5m`.
- * Mirrors the style requested by the user for the bash bottom-border label.
- */
-function formatDuration(ms: number): string {
-	const totalSec = Math.max(0, ms) / 1000;
-	if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
-	const totalMin = Math.floor(totalSec / 60);
-	const sec = Math.floor(totalSec % 60);
-	if (totalMin < 60) return sec > 0 ? `${totalMin}m${sec}s` : `${totalMin}m`;
-	const hours = Math.floor(totalMin / 60);
-	const min = totalMin % 60;
-	return min > 0 ? `${hours}h${min}m` : `${hours}h`;
-}
-
-/**
  * Get human-readable file size
  */
 function humanSize(bytes: number): string {
@@ -837,8 +613,9 @@ async function renderFileContent(
 	const lg = lang(filePath);
 	const hl = await hlBlock(show.join("\n"), lg);
 
-	// Reserve 2 cols for the outer frame's `│ ` rail — rendered by frameBodyLines.
-	const tw = bodyW();
+	// Reserve 1 col for the outer frame's `│` rail (drawn later by
+	// `frameBodyLines`) so the highlighted lines fit inside the frame.
+	const tw = Math.max(1, termW() - 1);
 	const startLine = offset;
 	const endLine = startLine + show.length - 1;
 	const nw = Math.max(3, String(endLine).length);
@@ -995,6 +772,15 @@ type ToolResultLike<TDetails = unknown> = AgentToolResult<TDetails | undefined>;
 type TextComponentLike = { setText(value: string): void; getText?: () => string };
 type TextComponentCtor = new (text?: string, x?: number, y?: number) => TextComponentLike;
 type ThemeLike = BgTheme & FgTheme & { bold: (text: string) => string };
+
+/**
+ * Cast the loose `ThemeLike` (used by the duck-typed render hooks) to the
+ * real `Theme` class expected by the shared
+ * `@wierdbytes/pi-common/tool-frame` helpers. The helpers only call
+ * `theme.fg(token, str)`, which `ThemeLike` already provides, so the cast
+ * is structurally safe at runtime.
+ */
+const asTheme = (theme: ThemeLike): Theme => theme as unknown as Theme;
 type RenderContextLike<TState extends Record<string, unknown> = Record<string, unknown>> = {
 	lastComponent?: TextComponentLike;
 	state: TState;
@@ -1208,7 +994,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			const offset = args.offset ? ` ${theme.fg("muted", `from line ${args.offset}`)}` : "";
 			const limit = args.limit ? ` ${theme.fg("muted", `(${args.limit} lines)`)}` : "";
 			const title = `${theme.fg("toolTitle", theme.bold("read"))} ${theme.fg("accent", sp(fp))}${offset}${limit}`;
-			text.setText(frameTop(title, getFrameStatus(ctx)));
+			text.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
 			return text;
 		},
 
@@ -1221,9 +1007,11 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			resolveBaseBackground(theme);
 			const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
 			const status = getFrameStatus(ctx);
+			const t = asTheme(theme);
+			const w = termW();
 
 			if (ctx.isError) {
-				text.setText(renderToolError(getTextContent(result) || "Error", theme));
+				text.setText(renderToolError(getTextContent(result) || "Error", t, w));
 				return text;
 			}
 
@@ -1237,35 +1025,41 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const sizeStr = humanSize(byteSize);
 				const mimeStr = d.mimeType ?? "image";
 
-				text.setText(frameResult(`${fileIcon(d.filePath)}${FG_DIM}${mimeStr} · ${sizeStr}${RST}`, status));
+				text.setText(frameResult(`${fileIcon(d.filePath)}${FG_DIM}${mimeStr} · ${sizeStr}${RST}`, status, t, w));
 				return text;
 			}
 
 			if (d?._type === "readFile" && d.content) {
-				const key = `read:${d.filePath}:${d.offset}:${d.lineCount}:${termW()}:${status}`;
+				const key = `read:${d.filePath}:${d.offset}:${d.lineCount}:${w}:${status}`;
 				if (ctx.state._rk !== key) {
 					ctx.state._rk = key;
 					// Initial render: just the frame chrome until shiki resolves.
 					// Once `renderFileContent` returns we re-cache with the highlighted body.
-					ctx.state._rt = frameResult("", status);
+					ctx.state._rt = frameResult("", status, t, w);
 
 					const maxShow = ctx.expanded ? d.lineCount : MAX_PREVIEW_LINES;
 					renderFileContent(d.content, d.filePath, d.offset, maxShow)
 						.then((rendered: string) => {
 							if (ctx.state._rk !== key) return;
-							ctx.state._rt = frameResult(rendered, status);
+							ctx.state._rt = frameResult(rendered, status, t, w);
 							ctx.invalidate();
 						})
-						.catch(() => {});
+						.catch((err: unknown) => {
+							// Surface to stderr so silent regressions in the highlighter
+							// (e.g. a stale helper reference) are visible during dev
+							// instead of producing an empty-body frame.
+							const msg = err instanceof Error ? err.message : String(err);
+							console.error(`pi-facelift: read render failed: ${msg}`);
+						});
 				}
-				text.setText(ctx.state._rt ?? frameResult("", status));
+				text.setText(ctx.state._rt ?? frameResult("", status, t, w));
 				return text;
 			}
 
 			// Fallback
 			const fallback = result.content?.[0];
 			const fallbackText = fallback && isTextContent(fallback) ? fallback.text : "read";
-			text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status));
+			text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status, t, w));
 			return text;
 		},
 	});
@@ -1334,7 +1128,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const restCmd = cmdLines.slice(1).map((line) => line.replace(/^\s+/, ""));
 				const firstTitle = `${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", firstCmd)}${timeout}`;
 				const title = [firstTitle, ...restCmd.map((line) => theme.fg("accent", line))].join("\n");
-				t.setText(frameTop(title, getFrameStatus(ctx)));
+				t.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
 				return t;
 			},
 
@@ -1347,6 +1141,8 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				resolveBaseBackground(theme);
 				const t = ctx.lastComponent ?? new TextComponent("", 0, 0);
 				const status = getFrameStatus(ctx);
+				const frameTheme = asTheme(theme);
+				const frameWidth = termW();
 				const state = ctx.state;
 
 				// Live timer: tick every second while still streaming, freeze on final/error.
@@ -1413,9 +1209,9 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const body = out.join("\n");
 
 				if (label) {
-					t.setText(frameResultWithBottomLabel(body, label, status));
+					t.setText(frameResultWithBottomLabel(body, label, status, frameTheme, frameWidth));
 				} else {
-					t.setText(frameResult(body, status));
+					t.setText(frameResult(body, status, frameTheme, frameWidth));
 				}
 				return t;
 			},
@@ -1461,7 +1257,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const fp = args.path ?? ".";
 				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
 				const title = `${theme.fg("toolTitle", theme.bold("ls"))} ${theme.fg("accent", sp(fp))}`;
-				text.setText(frameTop(title, getFrameStatus(ctx)));
+				text.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
 				return text;
 			},
 
@@ -1469,9 +1265,11 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				resolveBaseBackground(theme);
 				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
 				const status = getFrameStatus(ctx);
+				const t = asTheme(theme);
+				const w = termW();
 
 				if (ctx.isError) {
-					text.setText(renderToolError(getTextContent(result) || "Error", theme));
+					text.setText(renderToolError(getTextContent(result) || "Error", t, w));
 					return text;
 				}
 
@@ -1479,13 +1277,13 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				if (d?._type === "lsResult" && d.text) {
 					const tree = renderTree(d.text, d.path);
 					const info = `${FG_DIM}${d.entryCount} entries${RST}`;
-					text.setText(frameResultWithBottomLabel(tree, info, status));
+					text.setText(frameResultWithBottomLabel(tree, info, status, t, w));
 					return text;
 				}
 
 				const fallback = result.content?.[0];
 				const fallbackText = fallback && isTextContent(fallback) ? fallback.text : "listed";
-				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status));
+				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status, t, w));
 				return text;
 			},
 		});
@@ -1530,7 +1328,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const path = args.path ? ` ${theme.fg("muted", `in ${sp(args.path)}`)}` : "";
 				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
 				const title = `${theme.fg("toolTitle", theme.bold("find"))} ${theme.fg("accent", pattern)}${path}`;
-				text.setText(frameTop(title, getFrameStatus(ctx)));
+				text.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
 				return text;
 			},
 
@@ -1543,9 +1341,11 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				resolveBaseBackground(theme);
 				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
 				const status = getFrameStatus(ctx);
+				const t = asTheme(theme);
+				const w = termW();
 
 				if (ctx.isError) {
-					text.setText(renderToolError(getTextContent(result) || "Error", theme));
+					text.setText(renderToolError(getTextContent(result) || "Error", t, w));
 					return text;
 				}
 
@@ -1553,13 +1353,13 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				if (d?._type === "findResult" && d.text) {
 					const rendered = renderFindResults(d.text);
 					const info = `${FG_DIM}${d.matchCount} files${RST}`;
-					text.setText(frameResultWithBottomLabel(rendered, info, status));
+					text.setText(frameResultWithBottomLabel(rendered, info, status, t, w));
 					return text;
 				}
 
 				const fallback = result.content?.[0];
 				const fallbackText = fallback && isTextContent(fallback) ? fallback.text : "found";
-				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status));
+				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status, t, w));
 				return text;
 			},
 		});
@@ -1615,7 +1415,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const glob = args.glob ? ` ${theme.fg("muted", `(${args.glob})`)}` : "";
 				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
 				const title = `${theme.fg("toolTitle", theme.bold("grep"))} ${theme.fg("accent", pattern)}${path}${glob}`;
-				text.setText(frameTop(title, getFrameStatus(ctx)));
+				text.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
 				return text;
 			},
 
@@ -1628,37 +1428,42 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				resolveBaseBackground(theme);
 				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
 				const status = getFrameStatus(ctx);
+				const t = asTheme(theme);
+				const w = termW();
 
 				if (ctx.isError) {
-					text.setText(renderToolError(getTextContent(result) || "Error", theme));
+					text.setText(renderToolError(getTextContent(result) || "Error", t, w));
 					return text;
 				}
 
 				const d = result.details;
 				if (d?._type === "grepResult" && d.text) {
-					const key = `grep:${d.pattern}:${d.matchCount}:${termW()}:${status}`;
+					const key = `grep:${d.pattern}:${d.matchCount}:${w}:${status}`;
 					if (ctx.state._gk !== key) {
 						ctx.state._gk = key;
 						const info = `${FG_DIM}${d.matchCount} matches${RST}`;
-						ctx.state._gt = frameResultWithBottomLabel("", info, status);
+						ctx.state._gt = frameResultWithBottomLabel("", info, status, t, w);
 
 						renderGrepResults(d.text, d.pattern)
 							.then((rendered: string) => {
 								if (ctx.state._gk !== key) return;
-								ctx.state._gt = frameResultWithBottomLabel(rendered, info, status);
+								ctx.state._gt = frameResultWithBottomLabel(rendered, info, status, t, w);
 								ctx.invalidate();
 							})
-							.catch(() => {});
+							.catch((err: unknown) => {
+								const msg = err instanceof Error ? err.message : String(err);
+								console.error(`pi-facelift: grep render failed: ${msg}`);
+							});
 					}
 					text.setText(
-						ctx.state._gt ?? frameResultWithBottomLabel("", `${FG_DIM}${d.matchCount} matches${RST}`, status),
+						ctx.state._gt ?? frameResultWithBottomLabel("", `${FG_DIM}${d.matchCount} matches${RST}`, status, t, w),
 					);
 					return text;
 				}
 
 				const fallback = result.content?.[0];
 				const fallbackText = fallback && isTextContent(fallback) ? fallback.text : "searched";
-				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status));
+				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status, t, w));
 				return text;
 			},
 		});

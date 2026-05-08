@@ -14,7 +14,7 @@
     },
     "packages/common": {
       "name": "@wierdbytes/pi-common",
-      "version": "0.1.1",
+      "version": "0.3.0",
       "devDependencies": {
         "@earendil-works/pi-ai": "^0.74.0",
         "@earendil-works/pi-coding-agent": "^0.74.0",
@@ -39,9 +39,10 @@
     },
     "packages/facelift": {
       "name": "@wierdbytes/pi-facelift",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "dependencies": {
         "@shikijs/cli": "^4.0.2",
+        "@wierdbytes/pi-common": "^0.3.0",
       },
       "devDependencies": {
         "@earendil-works/pi-ai": "^0.74.0",
@@ -87,7 +88,7 @@
     },
     "packages/web": {
       "name": "@wierdbytes/pi-web",
-      "version": "0.3.1",
+      "version": "0.5.0",
       "dependencies": {
         "@wierdbytes/pi-common": "^0.1.0",
         "puppeteer": "^24.0.0",

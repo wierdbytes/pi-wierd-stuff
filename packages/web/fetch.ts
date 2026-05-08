@@ -382,6 +382,14 @@ export function createWebFetchTool(
     parameters: WebFetchSchema,
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      // Heartbeat: kick off `renderResult` immediately so the pending
+      // box is fully drawn (top + body + bottom-label with live timer)
+      // and the renderer's interval-driven 1 s invalidate can keep
+      // ticking. Single-URL fetches don't otherwise emit `onUpdate`
+      // until the whole pipeline resolves; without this the user only
+      // sees the top border drawn by `renderCall`.
+      onUpdate?.({ content: [] });
+
       const sessionModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
       const model = options.getFetchModel(ctx) || sessionModel;
       const thinkingLevel =
@@ -441,6 +449,8 @@ export function createWebFetchTool(
       );
     },
 
+    // we draw our own open-right rounded frame via @wierdbytes/pi-common/tool-frame
+    renderShell: "self",
     renderCall: renderFetchCall,
     renderResult: renderFetchResult,
   });
