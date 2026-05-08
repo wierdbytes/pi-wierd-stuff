@@ -39,8 +39,9 @@
     },
     "packages/statusline": {
       "name": "@wierdbytes/pi-statusline",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "dependencies": {
+        "@wierdbytes/pi-common": "^0.1.0",
         "@wierdbytes/pi-events": "^0.1.0",
       },
       "devDependencies": {

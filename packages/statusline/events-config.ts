@@ -17,6 +17,25 @@ import { dirname, join } from "node:path";
 export type ToastTimeoutMap = Record<NotifyLevel, number>;
 
 /**
+ * Display-level toggles for the statusline. These were session-local
+ * before but live in the persisted config now so the user's
+ * preferences survive a pi restart.
+ *
+ * Defaults match the original session-local defaults so an upgrade
+ * from a config that doesn't have the `display` slice is invisible.
+ */
+export interface DisplayConfig {
+  /** Master switch for the wierd statusline widget itself. */
+  statuslineEnabled: boolean;
+  /** True ⇒ hide pi's built-in footer (we render our own). */
+  footerHidden: boolean;
+  /** Pin the editor to the bottom of the terminal via the split compositor. */
+  fixedEditorEnabled: boolean;
+  /** Allow the fixed-editor compositor to handle mouse-scroll events. */
+  mouseScrollEnabled: boolean;
+}
+
+/**
  * Settings for the subagents bridge (see `subagents-tracker.ts`).
  *
  * The tracker only renders + emits when `enabled === true`. The
@@ -49,6 +68,8 @@ export interface EventsConfig {
   toastTimeouts: ToastTimeoutMap;
   /** Subagents bridge settings — see `SubagentsConfig`. */
   subagents: SubagentsConfig;
+  /** Display-level toggles — see `DisplayConfig`. */
+  display: DisplayConfig;
 }
 
 /** Built-in defaults — used when the config file is missing or invalid. */
@@ -68,6 +89,12 @@ export const DEFAULT_EVENTS_CONFIG: EventsConfig = Object.freeze({
     toastOnLongCompletion: true,
     toastOnScheduled: false,
   }) as SubagentsConfig,
+  display: Object.freeze({
+    statuslineEnabled: true,
+    footerHidden: true,
+    fixedEditorEnabled: true,
+    mouseScrollEnabled: true,
+  }) as DisplayConfig,
 }) as EventsConfig;
 
 /** Resolve `~/.pi/agent/wierd-statusline/events.json`. */
@@ -144,12 +171,29 @@ export function setSubagentsConfig(
   return next;
 }
 
+/**
+ * Patch the `display` slice and persist. Pass any subset of
+ * `DisplayConfig` keys; missing keys keep their current value.
+ */
+export function setDisplayConfig(
+  config: EventsConfig,
+  patch: Partial<DisplayConfig>,
+): EventsConfig {
+  const next: EventsConfig = {
+    ...config,
+    display: { ...config.display, ...patch },
+  };
+  saveEventsConfig(next);
+  return next;
+}
+
 /** Internal: deep-clone the frozen defaults so callers can mutate. */
 function cloneDefaults(): EventsConfig {
   return {
     version: 1,
     toastTimeouts: { ...DEFAULT_EVENTS_CONFIG.toastTimeouts },
     subagents: { ...DEFAULT_EVENTS_CONFIG.subagents },
+    display: { ...DEFAULT_EVENTS_CONFIG.display },
   };
 }
 
@@ -192,6 +236,14 @@ function mergeWithDefaults(raw: Partial<EventsConfig>): EventsConfig {
     if (typeof sub.toastOnScheduled === "boolean") {
       merged.subagents.toastOnScheduled = sub.toastOnScheduled;
     }
+  }
+
+  if (raw.display && typeof raw.display === "object") {
+    const disp = raw.display as unknown as Record<string, unknown>;
+    if (typeof disp.statuslineEnabled === "boolean") merged.display.statuslineEnabled = disp.statuslineEnabled;
+    if (typeof disp.footerHidden === "boolean") merged.display.footerHidden = disp.footerHidden;
+    if (typeof disp.fixedEditorEnabled === "boolean") merged.display.fixedEditorEnabled = disp.fixedEditorEnabled;
+    if (typeof disp.mouseScrollEnabled === "boolean") merged.display.mouseScrollEnabled = disp.mouseScrollEnabled;
   }
 
   return merged;

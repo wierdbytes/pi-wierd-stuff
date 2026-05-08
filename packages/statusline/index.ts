@@ -21,9 +21,11 @@ import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
 import {
   type EventsConfig,
   loadEventsConfig,
+  setDisplayConfig,
   setSubagentsConfig,
   setToastTimeout,
 } from "./events-config.ts";
+import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
 import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
 import { SubagentsTracker } from "./subagents-tracker.ts";
 import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
@@ -749,10 +751,19 @@ export default function (pi: ExtensionAPI) {
   let fixedFooterComponent: any = null;
   let currentCtx: ExtensionContext | undefined;
 
-  let footerHidden = true;
-  let statuslineEnabled = true;
-  let fixedEditorEnabled = true;
-  let mouseScrollEnabled = true;
+  // Persistent config + the events tracker need to be initialized before
+  // the session-local toggle mirrors below, since those mirrors read
+  // their initial values from `eventsConfig.display`.
+  let eventsConfig: EventsConfig = loadEventsConfig();
+
+  // Session-local mirrors of the persisted display config. Initialized
+  // from disk so user preferences survive a restart; mutated only via
+  // applyDisplayChange() below so the persistence + side-effects stay
+  // in lockstep.
+  let footerHidden = eventsConfig.display.footerHidden;
+  let statuslineEnabled = eventsConfig.display.statuslineEnabled;
+  let fixedEditorEnabled = eventsConfig.display.fixedEditorEnabled;
+  let mouseScrollEnabled = eventsConfig.display.mouseScrollEnabled;
 
   let stashedEditorText: string | null = null;
   let stashedPromptHistory: string[] = readPersistedStashHistory();
@@ -773,7 +784,6 @@ export default function (pi: ExtensionAPI) {
   // to the statusline being mounted, since there's nothing to repaint
   // when the user has run `/wierd-status off`.
 
-  let eventsConfig: EventsConfig = loadEventsConfig();
   const eventsTracker = new EventsTracker(pi, () => eventsConfig);
   eventsTracker.start();
   let eventsTrackerOff: (() => void) | null = null;
@@ -1036,284 +1046,352 @@ export default function (pi: ExtensionAPI) {
     if (statuslineEnabled) enableStatusline(ctx);
   });
 
-  const handleEventsSubcommand = (
+  // ────────────────────────── display-side-effect bus ───────────────────────
+  //
+  // Every Display field's `onChange` routes here so persistence + UI
+  // side-effects fire together. The same code path runs for both the
+  // settings modal and the imperative `on/off/toggle` subcommand.
+  const applyDisplayChange = (
     ctx: ExtensionContext,
-    tokens: string[],
+    patch: Partial<typeof eventsConfig.display>,
   ): void => {
-    const sub = tokens[1];
+    eventsConfig = setDisplayConfig(eventsConfig, patch);
+    const next = eventsConfig.display;
 
-    if (!sub || sub === "status") {
-      const snap = eventsTracker.getSnapshot();
-      const lines = [
-        `chips:    ${snap.chips.length}`,
-        `toast:    ${snap.toast ? `${snap.toast.event.level ?? "info"} — ${snap.toast.event.message}` : "(none)"}`,
-        `log:      ${eventsTracker.getLog().length} entries`,
-        `timeouts: ${Object.entries(eventsConfig.toastTimeouts)
-          .map(([level, ms]) => `${level}=${ms === 0 ? "sticky" : `${ms}ms`}`)
-          .join(" ")}`,
-      ];
-      ctx.ui.notify(lines.join("\n"), "info");
-      return;
+    // statusline master switch flips the whole widget on or off.
+    if ("statuslineEnabled" in patch && patch.statuslineEnabled !== statuslineEnabled) {
+      statuslineEnabled = next.statuslineEnabled;
+      if (statuslineEnabled) enableStatusline(ctx);
+      else disableStatusline(ctx);
     }
 
-    if (sub === "log") {
-      const log = eventsTracker.getLog().slice(0, 16);
-      if (log.length === 0) {
-        ctx.ui.notify("events: log is empty", "info");
-        return;
+    if ("footerHidden" in patch && patch.footerHidden !== footerHidden) {
+      footerHidden = next.footerHidden;
+      if (statuslineEnabled) {
+        if (footerHidden) hidePiFooter(ctx);
+        else restorePiFooter(ctx);
+        // Footer toggle replaces the component in tui.children, so the
+        // compositor's captured reference is stale; reinstall to capture
+        // the new footer (or EmptyFooter) and render it under the editor.
+        if (fixedEditorEnabled && activeTui) installFixedEditorCompositor(ctx, activeTui);
       }
-      const formatted = log
-        .map((e) => {
-          const ts = e.timestamp ? new Date(e.timestamp).toISOString().slice(11, 19) : "--:--:--";
-          const level = e.level ?? "info";
-          const title = e.title || e.source;
-          return `${ts} [${level}] ${title}: ${e.message}`;
-        })
-        .join("\n");
-      ctx.ui.notify(formatted, "info");
-      return;
     }
 
-    if (sub === "clear") {
-      eventsTracker.clearAll();
-      ctx.ui.notify("events: cleared chips and toast", "info");
-      return;
+    if ("fixedEditorEnabled" in patch && patch.fixedEditorEnabled !== fixedEditorEnabled) {
+      fixedEditorEnabled = next.fixedEditorEnabled;
+      if (statuslineEnabled && activeTui) {
+        if (fixedEditorEnabled) installFixedEditorCompositor(ctx, activeTui);
+        else {
+          teardownFixedEditorCompositor();
+          activeTui.requestRender(true);
+        }
+      }
     }
 
-    if (sub === "toast-ms") {
-      const levelArg = tokens[2];
-      const msArg = tokens[3];
-
-      // Bare `events toast-ms` prints the current map.
-      if (!levelArg) {
-        const lines = Object.entries(eventsConfig.toastTimeouts).map(
-          ([level, ms]) => `  ${level.padEnd(8)} ${ms === 0 ? "sticky" : `${ms}ms`}`,
-        );
-        ctx.ui.notify(`toast timeouts:\n${lines.join("\n")}`, "info");
-        return;
+    if ("mouseScrollEnabled" in patch && patch.mouseScrollEnabled !== mouseScrollEnabled) {
+      mouseScrollEnabled = next.mouseScrollEnabled;
+      // Compositor captures the flag at install time; reinstall to pick up.
+      if (statuslineEnabled && fixedEditorEnabled && activeTui) {
+        installFixedEditorCompositor(ctx, activeTui);
       }
-
-      const validLevels: NotifyLevel[] = ["debug", "info", "success", "warning", "error"];
-      if (!validLevels.includes(levelArg as NotifyLevel)) {
-        ctx.ui.notify(
-          `events toast-ms: unknown level '${levelArg}'. Expected one of: ${validLevels.join(", ")}.`,
-          "warning",
-        );
-        return;
-      }
-      if (!msArg) {
-        ctx.ui.notify(
-          "Usage: /wierd-status events toast-ms <level> <ms>  (use 0 for sticky)",
-          "warning",
-        );
-        return;
-      }
-      const ms = Number.parseInt(msArg, 10);
-      if (!Number.isFinite(ms) || ms < 0) {
-        ctx.ui.notify(
-          `events toast-ms: invalid duration '${msArg}'. Expected a non-negative integer.`,
-          "warning",
-        );
-        return;
-      }
-      eventsConfig = setToastTimeout(eventsConfig, levelArg as NotifyLevel, ms);
-      ctx.ui.notify(
-        `events: ${levelArg} toasts now ${ms === 0 ? "sticky until dismissed" : `expire in ${ms}ms`}`,
-        "info",
-      );
-      return;
     }
-
-    ctx.ui.notify(
-      "Usage: /wierd-status events [status | log | clear | toast-ms [<level> <ms>]]",
-      "info",
-    );
   };
 
-  /** Handler for `/wierd-status subagents […]` — toggles the bridge
-   *  to pi-subagents and tunes its toast knobs. */
-  const handleSubagentsSubcommand = (
-    ctx: ExtensionContext,
-    tokens: string[],
-  ): void => {
-    const sub = tokens[1];
-    const cfg = eventsConfig.subagents;
-
-    if (!sub || sub === "status") {
-      const counts = subagentsTracker.getCounts();
-      const lines = [
-        `enabled:               ${cfg.enabled ? "yes" : "no"}`,
-        `running / queued / total: ${counts.running} / ${counts.created} / ${counts.total}`,
-        `long completion ms:    ${cfg.longCompletionMs}`,
-        `toast on failure:      ${cfg.toastOnFailure ? "yes" : "no"}`,
-        `toast on long compl.:  ${cfg.toastOnLongCompletion ? "yes" : "no"}`,
-        `toast on scheduled:    ${cfg.toastOnScheduled ? "yes" : "no"}`,
-      ];
-      ctx.ui.notify(lines.join("\n"), "info");
+  // ────────────────────────── settings modal ─────────────────────────────────
+  //
+  // Owns every persisted knob across three tabs: Display, Toasts,
+  // Subagents. Imperative subcommands (`on/off/toggle`, `events log`,
+  // `events clear`) survive on the side because they're either
+  // single-keystroke shortcuts or print-only utilities.
+  const openConfigOverlay = async (ctx: ExtensionContext): Promise<void> => {
+    if (!ctx.hasUI) {
+      // Non-interactive sessions can't host the overlay; print a
+      // structured status dump so callers (RPC, --print) still see
+      // the live state.
+      printStatusDump(ctx);
       return;
     }
 
-    if (sub === "on" || sub === "off" || sub === "toggle") {
-      const next = sub === "toggle" ? !cfg.enabled : sub === "on";
-      eventsConfig = setSubagentsConfig(eventsConfig, { enabled: next });
-      // Drop any pending state when muting so a re-enable starts clean.
-      if (!next) subagentsTracker.reset();
-      ctx.ui.notify(`subagents bridge ${next ? "enabled" : "disabled"}`, "info");
-      return;
-    }
+    const display = eventsConfig.display;
+    const toasts = eventsConfig.toastTimeouts;
+    const subagents = eventsConfig.subagents;
 
-    if (sub === "long-ms") {
-      const msArg = tokens[2];
-      if (!msArg) {
-        ctx.ui.notify(
-          `subagents long-ms: currently ${cfg.longCompletionMs}ms. Usage: /wierd-status subagents long-ms <ms>`,
-          "info",
-        );
-        return;
-      }
-      const ms = Number.parseInt(msArg, 10);
-      if (!Number.isFinite(ms) || ms < 0) {
-        ctx.ui.notify(
-          `subagents long-ms: invalid duration '${msArg}'. Expected a non-negative integer.`,
-          "warning",
-        );
-        return;
-      }
-      eventsConfig = setSubagentsConfig(eventsConfig, { longCompletionMs: ms });
-      ctx.ui.notify(
-        `subagents: completion toast threshold now ${ms}ms`,
-        "info",
-      );
-      return;
-    }
+    const fields: Field[] = [
+      // ── Display ─────────────────────────────────────────────────────
+      {
+        key: "statuslineEnabled",
+        type: "boolean",
+        tab: "display",
+        label: "Statusline enabled",
+        description: "Master switch for the wierd statusline widget.",
+        value: display.statuslineEnabled,
+      },
+      {
+        key: "footerHidden",
+        type: "boolean",
+        tab: "display",
+        label: "Hide pi footer",
+        description: "Hide pi's built-in footer (we render our own statusline row).",
+        value: display.footerHidden,
+      },
+      {
+        key: "fixedEditorEnabled",
+        type: "boolean",
+        tab: "display",
+        label: "Fixed editor",
+        description: "Pin the editor to the bottom of the terminal via the split compositor.",
+        value: display.fixedEditorEnabled,
+      },
+      {
+        key: "mouseScrollEnabled",
+        type: "boolean",
+        tab: "display",
+        label: "Mouse scroll",
+        description: "Let the fixed-editor compositor handle mouse-scroll events.",
+        value: display.mouseScrollEnabled,
+      },
+      // ── Toasts (per-level lifetime in ms; 0 = sticky) ──────────────
+      {
+        key: "toast.debug",
+        type: "number",
+        tab: "toasts",
+        label: "Debug (ms)",
+        description: "Toast lifetime for `debug`-level events. 0 means sticky-until-dismissed.",
+        value: toasts.debug,
+        min: 0,
+        integer: true,
+      },
+      {
+        key: "toast.info",
+        type: "number",
+        tab: "toasts",
+        label: "Info (ms)",
+        description: "Toast lifetime for `info`-level events. 0 means sticky-until-dismissed.",
+        value: toasts.info,
+        min: 0,
+        integer: true,
+      },
+      {
+        key: "toast.success",
+        type: "number",
+        tab: "toasts",
+        label: "Success (ms)",
+        description: "Toast lifetime for `success`-level events. 0 means sticky-until-dismissed.",
+        value: toasts.success,
+        min: 0,
+        integer: true,
+      },
+      {
+        key: "toast.warning",
+        type: "number",
+        tab: "toasts",
+        label: "Warning (ms)",
+        description: "Toast lifetime for `warning`-level events. 0 means sticky-until-dismissed.",
+        value: toasts.warning,
+        min: 0,
+        integer: true,
+      },
+      {
+        key: "toast.error",
+        type: "number",
+        tab: "toasts",
+        label: "Error (ms)",
+        description: "Toast lifetime for `error`-level events. 0 means sticky-until-dismissed (recommended).",
+        value: toasts.error,
+        min: 0,
+        integer: true,
+      },
+      // ── Subagents bridge ───────────────────────────────────────────
+      {
+        key: "sub.enabled",
+        type: "boolean",
+        tab: "subagents",
+        label: "Subagents bridge",
+        description:
+          "Master switch. When off the tracker stays subscribed but silently drops every event from pi-subagents.",
+        value: subagents.enabled,
+      },
+      {
+        key: "sub.longCompletionMs",
+        type: "number",
+        tab: "subagents",
+        label: "Long-completion threshold (ms)",
+        description:
+          "Minimum duration before a successful completion produces a toast. Failures still toast regardless.",
+        value: subagents.longCompletionMs,
+        min: 0,
+        integer: true,
+      },
+      {
+        key: "sub.toastOnFailure",
+        type: "boolean",
+        tab: "subagents",
+        label: "Toast on failure",
+        description: "Surface a toast for terminal-error states (failed / stopped / aborted).",
+        value: subagents.toastOnFailure,
+      },
+      {
+        key: "sub.toastOnLongCompletion",
+        type: "boolean",
+        tab: "subagents",
+        label: "Toast on long completion",
+        description: "Surface a toast when a non-error completion's duration exceeds the threshold above.",
+        value: subagents.toastOnLongCompletion,
+      },
+      {
+        key: "sub.toastOnScheduled",
+        type: "boolean",
+        tab: "subagents",
+        label: "Toast on scheduled",
+        description:
+          "Audit-trail toasts when a subagent is scheduled (cron / interval / one-shot). Off by default to avoid noise.",
+        value: subagents.toastOnScheduled,
+      },
+    ];
 
-    // Boolean toast toggles share a tiny helper.
-    const toggleToast = (
-      key: "toastOnFailure" | "toastOnLongCompletion" | "toastOnScheduled",
-      label: string,
-    ): boolean => {
-      const action = tokens[2] ?? "toggle";
-      let value: boolean;
-      if (action === "toggle") value = !cfg[key];
-      else if (action === "on") value = true;
-      else if (action === "off") value = false;
-      else {
-        ctx.ui.notify(`Unknown ${label} action: ${action}`, "warning");
-        return false;
-      }
-      eventsConfig = setSubagentsConfig(eventsConfig, { [key]: value } as never);
-      ctx.ui.notify(`subagents ${label}: ${value ? "on" : "off"}`, "info");
-      return true;
-    };
+    await openSettingsModal(ctx, {
+      title: "@wierdbytes/pi-statusline",
+      tabs: [
+        { id: "display", label: "Display" },
+        { id: "toasts", label: "Toasts" },
+        { id: "subagents", label: "Subagents" },
+      ],
+      initialTab: "display",
+      fields,
+      onChange: (key, value) => {
+        // Display-tab fields all share the same side-effect bus.
+        if (key === "statuslineEnabled") return applyDisplayChange(ctx, { statuslineEnabled: value as boolean });
+        if (key === "footerHidden") return applyDisplayChange(ctx, { footerHidden: value as boolean });
+        if (key === "fixedEditorEnabled") return applyDisplayChange(ctx, { fixedEditorEnabled: value as boolean });
+        if (key === "mouseScrollEnabled") return applyDisplayChange(ctx, { mouseScrollEnabled: value as boolean });
 
-    if (sub === "toast-failure") {
-      toggleToast("toastOnFailure", "toast-failure");
-      return;
-    }
-    if (sub === "toast-long") {
-      toggleToast("toastOnLongCompletion", "toast-long");
-      return;
-    }
-    if (sub === "toast-scheduled") {
-      toggleToast("toastOnScheduled", "toast-scheduled");
-      return;
-    }
+        // Toast-tab fields are pure persistence — the events tracker
+        // pulls timeouts via the closure each time a toast lifetime is
+        // computed.
+        if (typeof key === "string" && key.startsWith("toast.")) {
+          const level = key.slice("toast.".length) as NotifyLevel;
+          eventsConfig = setToastTimeout(eventsConfig, level, value as number);
+          return;
+        }
 
-    ctx.ui.notify(
-      "Usage: /wierd-status subagents [status | on | off | toggle | long-ms <ms> | toast-failure <on|off|toggle> | toast-long <on|off|toggle> | toast-scheduled <on|off|toggle>]",
-      "info",
-    );
+        // Subagents-tab fields go through setSubagentsConfig (which
+        // clamps numeric values and persists). Disabling the bridge
+        // also resets the tracker so a re-enable starts clean — same
+        // as the old `subagents off` subcommand.
+        if (key === "sub.enabled") {
+          const next = value as boolean;
+          eventsConfig = setSubagentsConfig(eventsConfig, { enabled: next });
+          if (!next) subagentsTracker.reset();
+          return;
+        }
+        if (key === "sub.longCompletionMs") {
+          eventsConfig = setSubagentsConfig(eventsConfig, { longCompletionMs: value as number });
+          return;
+        }
+        if (key === "sub.toastOnFailure") {
+          eventsConfig = setSubagentsConfig(eventsConfig, { toastOnFailure: value as boolean });
+          return;
+        }
+        if (key === "sub.toastOnLongCompletion") {
+          eventsConfig = setSubagentsConfig(eventsConfig, { toastOnLongCompletion: value as boolean });
+          return;
+        }
+        if (key === "sub.toastOnScheduled") {
+          eventsConfig = setSubagentsConfig(eventsConfig, { toastOnScheduled: value as boolean });
+          return;
+        }
+      },
+    });
+  };
+
+  // ────────────────────────── imperative helpers ────────────────────────────
+
+  /** Read-only structured dump used by callers that can't host the
+   *  overlay (RPC, `--print` mode). */
+  const printStatusDump = (ctx: ExtensionContext): void => {
+    const snap = eventsTracker.getSnapshot();
+    const display = eventsConfig.display;
+    const subagents = eventsConfig.subagents;
+    const counts = subagentsTracker.getCounts();
+    const lines = [
+      `statusline:    ${display.statuslineEnabled ? "on" : "off"}`,
+      `footer:        ${display.footerHidden ? "hidden" : "shown"}`,
+      `fixed editor:  ${display.fixedEditorEnabled ? "on" : "off"}`,
+      `mouse scroll:  ${display.mouseScrollEnabled ? "on" : "off"}`,
+      `chips:         ${snap.chips.length}`,
+      `toast:         ${snap.toast ? `${snap.toast.event.level ?? "info"} — ${snap.toast.event.message}` : "(none)"}`,
+      `events log:    ${eventsTracker.getLog().length} entries`,
+      `toast timeouts: ${Object.entries(eventsConfig.toastTimeouts)
+        .map(([level, ms]) => `${level}=${ms === 0 ? "sticky" : `${ms}ms`}`)
+        .join(" ")}`,
+      `subagents:     ${subagents.enabled ? "on" : "off"} (${counts.running} running / ${counts.created} queued / ${counts.total} total)`,
+      `  long-ms:     ${subagents.longCompletionMs}`,
+      `  on failure: ${subagents.toastOnFailure ? "yes" : "no"}`,
+      `  on long:    ${subagents.toastOnLongCompletion ? "yes" : "no"}`,
+      `  on schedule: ${subagents.toastOnScheduled ? "yes" : "no"}`,
+    ];
+    ctx.ui.notify(lines.join("\n"), "info");
+  };
+
+  /** Print the most recent 16 entries from the events log. */
+  const printEventsLog = (ctx: ExtensionContext): void => {
+    const log = eventsTracker.getLog().slice(0, 16);
+    if (log.length === 0) {
+      ctx.ui.notify("events: log is empty", "info");
+      return;
+    }
+    const formatted = log
+      .map((e) => {
+        const ts = e.timestamp ? new Date(e.timestamp).toISOString().slice(11, 19) : "--:--:--";
+        const level = e.level ?? "info";
+        const title = e.title || e.source;
+        return `${ts} [${level}] ${title}: ${e.message}`;
+      })
+      .join("\n");
+    ctx.ui.notify(formatted, "info");
   };
 
   pi.registerCommand("wierd-status", {
     description:
-      "Wierd statusline controls. Subcommands: 'on' | 'off' | 'toggle' | 'footer on|off|toggle' | 'fixed-editor on|off|toggle' | 'mouse-scroll on|off|toggle' | 'events [status|log|clear|toast-ms]' | 'subagents [status|on|off|long-ms|toast-failure|toast-long|toast-scheduled]'",
+      "Open the @wierdbytes/pi-statusline settings overlay (no args). Action subcommands: on | off | toggle | status | events log | events clear",
     handler: async (args, ctx) => {
       currentCtx = ctx;
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const cmd = tokens[0];
 
+      // Bare `/wierd-status` opens the overlay.
+      if (!cmd) return openConfigOverlay(ctx);
+
+      // Imperative master-switch shortcuts — single keystroke beats
+      // navigating the modal.
       if (cmd === "on" || cmd === "off" || cmd === "toggle") {
         const next = cmd === "toggle" ? !statuslineEnabled : cmd === "on";
-        statuslineEnabled = next;
-        if (statuslineEnabled) enableStatusline(ctx);
-        else disableStatusline(ctx);
-        ctx.ui.notify(`wierd statusline ${statuslineEnabled ? "enabled" : "disabled"}`, "info");
+        applyDisplayChange(ctx, { statuslineEnabled: next });
+        ctx.ui.notify(`wierd statusline ${next ? "enabled" : "disabled"}`, "info");
         return;
       }
 
-      if (cmd === "footer") {
-        const action = tokens[1] ?? "toggle";
-        if (action === "toggle") footerHidden = !footerHidden;
-        else if (action === "on") footerHidden = false;
-        else if (action === "off") footerHidden = true;
-        else {
-          ctx.ui.notify(`Unknown footer action: ${action}`, "warning");
-          return;
-        }
-        if (statuslineEnabled) {
-          if (footerHidden) hidePiFooter(ctx);
-          else restorePiFooter(ctx);
-          // Footer toggle replaces the component in tui.children, so the
-          // compositor's captured reference is stale; reinstall to capture
-          // the new footer (or EmptyFooter) and render it under the editor.
-          if (fixedEditorEnabled && activeTui) {
-            installFixedEditorCompositor(ctx, activeTui);
-          }
-        }
-        ctx.ui.notify(`pi footer ${footerHidden ? "hidden" : "shown"}`, "info");
+      if (cmd === "status") {
+        printStatusDump(ctx);
         return;
       }
 
-      if (cmd === "fixed-editor") {
-        const action = tokens[1] ?? "toggle";
-        if (action === "toggle") fixedEditorEnabled = !fixedEditorEnabled;
-        else if (action === "on") fixedEditorEnabled = true;
-        else if (action === "off") fixedEditorEnabled = false;
-        else {
-          ctx.ui.notify(`Unknown fixed-editor action: ${action}`, "warning");
-          return;
-        }
-        if (statuslineEnabled && activeTui) {
-          if (fixedEditorEnabled) {
-            installFixedEditorCompositor(ctx, activeTui);
-          } else {
-            teardownFixedEditorCompositor();
-            activeTui.requestRender(true);
-          }
-        }
-        ctx.ui.notify(`fixed editor ${fixedEditorEnabled ? "enabled" : "disabled"}`, "info");
-        return;
-      }
-
+      // Read/clear utilities for the events log live outside the modal
+      // because they print or mutate runtime state, not config.
       if (cmd === "events") {
-        handleEventsSubcommand(ctx, tokens);
-        return;
-      }
-
-      if (cmd === "subagents") {
-        handleSubagentsSubcommand(ctx, tokens);
-        return;
-      }
-
-      if (cmd === "mouse-scroll") {
-        const action = tokens[1] ?? "toggle";
-        if (action === "toggle") mouseScrollEnabled = !mouseScrollEnabled;
-        else if (action === "on") mouseScrollEnabled = true;
-        else if (action === "off") mouseScrollEnabled = false;
-        else {
-          ctx.ui.notify(`Unknown mouse-scroll action: ${action}`, "warning");
+        const sub = tokens[1];
+        if (sub === "log") return printEventsLog(ctx);
+        if (sub === "clear") {
+          eventsTracker.clearAll();
+          ctx.ui.notify("events: cleared chips and toast", "info");
           return;
         }
-        if (statuslineEnabled && fixedEditorEnabled && activeTui) {
-          installFixedEditorCompositor(ctx, activeTui);
-        }
-        ctx.ui.notify(`mouse scroll ${mouseScrollEnabled ? "enabled" : "disabled"}`, "info");
+        ctx.ui.notify("Usage: /wierd-status events [log|clear]", "info");
         return;
       }
 
       ctx.ui.notify(
-        "Usage: /wierd-status <on|off|toggle> | footer <on|off|toggle> | fixed-editor <on|off|toggle> | mouse-scroll <on|off|toggle> | events [status|log|clear|toast-ms] | subagents [status|on|off|long-ms|toast-failure|toast-long|toast-scheduled]",
+        "Usage: /wierd-status [on|off|toggle|status|events log|events clear]  (no args ⇒ open settings overlay)",
         "info",
       );
     },
