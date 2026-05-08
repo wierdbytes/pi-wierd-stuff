@@ -52,7 +52,7 @@ Outside this repo, the package depends (peer-deps) on:
 ```ts
 import { openSettingsModal } from "@wierdbytes/pi-common";
 
-pi.registerCommand("wierd-voice", {
+pi.registerCommand("voice", {
   description: "Voice settings",
   handler: async (_args, ctx) => {
     await openSettingsModal(ctx, {
