@@ -224,7 +224,7 @@ export function formatSearchForLLM(response: SearchResponse): string {
 
 export interface WebSearchExtras {
   systemPrompt?: string;
-  /** Override the model name resolved via getModel(). Used by /wierd-web. */
+  /** Override the model name resolved via getModel(). Used by /web. */
   modelOverride?: string;
 }
 

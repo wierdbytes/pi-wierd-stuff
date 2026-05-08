@@ -101,7 +101,7 @@ the Claude Code identity block, matching pi-mono's built-in carve-out.
 pi install npm:@wierdbytes/pi-web
 ```
 
-Restart pi to activate. Verify with `/wierd-web status`.
+Restart pi to activate. Verify with `/web status`.
 
 ## Configuration
 
@@ -124,11 +124,11 @@ first run, seeded from environment variables. Shape:
 
 ## Commands
 
-- `/wierd-web status` — print models, thinking level, auth source, config path
-- `/wierd-web model <id>` (alias: `search-model`) — set `searchModel`
-- `/wierd-web fetch-model <provider/model-id>` — set `fetchModel`
-- `/wierd-web fetch-thinking <level>` — set `fetchThinkingLevel`
-- `/wierd-web reset` — wipe config, re-seed from env
+- `/web status` — print models, thinking level, auth source, config path
+- `/web model <id>` (alias: `search-model`) — set `searchModel`
+- `/web fetch-model <provider/model-id>` — set `fetchModel`
+- `/web fetch-thinking <level>` — set `fetchThinkingLevel`
+- `/web reset` — wipe config, re-seed from env
 
 ## CLI flags
 
@@ -155,7 +155,7 @@ bun --filter @wierdbytes/pi-web test
 
 | File                 | Responsibility                                                              |
 | -------------------- | --------------------------------------------------------------------------- |
-| `index.ts`           | Extension entry: tool registration, `/wierd-web` command, lifecycle hooks   |
+| `index.ts`           | Extension entry: tool registration, `/web` command, lifecycle hooks         |
 | `config.ts`          | Load/save `~/.pi/agent/wierd-web.json`, env seeding                          |
 | `anthropic.ts`       | Auth resolution, header builder, single `POST /v1/messages` transport       |
 | `search.ts`          | `web_search` tool definition + response parser + LLM-facing formatter       |

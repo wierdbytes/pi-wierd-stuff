@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-web",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Anthropic-powered web_search tool for the pi coding agent",
   "type": "module",
   "files": [

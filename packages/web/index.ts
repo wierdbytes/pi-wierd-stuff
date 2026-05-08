@@ -7,7 +7,7 @@
  *                  pi sub-agent distillation (ported from pi-web-fetch)
  *
  * Settings persist in ~/.pi/agent/wierd-web.json (see config.ts). The
- * `/wierd-web` slash command opens an interactive settings overlay
+ * `/web` slash command opens an interactive settings overlay
  * (powered by `@wierdbytes/pi-common`); imperative `status` and `reset`
  * remain as text-mode subcommands for non-interactive sessions and
  * scripts.
@@ -202,7 +202,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
     });
   };
 
-  pi.registerCommand("wierd-web", {
+  pi.registerCommand("web", {
     description:
       "Open the @wierdbytes/pi-web settings overlay (no args). Action subcommands: status | reset",
     handler: async (args, ctx) => {
@@ -210,7 +210,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
       const tokens = trimmed.split(/\s+/).filter(Boolean);
       const cmd = tokens[0]?.toLowerCase() ?? "";
 
-      // Bare `/wierd-web` opens the configuration overlay (or falls back
+      // Bare `/web` opens the configuration overlay (or falls back
       // to `status` when there's no UI). Other subcommands are
       // imperative actions — they stay text-only.
       if (!cmd) return openConfigOverlay(ctx);
@@ -218,7 +218,7 @@ export default function piWierdWeb(pi: ExtensionAPI) {
       if (cmd === "reset") return reset(ctx);
 
       ctx.ui.notify(
-        "Usage: /wierd-web [status|reset]  (no args ⇒ open settings overlay)",
+        "Usage: /web [status|reset]  (no args ⇒ open settings overlay)",
         "info",
       );
     },
