@@ -13,6 +13,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { DEFAULT_ICON_SET, type IconSet, isIconSet } from "./icons.ts";
+
 /** Toast lifetime in ms keyed by level. `0` means sticky-until-dismissed. */
 export type ToastTimeoutMap = Record<NotifyLevel, number>;
 
@@ -33,6 +35,11 @@ export interface DisplayConfig {
   fixedEditorEnabled: boolean;
   /** Allow the fixed-editor compositor to handle mouse-scroll events. */
   mouseScrollEnabled: boolean;
+  /** Active icon set for model / thinking / stash / toast-level / chip
+   *  glyphs. See `./icons.ts` for the full glyph tables. Default:
+   *  `"nerd-font"` — terminal-friendly Nerd Font glyphs (the original
+   *  emoji set is still available as `"emoji"`). */
+  iconSet: IconSet;
 }
 
 /**
@@ -94,6 +101,7 @@ export const DEFAULT_EVENTS_CONFIG: EventsConfig = Object.freeze({
     footerHidden: true,
     fixedEditorEnabled: true,
     mouseScrollEnabled: true,
+    iconSet: DEFAULT_ICON_SET,
   }) as DisplayConfig,
 }) as EventsConfig;
 
@@ -244,6 +252,7 @@ function mergeWithDefaults(raw: Partial<EventsConfig>): EventsConfig {
     if (typeof disp.footerHidden === "boolean") merged.display.footerHidden = disp.footerHidden;
     if (typeof disp.fixedEditorEnabled === "boolean") merged.display.fixedEditorEnabled = disp.fixedEditorEnabled;
     if (typeof disp.mouseScrollEnabled === "boolean") merged.display.mouseScrollEnabled = disp.mouseScrollEnabled;
+    if (isIconSet(disp.iconSet)) merged.display.iconSet = disp.iconSet;
   }
 
   return merged;

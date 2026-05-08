@@ -25,6 +25,15 @@ import {
   setSubagentsConfig,
   setToastTimeout,
 } from "./events-config.ts";
+import {
+  ICON_SET_DESCRIPTIONS,
+  ICON_SET_LABELS,
+  type IconKey,
+  type IconSet,
+  isIconSet,
+  resolveIcon,
+  VALID_ICON_SETS,
+} from "./icons.ts";
 import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
 import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
 import { SubagentsTracker } from "./subagents-tracker.ts";
@@ -130,14 +139,19 @@ function oneLine(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** Default toast-row icon when the payload omits one — keyed by level. */
-const LEVEL_ICONS: Record<NotifyLevel, string> = {
-  debug: "🔍",
-  info: "ℹ️",
-  success: "✅",
-  warning: "⚠️",
-  error: "❌",
+/** Map a notification level to its icon-key in the active set. */
+const LEVEL_ICON_KEYS: Record<NotifyLevel, IconKey> = {
+  debug: "debug",
+  info: "info",
+  success: "success",
+  warning: "warning",
+  error: "error",
 };
+
+/** Resolve the toast/chip icon for a level under the given set. */
+function levelIcon(set: IconSet, level: NotifyLevel): string {
+  return resolveIcon(set, LEVEL_ICON_KEYS[level]);
+}
 
 /** ANSI color for a notification level. */
 function levelColor(level: NotifyLevel | undefined): string {
@@ -157,13 +171,13 @@ function levelColor(level: NotifyLevel | undefined): string {
 }
 
 /** Pick a chip icon, preferring the payload's icon, then a level default. */
-function chipIcon(status: NotifyStatusEvent): string {
+function chipIcon(status: NotifyStatusEvent, set: IconSet): string {
   if (status.icon) return status.icon;
   // For chips, fall back to a level-derived icon. "error" state without
   // explicit icon gets a warning glyph regardless of the optional `level`
   // field so the user always sees something is wrong.
-  if (status.state === "error") return LEVEL_ICONS.warning;
-  return LEVEL_ICONS[status.level ?? "info"];
+  if (status.state === "error") return levelIcon(set, "warning");
+  return levelIcon(set, status.level ?? "info");
 }
 
 /** Color hint for a chip — `state: "error"` always wins over the
@@ -189,8 +203,8 @@ function formatChipProgress(
 }
 
 /** Render a single chip as `<icon> <colored label><progress>`. */
-function formatChip(status: NotifyStatusEvent): string {
-  const icon = chipIcon(status);
+function formatChip(status: NotifyStatusEvent, set: IconSet): string {
+  const icon = chipIcon(status, set);
   const color = chipColor(status);
   // Strip newlines / tabs from `label` before truncating so a
   // multi-line payload from any emitter can never split a chip
@@ -201,9 +215,9 @@ function formatChip(status: NotifyStatusEvent): string {
 }
 
 /** Render the chips segment, including the `│` separator. Empty when no chips. */
-function buildChipsSegment(chips: NotifyStatusEvent[]): string {
+function buildChipsSegment(chips: NotifyStatusEvent[], set: IconSet): string {
   if (chips.length === 0) return "";
-  const rendered = chips.map(formatChip).join(` ${C_GRAY}·${C_RESET} `);
+  const rendered = chips.map((c) => formatChip(c, set)).join(` ${C_GRAY}·${C_RESET} `);
   return ` ${C_GRAY}│${C_RESET} ${rendered}`;
 }
 
@@ -221,11 +235,11 @@ function buildChipsSegment(chips: NotifyStatusEvent[]): string {
  * The optional `×` hint is appended for sticky toasts (lifetime 0)
  * so the user knows the toast stays until dismissed.
  */
-function buildToastLine(active: ActiveToast, width: number): string {
+function buildToastLine(active: ActiveToast, width: number, set: IconSet): string {
   const event = active.event;
   const level = event.level ?? "info";
   const color = levelColor(level);
-  const icon = event.icon || LEVEL_ICONS[level];
+  const icon = event.icon || levelIcon(set, level);
   const sticky = !Number.isFinite(active.expiresAt);
   const hint = sticky ? ` ${C_GRAY}×${C_RESET}` : "";
 
@@ -270,6 +284,7 @@ function buildStatusLine(opts: {
   totalCacheWrite: number;
   stashCount: number;
   chipsSegment: string;
+  iconSet: IconSet;
 }): string {
   const {
     cwd,
@@ -288,15 +303,20 @@ function buildStatusLine(opts: {
     totalCacheWrite,
     stashCount,
     chipsSegment,
+    iconSet,
   } = opts;
 
-  const modelPart = `🤖 ${C_PINK}${modelName}${C_RESET}`;
+  // Colour the model icon the same as its label so the chip reads as
+  // one unit instead of an uncoloured glyph + coloured text. Same
+  // treatment for the thinking icon below — it picks up the
+  // level-derived colour.
+  const modelPart = `${C_PINK}${resolveIcon(iconSet, "model")} ${modelName}${C_RESET}`;
 
   let thinkPart = "";
   if (modelReasoning) {
     const label = resolveThinkingLabel(thinkingLevel, thinkingLevelMap);
     const color = THINK_COLORS[thinkingLevel] ?? C_GRAY;
-    thinkPart = ` 🧠 ${color}${label}${C_RESET}`;
+    thinkPart = ` ${color}${resolveIcon(iconSet, "thinking")} ${label}${C_RESET}`;
   }
 
   const shortDir = shortenPath(cwd);
@@ -341,7 +361,10 @@ function buildStatusLine(opts: {
     ? ` ${C_GRAY}│ ${tokenSegments.join(" ")}${C_RESET}`
     : "";
 
-  const stashPart = stashCount > 0 ? ` ${C_GRAY}│${C_RESET} ${C_YELLOW}📦 ${stashCount}${C_RESET}` : "";
+  const stashPart =
+    stashCount > 0
+      ? ` ${C_GRAY}│${C_RESET} ${C_YELLOW}${resolveIcon(iconSet, "stash")} ${stashCount}${C_RESET}`
+      : "";
 
   return `${C_GRAY}─${C_RESET} ${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart}${chipsSegment}${stashPart} `;
 }
@@ -379,6 +402,7 @@ function renderStatusContent(
   width: number,
   stashCount: number,
   events: { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
+  iconSet: IconSet,
 ): string[] {
   const stats = gatherStats(ctx);
   const contextWindow =
@@ -407,7 +431,8 @@ function renderStatusContent(
     totalCacheRead: stats.totalCacheRead,
     totalCacheWrite: stats.totalCacheWrite,
     stashCount,
-    chipsSegment: buildChipsSegment(events.chips),
+    chipsSegment: buildChipsSegment(events.chips, iconSet),
+    iconSet,
   });
 
   const truncated = truncateToWidth(status, width);
@@ -415,7 +440,7 @@ function renderStatusContent(
   const statusLine = truncated + `${C_GRAY}${"─".repeat(fillWidth)}${C_RESET}`;
 
   if (events.toast) {
-    return [buildToastLine(events.toast, width), statusLine];
+    return [buildToastLine(events.toast, width, iconSet), statusLine];
   }
   return [statusLine];
 }
@@ -491,6 +516,7 @@ function installStatusWidget(
   ctx: ExtensionContext,
   getStashCount: () => number,
   getEventsSnapshot: () => { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
+  getIconSet: () => IconSet,
 ) {
   ctx.ui.setWidget(
     "wierd-statusline",
@@ -504,6 +530,7 @@ function installStatusWidget(
           width,
           getStashCount(),
           getEventsSnapshot(),
+          getIconSet(),
         );
       },
     }),
@@ -801,7 +828,11 @@ export default function (pi: ExtensionAPI) {
   // and the existing `eventsTracker` above picks them up and feeds the
   // chip / toast into the statusline like any other notify-event
   // emitter.
-  const subagentsTracker = new SubagentsTracker(pi, () => eventsConfig.subagents);
+  const subagentsTracker = new SubagentsTracker(
+    pi,
+    () => eventsConfig.subagents,
+    () => eventsConfig.display.iconSet,
+  );
   subagentsTracker.start();
 
   const getEventsSnapshot = () => {
@@ -991,7 +1022,7 @@ export default function (pi: ExtensionAPI) {
 
   const enableStatusline = (ctx: ExtensionContext) => {
     currentCtx = ctx;
-    installStatusWidget(pi, ctx, getStashCount, getEventsSnapshot);
+    installStatusWidget(pi, ctx, getStashCount, getEventsSnapshot, () => eventsConfig.display.iconSet);
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
     if (footerHidden) hidePiFooter(ctx);
     else restorePiFooter(ctx);
@@ -1095,6 +1126,13 @@ export default function (pi: ExtensionAPI) {
         installFixedEditorCompositor(ctx, activeTui);
       }
     }
+
+    // Icon set is read by the renderer + subagents tracker on every
+    // paint via the closures we passed in, so persistence is enough
+    // — just nudge the TUI to repaint so the new glyphs land.
+    if ("iconSet" in patch) {
+      activeTui?.requestRender();
+    }
   };
 
   // ────────────────────────── settings modal ─────────────────────────────────
@@ -1149,6 +1187,18 @@ export default function (pi: ExtensionAPI) {
         label: "Mouse scroll",
         description: "Let the fixed-editor compositor handle mouse-scroll events.",
         value: display.mouseScrollEnabled,
+      },
+      {
+        key: "iconSet",
+        type: "enum",
+        tab: "display",
+        label: "Icon set",
+        description:
+          "Glyphs used for model / thinking / stash / toast levels and the subagents chip. " +
+          ICON_SET_DESCRIPTIONS[display.iconSet],
+        value: display.iconSet,
+        options: VALID_ICON_SETS,
+        optionLabels: ICON_SET_LABELS,
       },
       // ── Toasts (per-level lifetime in ms; 0 = sticky) ──────────────
       {
@@ -1264,6 +1314,7 @@ export default function (pi: ExtensionAPI) {
         if (key === "footerHidden") return applyDisplayChange(ctx, { footerHidden: value as boolean });
         if (key === "fixedEditorEnabled") return applyDisplayChange(ctx, { fixedEditorEnabled: value as boolean });
         if (key === "mouseScrollEnabled") return applyDisplayChange(ctx, { mouseScrollEnabled: value as boolean });
+        if (key === "iconSet") return applyDisplayChange(ctx, { iconSet: value as IconSet });
 
         // Toast-tab fields are pure persistence — the events tracker
         // pulls timeouts via the closure each time a toast lifetime is
@@ -1318,6 +1369,7 @@ export default function (pi: ExtensionAPI) {
       `footer:        ${display.footerHidden ? "hidden" : "shown"}`,
       `fixed editor:  ${display.fixedEditorEnabled ? "on" : "off"}`,
       `mouse scroll:  ${display.mouseScrollEnabled ? "on" : "off"}`,
+      `icon set:      ${display.iconSet}`,
       `chips:         ${snap.chips.length}`,
       `toast:         ${snap.toast ? `${snap.toast.event.level ?? "info"} — ${snap.toast.event.message}` : "(none)"}`,
       `events log:    ${eventsTracker.getLog().length} entries`,
@@ -1353,7 +1405,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("statusline", {
     description:
-      "Open the @wierdbytes/pi-statusline settings overlay (no args). Action subcommands: on | off | toggle | status | events log | events clear",
+      "Open the @wierdbytes/pi-statusline settings overlay (no args). Action subcommands: on | off | toggle | status | icons [set] | events log | events clear",
     handler: async (args, ctx) => {
       currentCtx = ctx;
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
@@ -1376,6 +1428,35 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      // Quick imperative switch for the icon set. `/statusline icons`
+      // (no args) prints the current set + lists the valid choices;
+      // `/statusline icons <set>` flips it via the same side-effect
+      // bus the modal uses.
+      if (cmd === "icons") {
+        const sub = tokens[1];
+        if (!sub || sub === "status") {
+          const lines = [
+            `current: ${eventsConfig.display.iconSet}`,
+            `available:`,
+            ...VALID_ICON_SETS.map(
+              (s) => `  ${s === eventsConfig.display.iconSet ? "*" : " "} ${s.padEnd(10)} — ${ICON_SET_LABELS[s]}`,
+            ),
+          ];
+          ctx.ui.notify(lines.join("\n"), "info");
+          return;
+        }
+        if (!isIconSet(sub)) {
+          ctx.ui.notify(
+            `Unknown icon set: ${sub}. Valid: ${VALID_ICON_SETS.join(" | ")}`,
+            "warning",
+          );
+          return;
+        }
+        applyDisplayChange(ctx, { iconSet: sub });
+        ctx.ui.notify(`icon set: ${sub} (${ICON_SET_LABELS[sub]})`, "info");
+        return;
+      }
+
       // Read/clear utilities for the events log live outside the modal
       // because they print or mutate runtime state, not config.
       if (cmd === "events") {
@@ -1391,7 +1472,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       ctx.ui.notify(
-        "Usage: /statusline [on|off|toggle|status|events log|events clear]  (no args ⇒ open settings overlay)",
+        "Usage: /statusline [on|off|toggle|status|icons [set]|events log|events clear]  (no args ⇒ open settings overlay)",
         "info",
       );
     },
