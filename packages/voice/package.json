@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-voice",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Spoken summary after each agent turn for the pi coding agent.",
   "type": "module",
   "files": [
@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
+    "@wierdbytes/pi-common": "^0.1.0",
     "@wierdbytes/pi-events": "^0.1.0"
   },
   "devDependencies": {

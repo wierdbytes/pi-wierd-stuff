@@ -51,9 +51,10 @@
     },
     "packages/voice": {
       "name": "@wierdbytes/pi-voice",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "dependencies": {
         "@google/genai": "^1.0.0",
+        "@wierdbytes/pi-common": "^0.1.0",
         "@wierdbytes/pi-events": "^0.1.0",
       },
       "devDependencies": {

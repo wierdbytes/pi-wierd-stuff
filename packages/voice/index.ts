@@ -33,14 +33,18 @@ import {
  *  npm package name so the statusline keys our chip consistently and
  *  the events log shows a stable identifier. */
 const EVENT_SOURCE = "@wierdbytes/pi-voice";
-import { pickVoiceConfig } from "./config-picker.ts";
+import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
 import {
   envDefaults,
   getConfigPath,
   loadOrInitConfig,
   saveConfig,
+  type Scope,
+  type SummarizerThinkingLevel,
   type WierdVoiceConfig,
 } from "./config.ts";
+import { PREBUILT_VOICES, isValidVoice as voicesIsValid } from "./voices.ts";
+void voicesIsValid; // re-exported below
 import { refreshFromRegistry, resolveGeminiKey } from "./auth.ts";
 import { ensureVoiceDir, lastWavPath } from "./paths.ts";
 import { runSummarizer } from "./summarizer.ts";
@@ -641,55 +645,101 @@ export default function piWierdVoice(pi: ExtensionAPI) {
       showStatus(ctx);
       return;
     }
-    await pickVoiceConfig(ctx, config, {
-      onMutedChange: (muted) => {
-        const wasMuted = config.muted;
-        config = { ...config, muted };
-        persist(ctx);
-        if (muted) {
-          // Mute aborts any in-flight job — same semantics as the
-          // `/wierd-voice mute` shortcut below.
-          abortJob(currentJob);
-          currentJob = undefined;
-          setStatus(ctx, STATUS_MUTED);
-          emitVoiceIdleStatus();
-          emitVoiceToast("info", "muted");
-        } else if (wasMuted) {
-          setStatus(ctx, undefined);
-          emitVoiceIdleStatus();
-          emitVoiceToast("info", "unmuted");
+
+    // The settings modal is stateless about disk — we hand it the
+    // current config snapshot, persist on every onChange, and let the
+    // user dismiss when they're done. Reopening reads the live `config`
+    // again so any external mutations (mute via shortcut, etc.) show up.
+    const voiceLabels: Partial<Record<string, string>> = Object.fromEntries(
+      PREBUILT_VOICES.map((v) => [v.name, `${v.name}  ·  ${v.descriptor}`]),
+    );
+
+    const fields: Field[] = [
+      {
+        key: "muted",
+        type: "boolean",
+        label: "Muted",
+        description: "Mute the spoken summary after every assistant turn.",
+        value: config.muted,
+      },
+      {
+        key: "voice",
+        type: "enum",
+        label: "Voice",
+        description: "Prebuilt Gemini TTS voice.",
+        value: config.voice,
+        options: PREBUILT_VOICES.map((v) => v.name),
+        optionLabels: voiceLabels,
+        // 30+ voices — force the SelectList submenu rather than cycling.
+        cycleThreshold: 4,
+      },
+      {
+        key: "scope",
+        type: "enum",
+        label: "Summary scope",
+        description:
+          "What to feed the summarizer: just the final assistant message (last) or everything since the last user turn (sinceUser).",
+        value: config.scope,
+        options: ["last", "sinceUser"] as const,
+      },
+      {
+        key: "summarizer",
+        type: "model",
+        label: "Summarizer model",
+        description:
+          "Sub-agent model + reasoning effort used to produce the spoken summary. Empty model means inherit the session model.",
+        value: {
+          id: config.summarizerModel ?? "",
+          thinking: config.summarizerThinkingLevel,
+        },
+      },
+    ];
+
+    await openSettingsModal(ctx, {
+      title: "@wierdbytes/pi-voice",
+      fields,
+      onChange: (key, value) => {
+        if (key === "muted") {
+          const wasMuted = config.muted;
+          config = { ...config, muted: value as boolean };
+          persist(ctx);
+          if (config.muted) {
+            // Mute aborts any in-flight job — same semantics as the
+            // `/wierd-voice mute` shortcut below.
+            abortJob(currentJob);
+            currentJob = undefined;
+            setStatus(ctx, STATUS_MUTED);
+            emitVoiceIdleStatus();
+            emitVoiceToast("info", "muted");
+          } else if (wasMuted) {
+            setStatus(ctx, undefined);
+            emitVoiceIdleStatus();
+            emitVoiceToast("info", "unmuted");
+          }
+          return;
         }
-      },
-      onVoiceChange: (voice) => {
-        if (!isValidVoice(voice)) return; // shouldn't happen — list is whitelisted
-        config = { ...config, voice };
-        persist(ctx);
-      },
-      onScopeChange: (scope) => {
-        config = { ...config, scope };
-        persist(ctx);
-      },
-      onSummarizerChange: (modelId) => {
-        if (!modelId) {
-          // Empty ⇒ clear the override and inherit the session model.
-          const next = { ...config };
-          delete next.summarizerModel;
+        if (key === "voice") {
+          const v = value as string;
+          if (!isValidVoice(v)) return; // shouldn't happen — options are whitelisted
+          config = { ...config, voice: v };
+          persist(ctx);
+          return;
+        }
+        if (key === "scope") {
+          config = { ...config, scope: value as Scope };
+          persist(ctx);
+          return;
+        }
+        if (key === "summarizer") {
+          const v = value as { id: string; thinking?: SummarizerThinkingLevel };
+          const next: WierdVoiceConfig = { ...config };
+          if (!v.id) delete next.summarizerModel;
+          else next.summarizerModel = v.id;
+          if (v.thinking) next.summarizerThinkingLevel = v.thinking;
           config = next;
-        } else {
-          config = { ...config, summarizerModel: modelId };
+          persist(ctx);
+          return;
         }
-        persist(ctx);
-      },
-      onSummarizerThinkingChange: (level) => {
-        // The picker always hands us a concrete level (clamped to the
-        // model's supported ladder). We persist verbatim and pi will
-        // re-clamp at runtime if the model changes underneath us.
-        config = { ...config, summarizerThinkingLevel: level };
-        persist(ctx);
-      },
-      onClose: () => {
-        // Nothing to do — every change has already been persisted in
-        // the per-field handlers above.
       },
     });
   };
