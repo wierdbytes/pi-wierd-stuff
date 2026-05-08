@@ -100,7 +100,7 @@ interface NotifyToastEvent {
 
 **Required:** `source`, `message`.
 **Lifetime is owned by the statusline** — see
-`/wierd-status events toast-ms <level> <ms>` to tune (`0` = sticky until
+`/statusline events toast-ms <level> <ms>` to tune (`0` = sticky until
 explicitly dismissed).
 
 ### `notify:status` — `NotifyStatusEvent`

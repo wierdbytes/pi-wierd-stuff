@@ -88,7 +88,7 @@ export interface NotifyToastEvent {
  *   `"done"`    — remove the chip (success).
  *   `"error"`   — keep the chip but render in error color until
  *                 explicitly replaced (next emit from same source) or
- *                 cleared via `/wierd-status events clear`.
+ *                 cleared via `/statusline events clear`.
  *   `"cleared"` — remove the chip with no success/failure semantics.
  */
 export interface NotifyStatusEvent {
@@ -113,7 +113,7 @@ export interface NotifyStatusEvent {
    *  level when omitted. */
   icon?: string;
 
-  /** Optional longer description. Surfaced in `/wierd-status events
+  /** Optional longer description. Surfaced in `/statusline events
    *  log` and any future tooltip — not shown on the chip itself. */
   detail?: string;
 
