@@ -59,7 +59,7 @@
     },
     "packages/statusline": {
       "name": "@wierdbytes/pi-statusline",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "dependencies": {
         "@wierdbytes/pi-common": "^0.1.0",
         "@wierdbytes/pi-events": "^0.1.0",
@@ -69,6 +69,10 @@
         "@earendil-works/pi-coding-agent": "^0.74.0",
         "@earendil-works/pi-tui": "^0.74.0",
       },
+    },
+    "packages/tokyo-night": {
+      "name": "@wierdbytes/pi-tokyo-night",
+      "version": "0.1.0",
     },
     "packages/voice": {
       "name": "@wierdbytes/pi-voice",
@@ -456,6 +460,8 @@
     "@wierdbytes/pi-facelift": ["@wierdbytes/pi-facelift@workspace:packages/facelift"],
 
     "@wierdbytes/pi-statusline": ["@wierdbytes/pi-statusline@workspace:packages/statusline"],
+
+    "@wierdbytes/pi-tokyo-night": ["@wierdbytes/pi-tokyo-night@workspace:packages/tokyo-night"],
 
     "@wierdbytes/pi-voice": ["@wierdbytes/pi-voice@workspace:packages/voice"],
 

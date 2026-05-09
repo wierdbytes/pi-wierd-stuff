@@ -1,0 +1,46 @@
+{
+  "name": "@wierdbytes/pi-tokyo-night",
+  "version": "0.1.0",
+  "description": "Tokyo Night themes for the pi coding agent — folke's Night, Storm, Moon, and Day palettes mapped to all 51 pi color tokens.",
+  "type": "module",
+  "files": [
+    "themes/**",
+    "*.md",
+    "package.json",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "coding-agent",
+    "theme",
+    "tokyo-night",
+    "tokyo-night-storm",
+    "tokyo-night-moon",
+    "tokyo-night-day",
+    "dark-theme",
+    "light-theme"
+  ],
+  "license": "MIT",
+  "author": "wierdbytes",
+  "homepage": "https://github.com/wierdbytes/pi-wierd-stuff/tree/master/packages/tokyo-night",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wierdbytes/pi-wierd-stuff.git",
+    "directory": "packages/tokyo-night"
+  },
+  "bugs": {
+    "url": "https://github.com/wierdbytes/pi-wierd-stuff/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "themes": [
+      "./themes/tokyo-night.json",
+      "./themes/tokyo-night-storm.json",
+      "./themes/tokyo-night-moon.json",
+      "./themes/tokyo-night-day.json"
+    ]
+  }
+}
