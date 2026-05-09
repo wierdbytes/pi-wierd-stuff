@@ -43,6 +43,7 @@ import type {
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { codeToANSI } from "@shikijs/cli";
+import { bundledThemes } from "shiki";
 import {
 	formatDuration,
 	frameBodyLines,
@@ -63,12 +64,83 @@ import type { BundledLanguage, BundledTheme } from "shiki";
 
 const DEFAULT_THEME: BundledTheme = "github-dark";
 
+/**
+ * Aliases that map common pi/host theme names (or popular external
+ * themes that aren't bundled with Shiki) to their closest Shiki
+ * `BundledTheme` equivalent.
+ *
+ * Keys are lowercased; values must be valid `BundledTheme` keys.
+ * The full Shiki theme list lives at https://shiki.style/themes.
+ *
+ * Why this exists: pi's `settings.theme` is consumed by the host UI
+ * and may use names Shiki doesn't ship (e.g. `tokyo-night-storm`).
+ * Without aliasing, `codeToANSI` throws and `hlBlock` silently falls
+ * back to plain text — leaving every `read` body uncolored.
+ */
+const THEME_ALIASES: Record<string, BundledTheme> = {
+	// Tokyo Night family (storm/night/day are Tokyo Night palette variants;
+	// Shiki only ships the storm-equivalent under the bare `tokyo-night` name).
+	"tokyo-night-storm": "tokyo-night",
+	"tokyo-night-night": "tokyo-night",
+	"tokyo-night-day": "tokyo-night",
+	tokyonight: "tokyo-night",
+	"tokyonight-storm": "tokyo-night",
+	"tokyonight-night": "tokyo-night",
+	"tokyonight-day": "tokyo-night",
+	// Catppuccin (default → mocha, the most common dark variant)
+	catppuccin: "catppuccin-mocha",
+	// Dracula
+	"dracula-pro": "dracula",
+	// Material
+	material: "material-theme",
+	"material-darker": "material-theme-darker",
+	"material-lighter": "material-theme-lighter",
+	"material-ocean": "material-theme-ocean",
+	"material-palenight": "material-theme-palenight",
+	// Gruvbox (medium contrast is the canonical default)
+	"gruvbox-dark": "gruvbox-dark-medium",
+	"gruvbox-light": "gruvbox-light-medium",
+	// Solarized (default → dark)
+	solarized: "solarized-dark",
+	// One Dark
+	"one-dark": "one-dark-pro",
+	onedark: "one-dark-pro",
+};
+
+const _themeWarningShown = new Set<string>();
+
+function isBundledTheme(name: string): name is BundledTheme {
+	return Object.prototype.hasOwnProperty.call(bundledThemes, name);
+}
+
+function warnInvalidTheme(rawName: string, fallback: BundledTheme): void {
+	if (_themeWarningShown.has(rawName)) return;
+	_themeWarningShown.add(rawName);
+	console.error(
+		`pi-facelift: theme "${rawName}" is not a Shiki bundled theme; ` +
+			`falling back to "${fallback}". ` +
+			`Set FACELIFT_THEME to one of: ${Object.keys(bundledThemes).sort().join(", ")}.`,
+	);
+}
+
+/** Resolve a raw theme name to a valid `BundledTheme`, applying aliases. */
+function resolveBundledTheme(rawName: string | undefined): BundledTheme {
+	if (!rawName) return DEFAULT_THEME;
+	const trimmed = rawName.trim();
+	if (!trimmed) return DEFAULT_THEME;
+	if (isBundledTheme(trimmed)) return trimmed;
+	const aliased = THEME_ALIASES[trimmed.toLowerCase()];
+	if (aliased) return aliased;
+	warnInvalidTheme(trimmed, DEFAULT_THEME);
+	return DEFAULT_THEME;
+}
+
 function getDefaultAgentDir(): string | undefined {
 	const home = process.env.HOME ?? "";
 	return home ? join(home, ".pi/agent") : undefined;
 }
 
-function readThemeFromSettings(agentDir?: string): BundledTheme | undefined {
+function readThemeFromSettings(agentDir?: string): string | undefined {
 	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
 	if (!resolvedAgentDir) return undefined;
 
@@ -76,27 +148,34 @@ function readThemeFromSettings(agentDir?: string): BundledTheme | undefined {
 		const settings = JSON.parse(readFileSync(join(resolvedAgentDir, "settings.json"), "utf8")) as {
 			theme?: unknown;
 		};
-		return typeof settings.theme === "string" ? (settings.theme as BundledTheme) : undefined;
+		return typeof settings.theme === "string" ? settings.theme : undefined;
 	} catch {
 		return undefined;
 	}
 }
 
 function resolvePrettyTheme(agentDir?: string): BundledTheme {
-	return (
-		(process.env.FACELIFT_THEME as BundledTheme | undefined) ??
-		readThemeFromSettings(agentDir) ??
-		DEFAULT_THEME
-	);
+	const raw = process.env.FACELIFT_THEME ?? readThemeFromSettings(agentDir);
+	return resolveBundledTheme(raw);
 }
 
 let THEME: BundledTheme = resolvePrettyTheme();
+
+/** Test-only hooks for theme resolution (alias map, bundled validation, fallback warning). */
+export const __themeInternals = {
+	DEFAULT_THEME,
+	THEME_ALIASES,
+	isBundledTheme,
+	resolveBundledTheme,
+	resetWarningsForTests: () => _themeWarningShown.clear(),
+};
 
 function setPrettyTheme(agentDir?: string): void {
 	const resolvedTheme = resolvePrettyTheme(agentDir);
 	if (resolvedTheme === THEME) return;
 	THEME = resolvedTheme;
 	_cache.clear();
+	_hlErrorLogged.clear();
 	codeToANSI("", "typescript", THEME).catch(() => {});
 }
 
@@ -566,6 +645,7 @@ function dirIcon(): string {
 codeToANSI("", "typescript", THEME).catch(() => {});
 
 const _cache = new Map<string, string[]>();
+const _hlErrorLogged = new Set<string>();
 
 function _touch(k: string, v: string[]): string[] {
 	_cache.delete(k);
@@ -590,10 +670,29 @@ async function hlBlock(code: string, language: BundledLanguage | undefined): Pro
 		const ansi = normalizeShikiContrast(await codeToANSI(code, language, THEME));
 		const out = (ansi.endsWith("\n") ? ansi.slice(0, -1) : ansi).split("\n");
 		return _touch(k, out);
-	} catch {
+	} catch (err) {
+		// Log once per (theme, language) so silent regressions are visible
+		// during dev (e.g. an unsupported theme name slipping through, or a
+		// grammar load failure for a niche language) without spamming on
+		// every render. The plain-text fallback below keeps the body usable.
+		const tag = `${THEME}\0${language}`;
+		if (!_hlErrorLogged.has(tag)) {
+			_hlErrorLogged.add(tag);
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(
+				`pi-facelift: shiki highlighting failed for theme="${THEME}" language="${language}": ${msg}`,
+			);
+		}
 		return code.split("\n");
 	}
 }
+
+/** Test-only hooks for the Shiki highlighter pipeline. */
+export const __hlInternals = {
+	hlBlock,
+	resetErrorLogForTests: () => _hlErrorLogged.clear(),
+	resetCacheForTests: () => _cache.clear(),
+};
 
 // ---------------------------------------------------------------------------
 // Renderers

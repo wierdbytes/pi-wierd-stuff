@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.1
+
+- **Fix**: `read` bodies rendered as plain uncolored text whenever
+  pi's `settings.theme` was a name Shiki doesn't ship (e.g.
+  `tokyo-night-storm`). pi-facelift forwarded the raw value to
+  Shiki's `codeToANSI`, which threw, and `hlBlock`'s `catch` block
+  silently fell back to plain `code.split("\n")` — leaving frame
+  chrome and line numbers but no syntax highlighting.
+  Three changes land together:
+  1. The resolved theme is now validated against Shiki's
+     `bundledThemes` set; unknown names fall back to
+     `DEFAULT_THEME` (`github-dark`) instead of being passed through.
+  2. Common pi/host theme aliases are mapped to their nearest Shiki
+     bundled equivalent (`tokyo-night-storm` → `tokyo-night`,
+     `catppuccin` → `catppuccin-mocha`, `material-darker` →
+     `material-theme-darker`, `gruvbox-dark` → `gruvbox-dark-medium`,
+     `solarized` → `solarized-dark`, `one-dark` → `one-dark-pro`,
+     and Tokyo Night/Material/Catppuccin variants). Lookup is
+     case-insensitive.
+  3. The `hlBlock` catch now logs once per `(theme, language)` to
+     stderr (instead of swallowing every error forever) so future
+     regressions in the highlighter pipeline surface during dev.
+  A one-shot `console.error` is also emitted the first time an
+  unknown theme name is rejected, advertising `FACELIFT_THEME` as the
+  override knob.
+
 ## 0.3.0
 
 - Frame primitives (open-right rounded box for `read` / `bash` / `ls` /
