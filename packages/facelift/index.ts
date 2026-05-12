@@ -1214,7 +1214,6 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 					state.endedAt = undefined;
 				}
 				const timeout = args.timeout ? ` ${theme.fg("muted", `(${args.timeout}s timeout)`)}` : "";
-				const displayCmd = ctx.expanded || cmd.length <= 80 ? cmd : `${cmd.slice(0, 77)}…`;
 
 				// Multi-line bash commands (shell line continuations with `\`, here-docs,
 				// or embedded newlines) need each line wrapped in the accent color
@@ -1222,7 +1221,12 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				// whitespace on continuation lines is dropped — the sub-tree connector
 				// already provides visual indentation, so the user's heredoc indent
 				// would just push content right and misalign the tree.
-				const cmdLines = displayCmd.split("\n");
+				//
+				// The full command is always rendered in the title — no length-based
+				// truncation in compact mode. `frameTop` still right-truncates any
+				// individual line that exceeds the frame width, which is a separate
+				// (display-fit) concern from hiding command content.
+				const cmdLines = cmd.split("\n");
 				const firstCmd = cmdLines[0];
 				const restCmd = cmdLines.slice(1).map((line) => line.replace(/^\s+/, ""));
 				const firstTitle = `${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", firstCmd)}${timeout}`;

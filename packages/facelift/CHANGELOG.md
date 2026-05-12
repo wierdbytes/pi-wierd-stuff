@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.2
+
+- **Change**: `bash` tool titles always render the full command, even
+  in collapsed view. Previously the multi-line command string was
+  sliced at 80 chars (with a trailing `…`) before being split into
+  sub-tree continuation rows, which clobbered the second line of
+  short multi-step commands like
+  `tmux kill-session -t poc 2>/dev/null\nrm -f /Users/.../poc/long-path`.
+  Per-line right-truncation inside `frameTop` is unchanged — lines
+  that genuinely overflow the terminal width are still clipped — so
+  the only behavior change is that long commands no longer hide
+  content behind the expand toggle.
+
 ## 0.3.1
 
 - **Fix**: `read` bodies rendered as plain uncolored text whenever

@@ -72,21 +72,24 @@ function loadBashTool() {
 }
 
 describe("bash renderCall expansion", () => {
-	it("truncates long commands when collapsed", () => {
-		const bashTool = loadBashTool();
-		const command = `printf '${"x".repeat(120)}'`;
+	it("shows the full command even when collapsed (no length-based truncation)", () => {
+		withStdoutColumns(200, () => {
+			const bashTool = loadBashTool();
+			// 120-char command fits inside a 200-col frame, so the only previous
+			// reason it would have been clipped was the old 80-char compact cap.
+			const command = `printf '${"x".repeat(120)}'`;
 
-		const rendered = bashTool.renderCall({ command }, mockTheme, {
-			lastComponent: new MockText(),
-			isError: false,
-			state: {},
-			expanded: false,
-			invalidate: () => {},
+			const rendered = bashTool.renderCall({ command }, mockTheme, {
+				lastComponent: new MockText(),
+				isError: false,
+				state: {},
+				expanded: false,
+				invalidate: () => {},
+			});
+
+			expect(rendered.getText()).toContain("bash");
+			expect(rendered.getText()).toContain(command);
 		});
-
-		expect(rendered.getText()).toContain("bash");
-		expect(rendered.getText()).toContain("…");
-		expect(rendered.getText()).not.toContain(command);
 	});
 
 	it("shows the full command when expanded", () => {

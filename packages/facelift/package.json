@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-facelift",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Cosmetic facelift for built-in pi tool output — open-right rounded frames, syntax-highlighted reads, status-aware bash summaries, find/grep.",
   "type": "module",
   "files": [
