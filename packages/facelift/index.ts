@@ -25,7 +25,7 @@
 
 import * as childProcess from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, extname, join, relative } from "node:path";
+import { basename, dirname, extname, join, relative, resolve as resolvePath } from "node:path";
 
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type {
@@ -1783,6 +1783,52 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	});
 
 	// ===================================================================
+	// Per-path mutation lock
+	// -------------------------------------------------------------------
+	// Both `write` and `edit` snapshot the file *before* delegating to the
+	// built-in tool's execute(). When two mutations to the same path are
+	// queued concurrently the built-in tool serializes the actual write,
+	// but our pre-execute snapshots run in parallel — so the second call
+	// would diff against the file state from *before* the first call, not
+	// the state the first call left behind. Result: stale, misleading
+	// diffs in the rendered output.
+	//
+	// We fix it here (not in the built-in tool) by chaining
+	// snapshot→execute pairs per resolved path. The chain is purely
+	// in-process and only covers mutations going through our wrapper;
+	// external writers (other processes, the user) are still racy, but
+	// that's the same correctness contract the built-in tool already has.
+	// ===================================================================
+
+	const pathMutationTails = new Map<string, Promise<void>>();
+	function serializePerPath<T>(path: string, fn: () => Promise<T>): Promise<T> {
+		if (!path) return fn();
+		const key = (() => {
+			try {
+				return resolvePath(path);
+			} catch {
+				return path;
+			}
+		})();
+		const prev = pathMutationTails.get(key) ?? Promise.resolve();
+		// `prev.then(fn, fn)` — run fn after prev settles, regardless of
+		// whether prev rejected. We must not let an earlier failure poison
+		// later snapshots on the same path.
+		const result = prev.then(fn, fn);
+		const tail = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		pathMutationTails.set(key, tail);
+		tail.then(() => {
+			// Drop the entry only if no newer caller has chained onto us;
+			// otherwise we'd unblock callers waiting in the chain.
+			if (pathMutationTails.get(key) === tail) pathMutationTails.delete(key);
+		});
+		return result;
+	}
+
+	// ===================================================================
 	// write — split diff (or syntax-highlighted preview for new files)
 	// ===================================================================
 
@@ -1802,14 +1848,19 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				ctx: ExtensionContext,
 			) {
 				const fp = params.path ?? "";
-				let oldContent: string | null = null;
-				try {
-					if (fp && existsSync(fp)) oldContent = readFileSync(fp, "utf-8");
-				} catch {
-					oldContent = null;
-				}
-
-				const result = (await origWrite.execute(tid, params, sig, upd, ctx)) as ToolResultLike;
+				// Snapshot + execute must run atomically per-path so concurrent
+				// writes to the same file don't both diff against the same
+				// stale pre-state.
+				const { oldContent, result } = await serializePerPath(fp, async () => {
+					let snapshot: string | null = null;
+					try {
+						if (fp && existsSync(fp)) snapshot = readFileSync(fp, "utf-8");
+					} catch {
+						snapshot = null;
+					}
+					const r = (await origWrite.execute(tid, params, sig, upd, ctx)) as ToolResultLike;
+					return { oldContent: snapshot, result: r };
+				});
 				const newContent = params.content ?? "";
 				const language = diffLang(fp);
 
@@ -1875,6 +1926,9 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 
 				if (d?._type === "writeNew") {
 					const lab = `${FG_GREEN}✓ new file${RST} ${FG_DIM}(${d.lineCount} lines)${RST}`;
+					// Diff/preview output is always rendered in full — no compact
+					// mode, no `… N more lines` footer — so `ctx.expanded` is
+					// irrelevant to the rendered body and stays out of the key.
 					const key = `writeNew:${themeCacheKey(theme)}:${d.filePath}:${d.lineCount}:${w}:${status}`;
 					if (ctx.state._wk !== key) {
 						ctx.state._wk = key;
@@ -1883,11 +1937,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 							hlDiffBlock(d.content, d.language)
 								.then((hlLines: string[]) => {
 									if (ctx.state._wk !== key) return;
-									const maxShow = ctx.expanded ? hlLines.length : MAX_PREVIEW_LINES;
-									const preview = hlLines.slice(0, maxShow).join("\n");
-									const rem = hlLines.length - maxShow;
-									const body =
-										rem > 0 ? `${preview}\n${FG_DIM}… ${rem} more lines${RST}` : preview;
+									const body = hlLines.join("\n");
 									ctx.state._wt = frameResultWithBottomLabel(body, lab, status, t, w);
 									ctx.invalidate();
 								})
@@ -1903,11 +1953,14 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 
 				if (d?._type === "writeDiff") {
 					const lab = `${summarizeDiff(d.diff.added, d.diff.removed)} ${FG_DIM}(${d.diff.lines.length} diff lines)${RST}`;
+					// Diff output is always rendered in full — no compact mode,
+					// no `… N more lines` footer — so `ctx.expanded` is
+					// irrelevant to the rendered body and stays out of the key.
 					const key = `writeDiff:${themeCacheKey(theme)}:${d.filePath}:${d.diff.added}:${d.diff.removed}:${d.diff.lines.length}:${w}:${status}`;
 					if (ctx.state._wk !== key) {
 						ctx.state._wk = key;
 						ctx.state._wt = frameResultWithBottomLabel("", lab, status, t, w);
-						const maxLines = ctx.expanded ? d.diff.lines.length : MAX_PREVIEW_LINES;
+						const maxLines = d.diff.lines.length;
 						const innerW = Math.max(40, w - 1);
 						const layout = decideDiffLayout([d.diff], innerW, maxLines);
 						// Reserve 1 col for the outer frame rail.
@@ -1994,14 +2047,21 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				// `parseDiff(op.oldText, op.newText)` numbers every diff from
 				// line 1 and the rendered gutter ends up off by the line
 				// offset of the edit inside the file.
-				let preEditFile: string | null = null;
-				try {
-					if (fp && existsSync(fp)) preEditFile = readFileSync(fp, "utf-8");
-				} catch {
-					preEditFile = null;
-				}
-
-				const result = (await origEdit.execute(tid, params, sig, upd, ctx)) as ToolResultLike;
+				//
+				// Pair the snapshot with the underlying execute() inside a
+				// per-path lock so concurrent edits to the same file don't
+				// both snapshot the same stale pre-state and render diffs
+				// against the wrong baseline.
+				const { preEditFile, result } = await serializePerPath(fp, async () => {
+					let snapshot: string | null = null;
+					try {
+						if (fp && existsSync(fp)) snapshot = readFileSync(fp, "utf-8");
+					} catch {
+						snapshot = null;
+					}
+					const r = (await origEdit.execute(tid, params, sig, upd, ctx)) as ToolResultLike;
+					return { preEditFile: snapshot, result: r };
+				});
 				const ops = getEditOperations(params);
 				if (ops.length === 0) return result;
 
@@ -2082,35 +2142,39 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 					editCount === 1 ? `1 edit ${summary}` : `${editCount} edits ${summary}`;
 				const lab = `${editsLabel} ${FG_DIM}(${diffLineTotal} diff lines)${RST}`;
 
-				const key = `editDiff:${themeCacheKey(theme)}:${d.filePath}:${editCount}:${d.totalAdded}:${d.totalRemoved}:${diffLineTotal}:${w}:${status}:${ctx.expanded ? 1 : 0}`;
+				// Every edit block is rendered in full — no compact mode,
+				// no `… N more edit blocks` footer, no per-edit line cap —
+				// so `ctx.expanded` doesn't affect the body and stays out of
+				// the key.
+				const key = `editDiff:${themeCacheKey(theme)}:${d.filePath}:${editCount}:${d.totalAdded}:${d.totalRemoved}:${diffLineTotal}:${w}:${status}`;
 				if (ctx.state._ek !== key) {
 					ctx.state._ek = key;
 					ctx.state._et = frameResultWithBottomLabel("", lab, status, t, w);
 
 					const innerW = Math.max(40, w - 1);
-					const perEditCap = ctx.expanded
-						? Number.POSITIVE_INFINITY
-						: Math.max(8, Math.floor(MAX_PREVIEW_LINES / Math.max(1, Math.min(editCount, 3))));
-					const shownEdits = ctx.expanded ? d.edits : d.edits.slice(0, 3);
-					const remaining = d.edits.length - shownEdits.length;
 
 					// Pick one layout for every edit in this call ("consistent" mode,
 					// the default) so we never end up with `Edit 1 split, Edit 2
 					// unified`. The user can override via .pi/settings.json's
-					// `diffLayout` ("split"/"unified"/"per-edit").
-					const probeCap = Number.isFinite(perEditCap) ? perEditCap : MAX_PREVIEW_LINES;
+					// `diffLayout` ("split"/"unified"/"per-edit"). We probe layout
+					// with the longest edit so a single tall diff doesn't force
+					// every other edit into unified mode unnecessarily.
+					const probeCap = Math.max(
+						1,
+						...d.edits.map((e) => e.diff.lines.length),
+					);
 					const layout = decideDiffLayout(
-						shownEdits.map((e) => e.diff),
+						d.edits.map((e) => e.diff),
 						innerW,
 						probeCap,
 					);
 
 					Promise.all(
-						shownEdits.map((edit, idx) =>
+						d.edits.map((edit, idx) =>
 							renderSplit(
 								edit.diff,
 								d.language,
-								Number.isFinite(perEditCap) ? perEditCap : edit.diff.lines.length,
+								edit.diff.lines.length,
 								dc,
 								innerW,
 								{ frameless: true, layout },
@@ -2129,12 +2193,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 					)
 						.then((sections) => {
 							if (ctx.state._ek !== key) return;
-							const joined = sections.join("\n\n");
-							const suffix =
-								remaining > 0
-									? `\n\n${FG_DIM}… ${remaining} more edit block${remaining === 1 ? "" : "s"}${RST}`
-									: "";
-							ctx.state._et = frameResultWithBottomLabel(`${joined}${suffix}`, lab, status, t, w);
+							ctx.state._et = frameResultWithBottomLabel(sections.join("\n\n"), lab, status, t, w);
 							ctx.invalidate();
 						})
 						.catch((err: unknown) => {
