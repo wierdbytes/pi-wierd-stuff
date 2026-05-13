@@ -220,8 +220,22 @@ const MIN_RENDER_WIDTH = 40;
 // `@wierdbytes/pi-common/tool-frame`), and a sticky BG_BASE would leak past
 // the trailing `\n` of the diff body into the frame's bottom border, painting
 // the closing `╰── … ────` row in a different bg from the opening row.
-// BG_BASE is still used explicitly where needed (context lines, empty
-// fillers, hunk separators, the rule helper, the `more lines` footer).
+//
+// Background roles after the 0.4.x ctx/chrome split:
+//   • BG_BASE  — internal only. Auto-derived from `toolSuccessBg` and
+//     used as the mixing base for BG_ADD/BG_DEL gradients. No longer
+//     painted directly anywhere in the rendered output.
+//   • BG_CTX   — unchanged ("ctx") code rows. Terminal default so the
+//     user can tell "this line did not change" apart from chrome at
+//     a glance.
+//   • BG_EMPTY — diff chrome (empty filler halves opposite an unpaired
+//     add/del, hunk separators, the rule helper, the `… more lines`
+//     footer). Auto-derived from `theme.userMessageBg` so it matches
+//     the host UI's secondary surface (e.g. Tokyo Night's #292e42), or
+//     falls back to a neutral dark gray when the theme is unavailable.
+//     This keeps "missing-line" fillers visually distinct from real
+//     context rows (which use the terminal default) and from
+//     success-bg-tinted +/- rows.
 const RST = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
@@ -232,7 +246,12 @@ let BG_ADD_W = envBg("DIFF_BG_ADD_HL", "\x1b[48;2;35;75;50m");
 let BG_DEL_W = envBg("DIFF_BG_DEL_HL", "\x1b[48;2;80;35;35m");
 let BG_GUTTER_ADD = envBg("DIFF_BG_GUTTER_ADD", "\x1b[48;2;18;32;26m");
 let BG_GUTTER_DEL = envBg("DIFF_BG_GUTTER_DEL", "\x1b[48;2;38;22;22m");
-let BG_EMPTY = "\x1b[48;2;18;18;18m";
+// Fallback for BG_EMPTY when the host theme doesn't expose a
+// `userMessageBg` we can pull. Kept as a module-level constant so theme
+// changes can reset BG_EMPTY back to a known default before the next
+// auto-derive pass runs.
+const BG_EMPTY_FALLBACK = "\x1b[48;2;18;18;18m";
+let BG_EMPTY = envBg("DIFF_BG_EMPTY", BG_EMPTY_FALLBACK);
 
 let FG_ADD = envFg("DIFF_FG_ADD", "\x1b[38;2;100;180;120m");
 let FG_DEL = envFg("DIFF_FG_DEL", "\x1b[38;2;200;100;100m");
@@ -246,6 +265,11 @@ const BORDER_BAR = "▌";
 const BG_DEFAULT = "\x1b[49m";
 
 let BG_BASE = BG_DEFAULT;
+// Background for context rows (unchanged lines). Pinned to the terminal
+// default (== `\x1b[49m`) so unchanged code reads as "untinted text"
+// against whatever surrounds the diff block — distinct from diff chrome
+// (BG_EMPTY) and changed rows (BG_ADD/BG_DEL).
+let BG_CTX = BG_DEFAULT;
 let DIVIDER = `${FG_RULE}│${RST}`;
 let DEFAULT_DIFF_COLORS: DiffColors = { fgAdd: FG_ADD, fgDel: FG_DEL, fgCtx: FG_DIM };
 
@@ -351,7 +375,22 @@ function autoDeriveBgFromTheme(theme: DiffThemeLike): void {
 		BG_DEL_W = mixBg(delBase, delRgb, 0.22);
 		BG_GUTTER_ADD = mixBg(addBase, addRgb, 0.05);
 		BG_GUTTER_DEL = mixBg(delBase, delRgb, 0.06);
-		BG_EMPTY = BG_BASE;
+
+		// Pull chrome bg from the host UI's user-message surface so the
+		// diff renderer's "missing line" fillers / separators / footer
+		// blend with the rest of pi's TUI instead of standing out as
+		// arbitrary dark gray. Falls through to BG_EMPTY_FALLBACK when
+		// the theme doesn't expose this token (e.g. tests, custom
+		// themes pre-userMessageBg). Crucially NOT `toolSuccessBg`:
+		// that's the +add tint, and chrome must read as neutral.
+		if (theme.getBgAnsi) {
+			try {
+				const userBgAnsi = theme.getBgAnsi("userMessageBg" as never);
+				if (userBgAnsi && parseAnsiRgb(userBgAnsi)) BG_EMPTY = userBgAnsi;
+			} catch {
+				/* theme has no userMessageBg — keep current BG_EMPTY */
+			}
+		}
 
 		// Note: RST stays a plain `\x1b[0m` — see the const declaration for
 		// why we don't bake BG_BASE into it.
@@ -446,7 +485,7 @@ export function applyDiffPalette(): void {
 	applyBg("DIFF_BG_GUTTER_DEL", "bgGutterDel", preset?.bgGutterDel, (v) => {
 		BG_GUTTER_DEL = v;
 	});
-	applyBg(null, "bgEmpty", preset?.bgEmpty, (v) => {
+	applyBg("DIFF_BG_EMPTY", "bgEmpty", preset?.bgEmpty, (v) => {
 		BG_EMPTY = v;
 	});
 
@@ -529,6 +568,10 @@ export function resolveDiffColors(theme: DiffThemeLike | null | undefined): Diff
 	const currentThemeKey = themeCacheKey(theme ?? undefined);
 	if (!_hasExplicitBgConfig && _lastResolvedThemeKey && _lastResolvedThemeKey !== currentThemeKey) {
 		BG_BASE = BG_DEFAULT;
+		// Reset BG_EMPTY to the fallback so the new theme's userMessageBg
+		// (re)applies on the next auto-derive pass instead of carrying
+		// over the previous theme's value.
+		BG_EMPTY = BG_EMPTY_FALLBACK;
 		_autoDerivePending = true;
 	}
 	_lastResolvedThemeKey = currentThemeKey;
@@ -849,11 +892,11 @@ function lnumStr(n: number | null, w: number, fg: string = FG_LNUM): string {
 }
 
 function rule(w: number): string {
-	return `${BG_BASE}${FG_RULE}${"─".repeat(w)}${RST}`;
+	return `${BG_EMPTY}${FG_RULE}${"─".repeat(w)}${RST}`;
 }
 
 function stripes(w: number): string {
-	return `${BG_BASE}${FG_STRIPE}${"╱".repeat(w)}${RST}`;
+	return `${BG_EMPTY}${FG_STRIPE}${"╱".repeat(w)}${RST}`;
 }
 
 function shouldUseSplit(diff: ParsedDiff, width: number, maxRows: number): boolean {
@@ -990,7 +1033,7 @@ function plainWordDiff(oldText: string, newText: string): { old: string; new: st
  *
  *     <num right-aligned (nw cols)>  <sign (1 col)>  <code>
  *
- * The entire row sits on a single tint (BG_DEL / BG_ADD / BG_BASE) that
+ * The entire row sits on a single tint (BG_DEL / BG_ADD / BG_CTX) that
  * fills `width` columns end-to-end — no `│` separators, no `▌` border
  * bars, no `gutter-vs-code` split. Word-level emphasis from
  * `Diff.diffWords` is layered on changed character ranges of paired
@@ -1064,13 +1107,15 @@ export async function renderUnified(
 			const pad = Math.max(0, totalW - label.length - 2);
 			const left = Math.floor(pad / 2);
 			const right = pad - left;
-			out.push(`${BG_BASE}${FG_DIM}${"·".repeat(left)}${label}${"·".repeat(right)}${RST}`);
+			out.push(`${BG_EMPTY}${FG_DIM}${"·".repeat(left)}${label}${"·".repeat(right)}${RST}`);
 			idx++;
 			continue;
 		}
 		if (l.type === "ctx") {
 			const hl = oldHL[oI] ?? l.content;
-			emitRow(l.newNum, " ", BG_BASE, FG_LNUM, `${BG_BASE}${DIM}${hl}`);
+			// Context rows render on BG_CTX (terminal default) so unchanged
+			// lines have no diff tint — only +/- rows are highlighted.
+			emitRow(l.newNum, " ", BG_CTX, FG_LNUM, `${BG_CTX}${DIM}${hl}`);
 			oI++;
 			nI++;
 			idx++;
@@ -1117,7 +1162,7 @@ export async function renderUnified(
 
 	if (!options.frameless) out.push(rule(tw));
 	if (diff.lines.length > visible.length) {
-		out.push(`${BG_BASE}${FG_DIM}  … ${diff.lines.length - visible.length} more lines${RST}`);
+		out.push(`${BG_EMPTY}${FG_DIM}  … ${diff.lines.length - visible.length} more lines${RST}`);
 	}
 	return out.join("\n");
 }
@@ -1208,12 +1253,12 @@ export async function renderSplit(
 	let rI = 0;
 	const out: string[] = [];
 
-	/** A full half-row painted with the row's bg — used as filler when one
+	/** A full half-row painted with BG_EMPTY — used as filler when one
 	 *  side has fewer wrapped rows than the other, and for the empty side
-	 *  of unpaired del/add rows. The bg matches what the empty/ctx tint
-	 *  would be: BG_BASE on context, or the row's diff tint when used as a
-	 *  wrap-continuation filler. */
-	const emptyHalf = `${BG_BASE}${" ".repeat(half)}${RST}`;
+	 *  of unpaired del/add rows. Stays on the neutral chrome gray so
+	 *  "this line doesn't exist on this side" reads visually distinct from
+	 *  ctx rows (which sit on the terminal default). */
+	const emptyHalf = `${BG_EMPTY}${" ".repeat(half)}${RST}`;
 
 	/** Build the per-row pieces of one half (left or right). Returns an
 	 *  array of `half`-wide visual rows: row 0 has the line number + sign,
@@ -1234,13 +1279,15 @@ export async function renderSplit(
 			const left = Math.floor(pad / 2);
 			const right = pad - left;
 			return [
-				`${BG_BASE}${" ".repeat(left)}${FG_DIM}${labelStr}${RST}${BG_BASE}${" ".repeat(right)}${RST}`,
+				`${BG_EMPTY}${" ".repeat(left)}${FG_DIM}${labelStr}${RST}${BG_EMPTY}${" ".repeat(right)}${RST}`,
 			];
 		}
 
 		const isDel = line.type === "del";
 		const isAdd = line.type === "add";
-		const rowBg = isDel ? BG_DEL : isAdd ? BG_ADD : BG_BASE;
+		// Context rows use BG_CTX (terminal default); only changed rows
+		// carry a diff tint.
+		const rowBg = isDel ? BG_DEL : isAdd ? BG_ADD : BG_CTX;
 		const numFg = isDel ? colors.fgDel : isAdd ? colors.fgAdd : FG_LNUM;
 		const sign = isDel ? "-" : isAdd ? "+" : " ";
 		const num = isDel
@@ -1259,7 +1306,8 @@ export async function renderSplit(
 		} else if (isDel || isAdd) {
 			body = `${rowBg}${hl}`;
 		} else {
-			body = `${BG_BASE}${DIM}${hl}`;
+			// ctx row body — BG_CTX so unchanged code has no diff tint.
+			body = `${BG_CTX}${DIM}${hl}`;
 		}
 
 		// Gutter pieces are emitted as self-contained segments (each ends in
@@ -1294,7 +1342,7 @@ export async function renderSplit(
 	}
 
 	if (rows.length > vis.length) {
-		out.push(`${BG_BASE}${FG_DIM}  … ${rows.length - vis.length} more lines${RST}`);
+		out.push(`${BG_EMPTY}${FG_DIM}  … ${rows.length - vis.length} more lines${RST}`);
 	}
 	return out.join("\n");
 }
@@ -1312,6 +1360,8 @@ export const __testing = {
 	plainWordDiff,
 	getState: () => ({
 		BG_BASE,
+		BG_CTX,
+		BG_EMPTY,
 		RST,
 		FG_ADD,
 		FG_DEL,

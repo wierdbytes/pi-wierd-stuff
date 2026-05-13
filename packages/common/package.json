@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-common",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Shared TUI building blocks for pi coding agent extensions — settings modal, frame helpers, common field renderers.",
   "type": "module",
   "files": [
