@@ -5,6 +5,7 @@ tool output.
 
 > inspired by [`pi-pretty`](https://github.com/buddingnewinsights/pi-pretty)
 
+![multi-edit split diff with `Edit i/N` blocks, word-level emphasis on paired add/del rows, untinted context lines, and chrome that picks up the host theme's `userMessageBg`](./media/diff.png)
 ![read / bash / ls / find / grep rendered with the open-right rounded frame](./media/demo.png)
 
 ## What you get
