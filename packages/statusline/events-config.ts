@@ -99,7 +99,7 @@ export const DEFAULT_EVENTS_CONFIG: EventsConfig = Object.freeze({
   display: Object.freeze({
     statuslineEnabled: true,
     footerHidden: true,
-    fixedEditorEnabled: true,
+    fixedEditorEnabled: false,
     mouseScrollEnabled: true,
     iconSet: DEFAULT_ICON_SET,
   }) as DisplayConfig,
