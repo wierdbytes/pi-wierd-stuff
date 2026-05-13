@@ -1952,7 +1952,12 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				}
 
 				if (d?._type === "writeDiff") {
-					const lab = `${summarizeDiff(d.diff.added, d.diff.removed)} ${FG_DIM}(${d.diff.lines.length} diff lines)${RST}`;
+					// `+A -B` already conveys the change size. We used to append
+					// `(N diff lines)` to hint at how much was hidden under the
+					// preview cap, but that cap is gone (we always render the
+					// whole diff). N also included context + hunk separators, so
+					// it never matched A+B and just looked like a miscount.
+					const lab = summarizeDiff(d.diff.added, d.diff.removed);
 					// Diff output is always rendered in full — no compact mode,
 					// no `… N more lines` footer — so `ctx.expanded` is
 					// irrelevant to the rendered body and stays out of the key.
@@ -2136,17 +2141,25 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 
 				const dc: DiffColors = resolveDiffColors(theme);
 				const editCount = d.edits.length;
-				const diffLineTotal = d.edits.reduce((acc, e) => acc + e.diff.lines.length, 0);
 				const summary = summarizeDiff(d.totalAdded, d.totalRemoved);
-				const editsLabel =
-					editCount === 1 ? `1 edit ${summary}` : `${editCount} edits ${summary}`;
-				const lab = `${editsLabel} ${FG_DIM}(${diffLineTotal} diff lines)${RST}`;
+				// `+A -B` already conveys the change size. We used to append
+				// `(N diff lines)` here, but N counted context rows + hunk
+				// separators on top of A+B, so it never matched the +A -B
+				// summary and looked like a miscount. With always-full
+				// rendering there's nothing useful to disambiguate either.
+				//
+				// `N edits` keeps the same FG_DIM the old parenthetical used:
+				// it's a quiet meta-label so the colored +A -B summary stays
+				// the visual anchor of the bottom border.
+				const editsCountLabel =
+					editCount === 1 ? `${FG_DIM}1 edit${RST}` : `${FG_DIM}${editCount} edits${RST}`;
+				const lab = `${editsCountLabel} ${summary}`;
 
 				// Every edit block is rendered in full — no compact mode,
 				// no `… N more edit blocks` footer, no per-edit line cap —
 				// so `ctx.expanded` doesn't affect the body and stays out of
 				// the key.
-				const key = `editDiff:${themeCacheKey(theme)}:${d.filePath}:${editCount}:${d.totalAdded}:${d.totalRemoved}:${diffLineTotal}:${w}:${status}`;
+				const key = `editDiff:${themeCacheKey(theme)}:${d.filePath}:${editCount}:${d.totalAdded}:${d.totalRemoved}:${w}:${status}`;
 				if (ctx.state._ek !== key) {
 					ctx.state._ek = key;
 					ctx.state._et = frameResultWithBottomLabel("", lab, status, t, w);
