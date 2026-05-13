@@ -14,11 +14,17 @@
     },
     "packages/common": {
       "name": "@wierdbytes/pi-common",
-      "version": "0.3.0",
+      "version": "0.4.0",
+      "dependencies": {
+        "@shikijs/cli": "^4.0.2",
+        "diff": "^8.0.2",
+      },
       "devDependencies": {
         "@earendil-works/pi-ai": "^0.74.0",
         "@earendil-works/pi-coding-agent": "^0.74.0",
         "@earendil-works/pi-tui": "^0.74.0",
+        "@types/diff": "^8.0.0",
+        "shiki": "^4.0.2",
         "vitest": "^4.0.18",
       },
       "peerDependencies": {
@@ -39,7 +45,7 @@
     },
     "packages/facelift": {
       "name": "@wierdbytes/pi-facelift",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@shikijs/cli": "^4.0.2",
         "@wierdbytes/pi-common": "^0.3.0",
@@ -59,9 +65,9 @@
     },
     "packages/statusline": {
       "name": "@wierdbytes/pi-statusline",
-      "version": "0.6.2",
+      "version": "0.6.3",
       "dependencies": {
-        "@wierdbytes/pi-common": "^0.1.0",
+        "@wierdbytes/pi-common": "^0.3.0",
         "@wierdbytes/pi-events": "^0.1.0",
       },
       "devDependencies": {
@@ -79,7 +85,7 @@
       "version": "0.4.1",
       "dependencies": {
         "@google/genai": "^1.0.0",
-        "@wierdbytes/pi-common": "^0.1.0",
+        "@wierdbytes/pi-common": "^0.3.0",
         "@wierdbytes/pi-events": "^0.1.0",
       },
       "devDependencies": {
@@ -94,7 +100,7 @@
       "name": "@wierdbytes/pi-web",
       "version": "0.5.0",
       "dependencies": {
-        "@wierdbytes/pi-common": "^0.1.0",
+        "@wierdbytes/pi-common": "^0.3.0",
         "puppeteer": "^24.0.0",
         "puppeteer-extra": "^3.3.6",
         "puppeteer-extra-plugin-stealth": "^2.11.2",
@@ -416,6 +422,8 @@
     "@types/debug": ["@types/debug@4.1.13", "", { "dependencies": { "@types/ms": "*" } }, "sha512-KSVgmQmzMwPlmtljOomayoR89W4FynCAi3E8PPs7vmDVPe84hT+vGPKkJfThkmXs0x0jAaa9U8uW8bbfyS2fWw=="],
 
     "@types/deep-eql": ["@types/deep-eql@4.0.2", "", {}, "sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw=="],
+
+    "@types/diff": ["@types/diff@8.0.0", "", { "dependencies": { "diff": "*" } }, "sha512-o7jqJM04gfaYrdCecCVMbZhNdG6T1MHg/oQoRFdERLV+4d+V7FijhiEAbFu0Usww84Yijk9yH58U4Jk4HbtzZw=="],
 
     "@types/estree": ["@types/estree@1.0.8", "", {}, "sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w=="],
 
@@ -1004,6 +1012,12 @@
     "@aws-crypto/util/@smithy/util-utf8": ["@smithy/util-utf8@2.3.0", "", { "dependencies": { "@smithy/util-buffer-from": "^2.2.0", "tslib": "^2.6.2" } }, "sha512-R8Rdn8Hy72KKcebgLiv8jQcQkXoLMOGGv5uI1/k0l+snqkOzQ1R0ChUBCxWMlBsFMekWjq0wRudIweFs7sKT5A=="],
 
     "@puppeteer/browsers/yargs": ["yargs@17.7.2", "", { "dependencies": { "cliui": "^8.0.1", "escalade": "^3.1.1", "get-caller-file": "^2.0.5", "require-directory": "^2.1.1", "string-width": "^4.2.3", "y18n": "^5.0.5", "yargs-parser": "^21.1.1" } }, "sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w=="],
+
+    "@wierdbytes/pi-statusline/@wierdbytes/pi-common": ["@wierdbytes/pi-common@0.3.0", "", { "peerDependencies": { "@earendil-works/pi-ai": ">=0.74.0", "@earendil-works/pi-coding-agent": ">=0.74.0", "@earendil-works/pi-tui": ">=0.74.0" } }, "sha512-npHDjLCswcmONIkLLBekg8V3B4dSPTq9MDHST+ZnViHY16FWVfps0oKLJRACylfLspk9gdxEzKD1M5VKukav6w=="],
+
+    "@wierdbytes/pi-voice/@wierdbytes/pi-common": ["@wierdbytes/pi-common@0.3.0", "", { "peerDependencies": { "@earendil-works/pi-ai": ">=0.74.0", "@earendil-works/pi-coding-agent": ">=0.74.0", "@earendil-works/pi-tui": ">=0.74.0" } }, "sha512-npHDjLCswcmONIkLLBekg8V3B4dSPTq9MDHST+ZnViHY16FWVfps0oKLJRACylfLspk9gdxEzKD1M5VKukav6w=="],
+
+    "@wierdbytes/pi-web/@wierdbytes/pi-common": ["@wierdbytes/pi-common@0.3.0", "", { "peerDependencies": { "@earendil-works/pi-ai": ">=0.74.0", "@earendil-works/pi-coding-agent": ">=0.74.0", "@earendil-works/pi-tui": ">=0.74.0" } }, "sha512-npHDjLCswcmONIkLLBekg8V3B4dSPTq9MDHST+ZnViHY16FWVfps0oKLJRACylfLspk9gdxEzKD1M5VKukav6w=="],
 
     "chromium-bidi/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 

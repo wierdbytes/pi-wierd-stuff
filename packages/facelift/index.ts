@@ -24,7 +24,7 @@
  */
 
 import * as childProcess from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative } from "node:path";
 
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
@@ -32,6 +32,8 @@ import type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
 	BashToolInput,
+	EditToolDetails,
+	EditToolInput,
 	ExtensionCommandContext,
 	ExtensionContext,
 	FindToolInput,
@@ -39,11 +41,36 @@ import type {
 	LsToolInput,
 	ReadToolInput,
 	ToolRenderResultOptions,
+	WriteToolInput,
 } from "@earendil-works/pi-coding-agent";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { codeToANSI } from "@shikijs/cli";
 import { bundledThemes } from "shiki";
+import {
+	applyDiffPalette,
+	canRenderSplit,
+	hlBlock as hlDiffBlock,
+	lang as diffLang,
+	parseDiff,
+	renderSplit,
+	resolveDiffColors,
+	summarize as summarizeDiff,
+	themeCacheKey,
+	type DiffColors,
+	type DiffLayout,
+	type ParsedDiff,
+} from "@wierdbytes/pi-common/diff";
+import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
+import {
+	envDefaults as faceliftEnvDefaults,
+	getConfigPath as getFaceliftConfigPath,
+	loadOrInitConfig as loadFaceliftConfig,
+	saveConfig as saveFaceliftConfig,
+	VALID_DIFF_LAYOUTS,
+	type DiffLayoutPreference,
+	type WierdFaceliftConfig,
+} from "./config.ts";
 import {
 	formatDuration,
 	frameBodyLines,
@@ -280,6 +307,24 @@ function termW(): number {
 	// match that exact width or Text.render pads the line with trailing spaces,
 	// which used to leave a visible right-side gap on the open-right frame.
 	return Math.max(1, Math.min(raw, 210));
+}
+
+/**
+ * 1-based line number of the first character of `snippet` inside
+ * `content`. Used by the `edit` tool wrapper to shift per-edit diff
+ * line numbers so the rendered gutter matches the file (instead of
+ * starting at 1 for every edit). Returns 1 when content is empty or
+ * the snippet isn't found — best-effort fallback.
+ */
+function findLineOffset(content: string | null, snippet: string): number {
+	if (!content || !snippet) return 1;
+	const idx = content.indexOf(snippet);
+	if (idx < 0) return 1;
+	let line = 1;
+	for (let i = 0; i < idx; i++) {
+		if (content.charCodeAt(i) === 10) line += 1;
+	}
+	return line;
 }
 
 function shortPath(cwd: string, home: string, p: string): string {
@@ -918,6 +963,10 @@ type PiFaceliftSdk = {
 	createFindTool?: ToolFactory<FindToolInput>;
 	createGrepToolDefinition?: ToolFactory<GrepToolInput>;
 	createGrepTool?: ToolFactory<GrepToolInput>;
+	createWriteToolDefinition?: ToolFactory<WriteToolInput>;
+	createWriteTool?: ToolFactory<WriteToolInput>;
+	createEditToolDefinition?: ToolFactory<EditToolInput, EditToolDetails>;
+	createEditTool?: ToolFactory<EditToolInput, EditToolDetails>;
 	getAgentDir?: () => string;
 };
 type PiFaceliftApi = {
@@ -936,8 +985,12 @@ type BashParams = BashToolInput;
 type LsParams = LsToolInput;
 type FindParams = FindToolInput;
 type GrepParams = GrepToolInput;
+type WriteParams = WriteToolInput;
+type EditParams = EditToolInput;
 type ReadRenderState = { _rk?: string; _rt?: string };
 type GrepRenderState = { _gk?: string; _gt?: string };
+type WriteRenderState = { _wk?: string; _wt?: string };
+type EditRenderState = { _ek?: string; _et?: string };
 type BashRenderState = {
 	startedAt?: number;
 	endedAt?: number;
@@ -945,13 +998,27 @@ type BashRenderState = {
 };
 type FindResultDetails = { _type: "findResult"; text: string; pattern: string; matchCount: number };
 type GrepResultDetails = { _type: "grepResult"; text: string; pattern: string; matchCount: number };
+type WriteResultDetails =
+	| { _type: "writeDiff"; filePath: string; diff: ParsedDiff; language: string | undefined }
+	| { _type: "writeNew"; filePath: string; content: string; lineCount: number; language: string | undefined }
+	| { _type: "writeNoChange"; filePath: string };
+type EditResultDetails = {
+	_type: "editDiff";
+	filePath: string;
+	edits: Array<{ oldText: string; newText: string; diff: ParsedDiff }>;
+	totalAdded: number;
+	totalRemoved: number;
+	language: string | undefined;
+};
 type RenderDetails =
 	| { _type: "readImage"; filePath: string; data: string; mimeType: string }
 	| { _type: "readFile"; filePath: string; content: string; offset: number; lineCount: number }
 	| { _type: "bashResult"; text: string; exitCode: number | null; command: string }
 	| { _type: "lsResult"; text: string; path: string; entryCount: number }
 	| FindResultDetails
-	| GrepResultDetails;
+	| GrepResultDetails
+	| WriteResultDetails
+	| EditResultDetails;
 
 function isTextContent(content: ToolContent): content is ToolTextContent {
 	return content.type === "text";
@@ -993,6 +1060,8 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	let createLsTool: ToolFactory<LsToolInput> | undefined;
 	let createFindTool: ToolFactory<FindToolInput> | undefined;
 	let createGrepTool: ToolFactory<GrepToolInput> | undefined;
+	let createWriteTool: ToolFactory<WriteToolInput> | undefined;
+	let createEditTool: ToolFactory<EditToolInput, EditToolDetails> | undefined;
 	let TextComponent: TextComponentCtor;
 
 	let sdk: PiFaceliftSdk;
@@ -1005,6 +1074,8 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		createLsTool = sdk.createLsToolDefinition ?? sdk.createLsTool;
 		createFindTool = sdk.createFindToolDefinition ?? sdk.createFindTool;
 		createGrepTool = sdk.createGrepToolDefinition ?? sdk.createGrepTool;
+		createWriteTool = sdk.createWriteToolDefinition ?? sdk.createWriteTool;
+		createEditTool = sdk.createEditToolDefinition ?? sdk.createEditTool;
 		TextComponent = deps.TextComponent;
 	} else {
 		try {
@@ -1014,6 +1085,8 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			createLsTool = sdk.createLsToolDefinition ?? sdk.createLsTool;
 			createFindTool = sdk.createFindToolDefinition ?? sdk.createFindTool;
 			createGrepTool = sdk.createGrepToolDefinition ?? sdk.createGrepTool;
+			createWriteTool = sdk.createWriteToolDefinition ?? sdk.createWriteTool;
+			createEditTool = sdk.createEditToolDefinition ?? sdk.createEditTool;
 			TextComponent = require("@earendil-works/pi-tui").Text;
 		} catch {
 			return;
@@ -1035,6 +1108,23 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			}
 		})(),
 	);
+
+	// Pre-load diff palette (env vars + ~/.pi/settings.json overrides). Cheap
+	// and idempotent — `resolveDiffColors` auto-derives bg tints from the
+	// host theme later anyway.
+	applyDiffPalette();
+
+	// Load (or seed) the per-package config at
+	// `~/.pi/agent/wierd-facelift/config.json`. Held in a closure-local
+	// `let` so the `/facelift` settings modal can mutate it without going
+	// through a global. `decideDiffLayout` reads this object directly.
+	let faceliftConfig: WierdFaceliftConfig = (() => {
+		try {
+			return loadFaceliftConfig();
+		} catch {
+			return faceliftEnvDefaults();
+		}
+	})();
 
 	// ===================================================================
 	// read — syntax-highlighted file content
@@ -1567,6 +1657,493 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const fallback = result.content?.[0];
 				const fallbackText = fallback && isTextContent(fallback) ? fallback.text : "searched";
 				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status, t, w));
+				return text;
+			},
+		});
+	}
+
+	// ===================================================================
+	// Shared layout decision — honors the `diffLayout` knob in the
+	// facelift config (~/.pi/agent/wierd-facelift/config.json), settable
+	// via the `/facelift` slash command.
+	//
+	// In "consistent" mode (the default) a single tool call decides one
+	// layout for every diff it shows: split iff every diff fits without
+	// excessive wrapping, otherwise unified for all. This stops the
+	// `Edit 1/2 = split, Edit 2/2 = unified` visual mix you'd otherwise
+	// get when one edit happens to contain very long lines.
+	// ===================================================================
+	const decideDiffLayout = (
+		diffs: ParsedDiff[],
+		innerW: number,
+		maxLines: number,
+	): DiffLayout | undefined => {
+		const pref = faceliftConfig.diffLayout;
+		if (pref === "split") return "split";
+		if (pref === "unified") return "unified";
+		if (pref === "per-edit") return undefined;
+		// "consistent" (default)
+		if (diffs.length === 0) return undefined;
+		const allFit = diffs.every((d) => canRenderSplit(d, innerW, maxLines));
+		return allFit ? "split" : "unified";
+	};
+
+	// ===================================================================
+	// /facelift slash command — opens the settings overlay (matches the
+	// /voice and /web conventions). Bare `/facelift` opens the modal;
+	// `/facelift status` prints the current config + path; `/facelift
+	// reset` restores defaults.
+	// ===================================================================
+	const persistFaceliftConfig = (extCtx: ExtensionContext): void => {
+		try {
+			saveFaceliftConfig(faceliftConfig);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			extCtx.ui.notify(
+				`pi-facelift: failed to save config to ${getFaceliftConfigPath()}: ${msg}`,
+				"error",
+			);
+		}
+	};
+
+	const diffLayoutLabels: Record<DiffLayoutPreference, string> = {
+		consistent: "consistent (same layout for every edit in a call)",
+		split: "split (always side-by-side)",
+		unified: "unified (always stacked)",
+		"per-edit": "per-edit (each diff decides independently)",
+	};
+
+	const openFaceliftSettings = async (extCtx: ExtensionContext): Promise<void> => {
+		const fields: Field[] = [
+			{
+				key: "diffLayout",
+				type: "enum",
+				label: "Diff layout",
+				description:
+					"How to lay out write/edit diffs. `consistent` keeps every edit in one tool call on the same layout (split when all fit, unified when any would wrap). The other modes force a specific layout or let each edit decide.",
+				value: faceliftConfig.diffLayout,
+				options: VALID_DIFF_LAYOUTS,
+				optionLabels: diffLayoutLabels,
+			},
+		];
+		await openSettingsModal(extCtx, {
+			title: "@wierdbytes/pi-facelift",
+			fields,
+			onChange: (key, value) => {
+				if (key === "diffLayout") {
+					faceliftConfig = { ...faceliftConfig, diffLayout: value as DiffLayoutPreference };
+					persistFaceliftConfig(extCtx);
+				}
+			},
+		});
+	};
+
+	const showFaceliftStatus = (extCtx: ExtensionContext): void => {
+		const lines = [
+			`config:     ${getFaceliftConfigPath()}`,
+			`diffLayout: ${faceliftConfig.diffLayout}`,
+		];
+		extCtx.ui.notify(`@wierdbytes/pi-facelift\n${lines.join("\n")}`, "info");
+	};
+
+	const resetFaceliftConfig = (extCtx: ExtensionContext): void => {
+		faceliftConfig = faceliftEnvDefaults();
+		persistFaceliftConfig(extCtx);
+		extCtx.ui.notify("pi-facelift: config reset to defaults.", "info");
+	};
+
+	pi.registerCommand("facelift", {
+		description:
+			"Open the @wierdbytes/pi-facelift settings overlay (no args). Subcommands: status | reset",
+		handler: async (args: string, extCtx: ExtensionCommandContext) => {
+			const trimmed = (args ?? "").trim();
+			if (!trimmed) {
+				await openFaceliftSettings(extCtx);
+				return;
+			}
+			const [sub] = trimmed.split(/\s+/, 1);
+			if (sub === "status") {
+				showFaceliftStatus(extCtx);
+				return;
+			}
+			if (sub === "reset") {
+				resetFaceliftConfig(extCtx);
+				return;
+			}
+			extCtx.ui.notify(
+				"Usage: /facelift [status|reset]  (no args ⇒ open settings overlay)",
+				"warning",
+			);
+		},
+		getArgumentCompletions: (prefix: string) => {
+			const subs = ["status", "reset"];
+			const lcPrefix = prefix.toLowerCase();
+			return subs.filter((s) => s.startsWith(lcPrefix)).map((s) => ({ value: s, label: s }));
+		},
+	});
+
+	// ===================================================================
+	// write — split diff (or syntax-highlighted preview for new files)
+	// ===================================================================
+
+	if (createWriteTool) {
+		const origWrite = createWriteTool(cwd);
+
+		pi.registerTool({
+			...origWrite,
+			name: "write",
+			renderShell: "self",
+
+			async execute(
+				tid: string,
+				params: WriteParams,
+				sig: AbortSignal | undefined,
+				upd: AgentToolUpdateCallback<unknown> | undefined,
+				ctx: ExtensionContext,
+			) {
+				const fp = params.path ?? "";
+				let oldContent: string | null = null;
+				try {
+					if (fp && existsSync(fp)) oldContent = readFileSync(fp, "utf-8");
+				} catch {
+					oldContent = null;
+				}
+
+				const result = (await origWrite.execute(tid, params, sig, upd, ctx)) as ToolResultLike;
+				const newContent = params.content ?? "";
+				const language = diffLang(fp);
+
+				if (oldContent === null) {
+					const lineCount = newContent ? newContent.split("\n").length : 0;
+					setResultDetails<WriteResultDetails>(result, {
+						_type: "writeNew",
+						filePath: fp,
+						content: newContent,
+						lineCount,
+						language,
+					});
+				} else if (oldContent === newContent) {
+					setResultDetails<WriteResultDetails>(result, { _type: "writeNoChange", filePath: fp });
+				} else {
+					const diff = parseDiff(oldContent, newContent);
+					setResultDetails<WriteResultDetails>(result, {
+						_type: "writeDiff",
+						filePath: fp,
+						diff,
+						language,
+					});
+				}
+				return result;
+			},
+
+			renderCall(args: WriteParams, theme: ThemeLike, ctx: RenderContextLike) {
+				resolveBaseBackground(theme);
+				const fp = args.path ?? "";
+				const isNew = !fp || !existsSync(fp);
+				const label = isNew ? "create" : "write";
+				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
+				const title = `${theme.fg("toolTitle", theme.bold(label))} ${theme.fg("accent", sp(fp))}`;
+				text.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
+				return text;
+			},
+
+			renderResult(
+				result: ToolResultLike,
+				_opt: ToolRenderResultOptions,
+				theme: ThemeLike,
+				ctx: RenderContextLike<WriteRenderState>,
+			) {
+				resolveBaseBackground(theme);
+				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
+				const status = getFrameStatus(ctx);
+				const t = asTheme(theme);
+				const w = termW();
+
+				if (ctx.isError) {
+					text.setText(renderToolError(getTextContent(result) || "Error", t, w));
+					return text;
+				}
+
+				const d = result.details as RenderDetails | undefined;
+				const dc: DiffColors = resolveDiffColors(theme);
+
+				if (d?._type === "writeNoChange") {
+					const lab = `${FG_DIM}✓ no changes${RST}`;
+					text.setText(frameResultWithBottomLabel("", lab, status, t, w));
+					return text;
+				}
+
+				if (d?._type === "writeNew") {
+					const lab = `${FG_GREEN}✓ new file${RST} ${FG_DIM}(${d.lineCount} lines)${RST}`;
+					const key = `writeNew:${themeCacheKey(theme)}:${d.filePath}:${d.lineCount}:${w}:${status}`;
+					if (ctx.state._wk !== key) {
+						ctx.state._wk = key;
+						ctx.state._wt = frameResultWithBottomLabel("", lab, status, t, w);
+						if (d.content) {
+							hlDiffBlock(d.content, d.language)
+								.then((hlLines: string[]) => {
+									if (ctx.state._wk !== key) return;
+									const maxShow = ctx.expanded ? hlLines.length : MAX_PREVIEW_LINES;
+									const preview = hlLines.slice(0, maxShow).join("\n");
+									const rem = hlLines.length - maxShow;
+									const body =
+										rem > 0 ? `${preview}\n${FG_DIM}… ${rem} more lines${RST}` : preview;
+									ctx.state._wt = frameResultWithBottomLabel(body, lab, status, t, w);
+									ctx.invalidate();
+								})
+								.catch((err: unknown) => {
+									const msg = err instanceof Error ? err.message : String(err);
+									console.error(`pi-facelift: write render failed: ${msg}`);
+								});
+						}
+					}
+					text.setText(ctx.state._wt ?? frameResultWithBottomLabel("", lab, status, t, w));
+					return text;
+				}
+
+				if (d?._type === "writeDiff") {
+					const lab = `${summarizeDiff(d.diff.added, d.diff.removed)} ${FG_DIM}(${d.diff.lines.length} diff lines)${RST}`;
+					const key = `writeDiff:${themeCacheKey(theme)}:${d.filePath}:${d.diff.added}:${d.diff.removed}:${d.diff.lines.length}:${w}:${status}`;
+					if (ctx.state._wk !== key) {
+						ctx.state._wk = key;
+						ctx.state._wt = frameResultWithBottomLabel("", lab, status, t, w);
+						const maxLines = ctx.expanded ? d.diff.lines.length : MAX_PREVIEW_LINES;
+						const innerW = Math.max(40, w - 1);
+						const layout = decideDiffLayout([d.diff], innerW, maxLines);
+						// Reserve 1 col for the outer frame rail.
+						renderSplit(d.diff, d.language, maxLines, dc, innerW, { frameless: true, layout })
+							.then((rendered: string) => {
+								if (ctx.state._wk !== key) return;
+								ctx.state._wt = frameResultWithBottomLabel(rendered, lab, status, t, w);
+								ctx.invalidate();
+							})
+							.catch((err: unknown) => {
+								const msg = err instanceof Error ? err.message : String(err);
+								console.error(`pi-facelift: write diff render failed: ${msg}`);
+							});
+					}
+					text.setText(ctx.state._wt ?? frameResultWithBottomLabel("", lab, status, t, w));
+					return text;
+				}
+
+				const fallback = result.content?.[0];
+				const fallbackText = fallback && isTextContent(fallback) ? fallback.text : "written";
+				text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status, t, w));
+				return text;
+			},
+		});
+	}
+
+	// ===================================================================
+	// edit — per-edit split diffs with shared summary
+	// ===================================================================
+
+	if (createEditTool) {
+		const origEdit = createEditTool(cwd);
+
+		const getEditOperations = (input: Partial<EditToolInput>): Array<{ oldText: string; newText: string }> => {
+			if (Array.isArray(input?.edits)) {
+				return input.edits
+					.map((edit) => ({
+						oldText:
+							typeof (edit as { oldText?: unknown })?.oldText === "string"
+								? ((edit as { oldText: string }).oldText)
+								: typeof (edit as { old_text?: unknown })?.old_text === "string"
+									? ((edit as { old_text: string }).old_text)
+									: "",
+						newText:
+							typeof (edit as { newText?: unknown })?.newText === "string"
+								? ((edit as { newText: string }).newText)
+								: typeof (edit as { new_text?: unknown })?.new_text === "string"
+									? ((edit as { new_text: string }).new_text)
+									: "",
+					}))
+					.filter((edit) => edit.oldText && edit.oldText !== edit.newText);
+			}
+			const legacy = input as { oldText?: unknown; old_text?: unknown; newText?: unknown; new_text?: unknown };
+			const oldText =
+				typeof legacy.oldText === "string"
+					? legacy.oldText
+					: typeof legacy.old_text === "string"
+						? legacy.old_text
+						: "";
+			const newText =
+				typeof legacy.newText === "string"
+					? legacy.newText
+					: typeof legacy.new_text === "string"
+						? legacy.new_text
+						: "";
+			return oldText && oldText !== newText ? [{ oldText, newText }] : [];
+		};
+
+		pi.registerTool({
+			...origEdit,
+			name: "edit",
+			renderShell: "self",
+
+			async execute(
+				tid: string,
+				params: EditParams,
+				sig: AbortSignal | undefined,
+				upd: AgentToolUpdateCallback<EditToolDetails | undefined> | undefined,
+				ctx: ExtensionContext,
+			) {
+				const fp = params.path ?? "";
+				// Snapshot the file BEFORE the edit so each edit's diff knows
+				// where its `oldText` actually lives in the file. Without this,
+				// `parseDiff(op.oldText, op.newText)` numbers every diff from
+				// line 1 and the rendered gutter ends up off by the line
+				// offset of the edit inside the file.
+				let preEditFile: string | null = null;
+				try {
+					if (fp && existsSync(fp)) preEditFile = readFileSync(fp, "utf-8");
+				} catch {
+					preEditFile = null;
+				}
+
+				const result = (await origEdit.execute(tid, params, sig, upd, ctx)) as ToolResultLike;
+				const ops = getEditOperations(params);
+				if (ops.length === 0) return result;
+
+				const language = diffLang(fp);
+				// `cumulativeDelta` tracks the net line shift introduced by
+				// earlier edits in this same tool call. The model conventionally
+				// emits edits in file order so this is correct for the common
+				// case; out-of-order edits at most produce slightly off new-side
+				// numbers (old-side numbers stay accurate since we always
+				// resolve against the pre-edit snapshot).
+				let cumulativeDelta = 0;
+				const edits = ops.map((op) => {
+					const diff = parseDiff(op.oldText, op.newText);
+					const oldOffset = findLineOffset(preEditFile, op.oldText);
+					const newOffset = oldOffset + cumulativeDelta;
+					if (oldOffset !== 1 || cumulativeDelta !== 0) {
+						for (const line of diff.lines) {
+							if (line.oldNum !== null) line.oldNum += oldOffset - 1;
+							if (line.newNum !== null) line.newNum += newOffset - 1;
+						}
+					}
+					cumulativeDelta += diff.added - diff.removed;
+					return { oldText: op.oldText, newText: op.newText, diff };
+				});
+				const totalAdded = edits.reduce((acc, e) => acc + e.diff.added, 0);
+				const totalRemoved = edits.reduce((acc, e) => acc + e.diff.removed, 0);
+
+				setResultDetails<EditResultDetails>(result, {
+					_type: "editDiff",
+					filePath: fp,
+					edits,
+					totalAdded,
+					totalRemoved,
+					language,
+				});
+				return result;
+			},
+
+			renderCall(args: EditParams, theme: ThemeLike, ctx: RenderContextLike) {
+				resolveBaseBackground(theme);
+				const fp = args.path ?? "";
+				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
+				const title = `${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", sp(fp))}`;
+				text.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
+				return text;
+			},
+
+			renderResult(
+				result: ToolResultLike,
+				_opt: ToolRenderResultOptions,
+				theme: ThemeLike,
+				ctx: RenderContextLike<EditRenderState>,
+			) {
+				resolveBaseBackground(theme);
+				const text = ctx.lastComponent ?? new TextComponent("", 0, 0);
+				const status = getFrameStatus(ctx);
+				const t = asTheme(theme);
+				const w = termW();
+
+				if (ctx.isError) {
+					text.setText(renderToolError(getTextContent(result) || "Error", t, w));
+					return text;
+				}
+
+				const d = result.details as RenderDetails | undefined;
+				if (d?._type !== "editDiff") {
+					const fallback = result.content?.[0];
+					const fallbackText = fallback && isTextContent(fallback) ? fallback.text : "edited";
+					text.setText(frameResult(theme.fg("dim", String(fallbackText).slice(0, 120)), status, t, w));
+					return text;
+				}
+
+				const dc: DiffColors = resolveDiffColors(theme);
+				const editCount = d.edits.length;
+				const diffLineTotal = d.edits.reduce((acc, e) => acc + e.diff.lines.length, 0);
+				const summary = summarizeDiff(d.totalAdded, d.totalRemoved);
+				const editsLabel =
+					editCount === 1 ? `1 edit ${summary}` : `${editCount} edits ${summary}`;
+				const lab = `${editsLabel} ${FG_DIM}(${diffLineTotal} diff lines)${RST}`;
+
+				const key = `editDiff:${themeCacheKey(theme)}:${d.filePath}:${editCount}:${d.totalAdded}:${d.totalRemoved}:${diffLineTotal}:${w}:${status}:${ctx.expanded ? 1 : 0}`;
+				if (ctx.state._ek !== key) {
+					ctx.state._ek = key;
+					ctx.state._et = frameResultWithBottomLabel("", lab, status, t, w);
+
+					const innerW = Math.max(40, w - 1);
+					const perEditCap = ctx.expanded
+						? Number.POSITIVE_INFINITY
+						: Math.max(8, Math.floor(MAX_PREVIEW_LINES / Math.max(1, Math.min(editCount, 3))));
+					const shownEdits = ctx.expanded ? d.edits : d.edits.slice(0, 3);
+					const remaining = d.edits.length - shownEdits.length;
+
+					// Pick one layout for every edit in this call ("consistent" mode,
+					// the default) so we never end up with `Edit 1 split, Edit 2
+					// unified`. The user can override via .pi/settings.json's
+					// `diffLayout` ("split"/"unified"/"per-edit").
+					const probeCap = Number.isFinite(perEditCap) ? perEditCap : MAX_PREVIEW_LINES;
+					const layout = decideDiffLayout(
+						shownEdits.map((e) => e.diff),
+						innerW,
+						probeCap,
+					);
+
+					Promise.all(
+						shownEdits.map((edit, idx) =>
+							renderSplit(
+								edit.diff,
+								d.language,
+								Number.isFinite(perEditCap) ? perEditCap : edit.diff.lines.length,
+								dc,
+								innerW,
+								{ frameless: true, layout },
+							)
+								.then((rendered) =>
+									editCount > 1
+										? `${FG_DIM}Edit ${idx + 1}/${editCount}${RST} ${summarizeDiff(edit.diff.added, edit.diff.removed)}\n${rendered}`
+										: rendered,
+								)
+								.catch(() =>
+									editCount > 1
+										? `${FG_DIM}Edit ${idx + 1}/${editCount}${RST} ${summarizeDiff(edit.diff.added, edit.diff.removed)}`
+										: summarizeDiff(edit.diff.added, edit.diff.removed),
+								),
+						),
+					)
+						.then((sections) => {
+							if (ctx.state._ek !== key) return;
+							const joined = sections.join("\n\n");
+							const suffix =
+								remaining > 0
+									? `\n\n${FG_DIM}… ${remaining} more edit block${remaining === 1 ? "" : "s"}${RST}`
+									: "";
+							ctx.state._et = frameResultWithBottomLabel(`${joined}${suffix}`, lab, status, t, w);
+							ctx.invalidate();
+						})
+						.catch((err: unknown) => {
+							const msg = err instanceof Error ? err.message : String(err);
+							console.error(`pi-facelift: edit diff render failed: ${msg}`);
+						});
+				}
+
+				text.setText(ctx.state._et ?? frameResultWithBottomLabel("", lab, status, t, w));
 				return text;
 			},
 		});

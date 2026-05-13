@@ -31,6 +31,14 @@ tool output.
 - **`find` / `grep`** — grouped / highlighted rendering on top of pi's
   built-in tool implementations (no extra search backend, no extra
   dependencies).
+- **`write` / `edit`** — GitHub-style side-by-side diff with syntax
+  highlighting and word-level emphasis (powered by
+  [`@wierdbytes/pi-common/diff`][cd]). All edits in one tool call share
+  a single layout by default (split when every diff fits, unified when
+  any would wrap) so `Edit 1 split, Edit 2 unified` mixed renders
+  don't happen — configurable via `diffLayout` (see below).
+
+  [cd]: ../common/README.md#diff
 
 ## Install
 
@@ -52,7 +60,53 @@ set -g allow-passthrough on
 
 ## Configuration
 
-All configuration is via environment variables — no settings file:
+### `/facelift` slash command
+
+Run `/facelift` to open the settings overlay. Bare invocation opens the
+modal; subcommands print or reset state:
+
+| Command            | Effect                                                          |
+| ------------------ | --------------------------------------------------------------- |
+| `/facelift`        | Open the settings overlay.                                      |
+| `/facelift status` | Print current config + the config-file path.                    |
+| `/facelift reset`  | Reset every knob to defaults and persist.                       |
+
+The overlay matches the look of `/voice`, `/web`, `/statusline` from the
+same monorepo. Changes are persisted to disk immediately on each tweak.
+
+### Config file
+
+Per-package state lives at:
+
+```
+~/.pi/agent/wierd-facelift/config.json
+```
+
+(or `${PI_AGENT_DIR}/wierd-facelift/config.json` if `PI_AGENT_DIR` is
+set). The file is seeded on first run and re-sanitised on every load,
+so hand-edits with typos won't crash the extension — unknown fields
+fall back to defaults.
+
+Current schema:
+
+```jsonc
+{
+  // "consistent" (default): one layout per tool call. If every diff
+  //   in the call fits without excessive line wrapping → split; else
+  //   → unified for all. Avoids `Edit 1 split, Edit 2 unified` mixed
+  //   renders in a single edit call.
+  // "split"     : always side-by-side, even when long lines wrap.
+  // "unified"   : always stacked single-column.
+  // "per-edit"  : each diff picks independently (original pi-diff
+  //               behaviour; can produce mixed layouts).
+  "diffLayout": "consistent"
+}
+```
+
+### Environment variables (cosmetic knobs)
+
+These stay env-only because they're either rendering tunables (Shiki,
+icons, image protocols) or boot-time toggles:
 
 | Variable                       | Default         | Notes                                                                         |
 | ------------------------------ | --------------- | ----------------------------------------------------------------------------- |
@@ -62,6 +116,7 @@ All configuration is via environment variables — no settings file:
 | `FACELIFT_CACHE_LIMIT`         | `128`           | Max number of highlighted blocks held in memory.                              |
 | `FACELIFT_ICONS`               | `nerd`          | Set to `none` / `off` to disable Nerd Font icons in `ls`/`find`/`grep`.       |
 | `FACELIFT_IMAGE_PROTOCOL`      | auto            | Force `kitty` / `iterm2` / `none`. Auto-detected from `$TERM_PROGRAM` etc.    |
+| `DIFF_LAYOUT`                  | (none)          | One-shot override for `diffLayout` on first-run seeding.                      |
 
 ## Development
 
