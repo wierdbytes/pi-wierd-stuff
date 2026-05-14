@@ -25,11 +25,11 @@ const DEFAULT_MAX_TOKENS = 4096;
 const DEFAULT_MAX_USES = 5;
 const DEFAULT_MODEL = "claude-haiku-4-5";
 
-const TOOL_DESCRIPTION = `Search the web through Anthropic's Claude. Returns a synthesized answer grounded in cited sources, plus the raw source list.
+const TOOL_DESCRIPTION = `Search the web and get back a synthesized, citation-backed answer together with the underlying source list (titles, URLs, page age) and inline citations tied to the answer text.
 
-Use for current events, version-specific docs, or anything outside training data. Prefer specific queries over broad ones; Claude may issue follow-up searches up to max_uses.
+Reach for this when you need information that is recent, fast-moving, or otherwise likely to be missing or stale in training data: current events, new releases, version-specific docs, niche libraries, pricing, regulations, or facts you need to verify against an authoritative source.
 
-Cost: counts as one Anthropic API call plus per-search server-tool fees billed to the active Anthropic account.`;
+Prefer specific, well-scoped queries — broad questions waste budget and dilute results. Narrow the search with allowed_domains / blocked_domains when you already know the trustworthy sources, and set user_location for region-sensitive queries (local services, languages, regulations).`;
 
 export const SearchUserLocation = Type.Object({
   type: Type.Literal("approximate"),
