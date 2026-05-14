@@ -306,7 +306,7 @@ function termW(): number {
 	// pi-tui/dist/tui.js — `const width = this.terminal.columns`). Frames must
 	// match that exact width or Text.render pads the line with trailing spaces,
 	// which used to leave a visible right-side gap on the open-right frame.
-	return Math.max(1, Math.min(raw, 210));
+	return Math.max(1, raw);
 }
 
 /**
