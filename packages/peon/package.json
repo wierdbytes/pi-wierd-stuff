@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-peon",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Play CESP/OpenPeon sound packs on pi lifecycle events — peons, GLaDOS, battlecruisers and 300+ more community sound packs.",
   "type": "module",
   "files": [
