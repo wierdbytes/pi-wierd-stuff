@@ -22,6 +22,9 @@ docs/plans/     Design notes per feature/package
 .github/workflows/publish.yml   Auto-publish on push to master
 ```
 
+## Extension settings
+- settings should be placed per-extension in ~/.pi/agent/@wierdbytes/pi-<package-name>/settings.json
+
 ## Package conventions
 
 - `package.json` → `pi.extensions: ["./index.ts"]` for extensions, `pi.themes: [...]` for themes.
