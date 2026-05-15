@@ -161,8 +161,10 @@ export default function piPeon(pi: ExtensionAPI) {
 
   /**
    * Auto-install the configured active pack when it isn't present on
-   * disk. Fire-and-forget — emits progress / result toasts via the
-   * events bus so the user knows what's happening but isn't blocked.
+   * disk. Fire-and-forget — surfaces progress / result through
+   * `ctx.ui.notify` (pi's built-in notification stream) so the user
+   * sees what's happening on a fresh install without depending on
+   * the statusline toast pipeline being present.
    *
    * After a successful install we play the `session.start` sound
    * (gated by `playWelcome`) so the very first run of a fresh pi
@@ -170,44 +172,50 @@ export default function piPeon(pi: ExtensionAPI) {
    * (the synchronous welcome-sound call below fires before the
    * download finishes, when there's still no pack to play from).
    */
-  const autoInstallActivePack = async (playWelcome: boolean): Promise<void> => {
+  const autoInstallActivePack = async (
+    ctx: ExtensionContext,
+    playWelcome: boolean,
+  ): Promise<void> => {
     const wantedName = config.activePack;
-    emitToast(
-      "info",
+    ctx.ui.notify(
       `peon: pack "${wantedName}" not installed — fetching registry…`,
+      "info",
     );
     let entries: RegistryEntry[];
     try {
       entries = await fetchRegistry();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      emitToast(
-        "error",
+      ctx.ui.notify(
         `peon: registry fetch failed (${msg}). Pack "${wantedName}" not installed.`,
+        "error",
       );
       return;
     }
     const entry = entries.find((e) => e.name === wantedName);
     if (!entry) {
-      emitToast(
-        "warning",
+      ctx.ui.notify(
         `peon: "${wantedName}" is not in the public registry — open /peon → Packs… to pick another.`,
+        "warning",
       );
       return;
     }
-    emitToast("info", `peon: installing "${wantedName}"…`);
+    ctx.ui.notify(`peon: installing "${wantedName}"…`, "info");
     try {
       await installPackFromRegistry(entry);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      emitToast("error", `peon: install of "${wantedName}" failed (${msg}).`);
+      ctx.ui.notify(
+        `peon: install of "${wantedName}" failed (${msg}).`,
+        "error",
+      );
       return;
     }
     // Drop the cached registry so the next /peon browse pulls fresh
     // `updated`/`version` fields.
     resetRegistryCache();
     refreshActivePack();
-    emitToast("info", `peon: installed "${wantedName}" and ready to go.`);
+    ctx.ui.notify(`peon: installed "${wantedName}" and ready to go.`, "info");
     if (playWelcome) playFor("session.start");
   };
 
@@ -251,7 +259,7 @@ export default function piPeon(pi: ExtensionAPI) {
     // the pack is actually on disk.
     const wantsWelcome = event.reason === "startup" || event.reason === "new";
     if (!activePack) {
-      void autoInstallActivePack(wantsWelcome);
+      void autoInstallActivePack(ctx, wantsWelcome);
     } else if (wantsWelcome) {
       // Reasons we deliberately *skip* the welcome sound otherwise:
       //   - "reload" — the user just ran /reload; firing again would
