@@ -304,4 +304,185 @@ describe("createSettingsModalBody — happy paths", () => {
     const titleLine = lines[0] ?? "";
     expect(titleLine).toContain("voice");
   });
+
+  it("alt+↓ on a reorderable row swaps it with the next reorderable peer", () => {
+    // Three reorderable rows + one non-reorderable separator at the
+    // tail — mirrors the statusline Layout tab's structure.
+    const onReorder = vi.fn();
+    const fields: Field[] = [
+      { key: "a", type: "boolean", label: "A", value: true, reorderable: true },
+      { key: "b", type: "boolean", label: "B", value: false, reorderable: true },
+      { key: "c", type: "boolean", label: "C", value: true, reorderable: true },
+      { key: "sep", type: "boolean", label: "Sep", value: false },
+    ];
+    const body = createSettingsModalBody(
+      { fields, onReorder },
+      { tui: fakeTui(), theme: fakeTheme(), ctx: fakeCtx(), close: vi.fn() },
+    );
+
+    body.render(80);
+    // Selected starts at row 0 ("a"). Press alt+↓ to swap with "b".
+    body.handleInput?.("\x1b[1;3B"); // alt+down (kitty/xterm sequence)
+    expect(onReorder).toHaveBeenCalledTimes(1);
+    expect(onReorder).toHaveBeenCalledWith({
+      fieldKey: "a",
+      fromIndex: 0,
+      toIndex: 1,
+    });
+
+    // The render now shows the swapped order; "b" is at visible row 0.
+    const lines = body.render(80).join("\n");
+    // Row 0 label should be "B" (just swapped from row 1), row 1
+    // should be "A" (the moved row, focus followed).
+    const firstRow = lines.split("\n").find((l) => l.includes("B "));
+    const secondRow = lines.split("\n").find((l) => l.includes("A "));
+    expect(firstRow).toBeTruthy();
+    expect(secondRow).toBeTruthy();
+    // "A" line must appear AFTER "B" line in render output.
+    expect(lines.indexOf("B ")).toBeLessThan(lines.indexOf("A "));
+  });
+
+  it("alt+↑ at the head of a reorderable group is a no-op (but consumes the keystroke)", () => {
+    const onReorder = vi.fn();
+    const fields: Field[] = [
+      { key: "a", type: "boolean", label: "A", value: true, reorderable: true },
+      { key: "b", type: "boolean", label: "B", value: false, reorderable: true },
+    ];
+    const body = createSettingsModalBody(
+      { fields, onReorder },
+      { tui: fakeTui(), theme: fakeTheme(), ctx: fakeCtx(), close: vi.fn() },
+    );
+
+    body.render(80);
+    body.handleInput?.("\x1b[1;3A"); // alt+up at row 0
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("field.dim=true forces a muted label even when focused", () => {
+    // Sanity: a focused row normally renders its label with the
+    // `text` colour. `dim: true` overrides that to `muted`.
+    const seen: string[] = [];
+    const captureTheme: Theme = {
+      ...fakeTheme(),
+      fg: (color: string, text: string) => {
+        if (text === "Disabled") seen.push(color);
+        return text;
+      },
+    } as Theme;
+    const fields: Field[] = [
+      { key: "x", type: "boolean", label: "Disabled", value: false, dim: true },
+    ];
+    const body = createSettingsModalBody(
+      { fields },
+      { tui: fakeTui(), theme: captureTheme, ctx: fakeCtx(), close: vi.fn() },
+    );
+    body.render(80);
+    expect(seen).toContain("muted");
+    expect(seen).not.toContain("text");
+  });
+
+  it("field.dim=false forces an active label even when NOT focused", () => {
+    // Second row starts unselected. Without `dim: false` the label
+    // would render with `muted`; the override flips it to `text`.
+    const seen: string[] = [];
+    const captureTheme: Theme = {
+      ...fakeTheme(),
+      fg: (color: string, text: string) => {
+        if (text === "Active") seen.push(color);
+        return text;
+      },
+    } as Theme;
+    const fields: Field[] = [
+      { key: "a", type: "boolean", label: "Focused", value: true },
+      { key: "b", type: "boolean", label: "Active", value: false, dim: false },
+    ];
+    const body = createSettingsModalBody(
+      { fields },
+      { tui: fakeTui(), theme: captureTheme, ctx: fakeCtx(), close: vi.fn() },
+    );
+    body.render(80);
+    expect(seen).toContain("text");
+    expect(seen).not.toContain("muted");
+  });
+
+  it("field.dim=fn re-evaluates on every render so live state drives the color", () => {
+    let isDisabled = false;
+    const seen: string[] = [];
+    const captureTheme: Theme = {
+      ...fakeTheme(),
+      fg: (color: string, text: string) => {
+        if (text === "Block") seen.push(color);
+        return text;
+      },
+    } as Theme;
+    const fields: Field[] = [
+      {
+        key: "b",
+        type: "boolean",
+        label: "Block",
+        value: true,
+        dim: () => isDisabled,
+      },
+    ];
+    const body = createSettingsModalBody(
+      { fields },
+      { tui: fakeTui(), theme: captureTheme, ctx: fakeCtx(), close: vi.fn() },
+    );
+    body.render(80);
+    // First render: not disabled → text (because focused) or text
+    // (because dim() returned false). Either way: text.
+    expect(seen).toEqual(["text"]);
+
+    isDisabled = true;
+    seen.length = 0;
+    body.render(80);
+    // Second render: dim() now returns true → muted regardless of
+    // focus.
+    expect(seen).toEqual(["muted"]);
+  });
+
+  it("CustomField.hints override replaces the default 'enter open/edit' heuristic", () => {
+    // A custom field with no `openSubmenu` and a `handleInput` would
+    // normally advertise `enter edit`. The `hints` override replaces
+    // that with whatever the caller wants.
+    const fields: Field[] = [
+      {
+        key: "x",
+        type: "custom",
+        label: "Custom",
+        value: false,
+        render: () => "[ ]",
+        handleInput: () => false,
+        hints: [{ key: "space", label: "toggle" }],
+      },
+    ];
+    const body = createSettingsModalBody(
+      { fields },
+      { tui: fakeTui(), theme: fakeTheme(), ctx: fakeCtx(), close: vi.fn() },
+    );
+    const out = body.render(80).join("\n");
+    expect(out).toContain("space toggle");
+    expect(out).not.toContain("enter edit");
+    expect(out).not.toContain("enter open");
+  });
+
+  it("alt+↓ next to a non-reorderable neighbour does NOT swap", () => {
+    // The reorderable "a" sits directly above a non-reorderable
+    // "sep". Pressing alt+↓ must NOT swap them — the contract is that
+    // the immediate neighbour must also be reorderable.
+    const onReorder = vi.fn();
+    const fields: Field[] = [
+      { key: "a", type: "boolean", label: "A", value: true, reorderable: true },
+      { key: "sep", type: "boolean", label: "Sep", value: false }, // not reorderable
+      { key: "b", type: "boolean", label: "B", value: false, reorderable: true },
+    ];
+    const body = createSettingsModalBody(
+      { fields, onReorder },
+      { tui: fakeTui(), theme: fakeTheme(), ctx: fakeCtx(), close: vi.fn() },
+    );
+
+    body.render(80);
+    body.handleInput?.("\x1b[1;3B"); // alt+down at row 0
+    expect(onReorder).not.toHaveBeenCalled();
+  });
 });

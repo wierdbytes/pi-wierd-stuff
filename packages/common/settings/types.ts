@@ -40,6 +40,31 @@ export interface FieldBase {
   tab?: string;
   /** Disable interactions; the row still renders but Enter is a no-op. */
   disabled?: boolean;
+  /**
+   * Opt-in to alt+↑ / alt+↓ reorder. When set, the modal swaps this
+   * row with the immediate neighbour (in `visibleRowIndices` order)
+   * if and only if that neighbour is also reorderable. The caller's
+   * `SettingsModalOptions.onReorder` is invoked after the swap so it
+   * can mirror the change into persistent state. Non-reorderable
+   * neighbours block the move (no skip-and-swap), so callers should
+   * group reorderable rows contiguously inside a tab.
+   */
+  reorderable?: boolean;
+  /**
+   * Override the row's label color. The default behaviour is
+   * `selected ? "text" : "muted"` — fields opt-in here to express
+   * "this row is active" (always rendered with the bright `text`
+   * color) or "this row is disabled" (always muted, even when
+   * focused) regardless of focus state.
+   *
+   * Accepts a boolean (`true` ⇒ muted, `false` ⇒ active) or a
+   * thunk re-evaluated on every render so the color can track live
+   * external state (e.g. a per-block visibility toggle that updates
+   * via `onChange`).
+   *
+   * Unset means "follow default".
+   */
+  dim?: boolean | (() => boolean);
 }
 
 export interface BooleanField extends FieldBase {
@@ -163,6 +188,15 @@ export interface CustomField<T = unknown> extends FieldBase {
    * callback that commits (`done(value)`) or cancels (`done()`).
    */
   openSubmenu?: (args: CustomFieldSubmenuArgs<T>) => Component;
+  /**
+   * Override the auto-generated footer hints for this row. The default
+   * heuristic in `customRenderer.hints` shows `enter open` when an
+   * `openSubmenu` is provided and `enter edit` when only `handleInput`
+   * is. Set this to advertise a different set (e.g. `space toggle`
+   * when `handleInput` consumes space but Enter is a no-op) without
+   * sub-classing the field renderer.
+   */
+  hints?: FieldKeyHint[];
 }
 
 export interface CustomFieldRenderArgs<T> {
@@ -295,6 +329,20 @@ export interface SettingsModalOptions<F extends Field = Field> {
    * is surfaced via `ctx.ui.notify` and does NOT roll back the row.
    */
   onChange?: <K extends F["key"]>(key: K, value: ValueOfField<F, K>, field: F) => void | Promise<void>;
+  /**
+   * Called when the user presses alt+↑ / alt+↓ on a `reorderable: true`
+   * row. The modal has already swapped its internal `rows` array and
+   * moved focus to follow the row by the time this fires; the caller
+   * just needs to mirror the change into persistent state.
+   *
+   * Indices are 0-based positions **within the active tab's visible
+   * rows** (so they map directly to e.g. `layout.order` positions for
+   * statusline-style use cases). Both `fromIndex` and `toIndex` count
+   * only `reorderable: true` peers — non-reorderable rows interleaved
+   * with the reorderable ones do NOT participate and do NOT shift the
+   * peer index.
+   */
+  onReorder?: (info: { fieldKey: string; fromIndex: number; toIndex: number }) => void;
   /**
    * Called once when the modal closes. Useful for fire-and-forget
    * cleanup (e.g. saving a debounced config).

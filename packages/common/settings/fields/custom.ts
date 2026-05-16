@@ -25,6 +25,11 @@ export const customRenderer: FieldRenderer<CustomField, unknown> = {
   },
   hints(row) {
     if (row.field.disabled) return [];
+    // Caller-supplied override wins outright — useful when
+    // `handleInput` consumes a specific key (e.g. space) but Enter
+    // is a no-op, in which case the default "enter edit" heuristic
+    // would be misleading.
+    if (row.field.hints) return row.field.hints;
     if (row.field.openSubmenu) return [{ key: "enter", label: "open" }];
     if (row.field.handleInput) return [{ key: "enter", label: "edit" }];
     return [];

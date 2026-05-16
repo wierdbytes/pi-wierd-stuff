@@ -212,6 +212,73 @@ export function createSettingsModalBody<F extends Field>(
     }
   }
 
+  /**
+   * Apply an alt+↑ / alt+↓ reorder request originating from `handleInput`.
+   *
+   * Returns `true` when the reorder consumed the keystroke (success
+   * or graceful no-op at an edge); `false` when the focused row isn't
+   * `reorderable` and the modal should fall through to the default
+   * alt-arrow handling (which is currently nothing — alt-arrows are
+   * inert in non-reorderable contexts).
+   *
+   * Reorder is restricted to swaps with the immediate `reorderable`
+   * neighbour in `visibleRowIndices` order. We do NOT skip over
+   * intervening non-reorderable rows: callers are expected to group
+   * reorderable rows contiguously, which keeps the visual behaviour
+   * predictable.
+   */
+  function handleReorder(direction: -1 | 1): boolean {
+    const focusedIdx = focusedIndex();
+    if (focusedIdx === undefined) return false;
+    const focusedRowInternal = rows[focusedIdx];
+    if (!focusedRowInternal?.field.reorderable) return false;
+
+    const indices = visibleRowIndices();
+    const visiblePos = indices.indexOf(focusedIdx);
+    const targetVisiblePos = visiblePos + direction;
+    if (targetVisiblePos < 0 || targetVisiblePos >= indices.length) {
+      // At the edge — still consume the keystroke so it doesn't bleed
+      // into the bare up/down handler below.
+      return true;
+    }
+    const targetIdx = indices[targetVisiblePos]!;
+    const targetRow = rows[targetIdx];
+    if (!targetRow?.field.reorderable) {
+      // Adjacent neighbour isn't reorderable — treat as edge.
+      return true;
+    }
+
+    // Compute the from/to indices counting ONLY reorderable peers so
+    // callers that interleave non-reorderable rows (e.g. a Separator
+    // field at the bottom of a Layout tab) still receive contiguous
+    // 0..N-1 positions matching their own data structure.
+    const reorderablePeerIdxs = indices.filter((i) => rows[i]?.field.reorderable);
+    const fromPeerPos = reorderablePeerIdxs.indexOf(focusedIdx);
+    const toPeerPos = reorderablePeerIdxs.indexOf(targetIdx);
+
+    // Swap the two rows in-place.
+    rows[focusedIdx] = targetRow;
+    rows[targetIdx] = focusedRowInternal;
+
+    // Update `selected` so focus follows the moved row. `selected`
+    // indexes into the visible-rows view; the row we swapped to
+    // `targetIdx` is at visible position `targetVisiblePos`.
+    selected = targetVisiblePos;
+
+    try {
+      options.onReorder?.({
+        fieldKey: focusedRowInternal.field.key,
+        fromIndex: fromPeerPos,
+        toIndex: toPeerPos,
+      });
+    } catch (err) {
+      notifyError(args.ctx, err);
+    }
+
+    args.tui.requestRender();
+    return true;
+  }
+
   function handleInput(data: string): void {
     if (submenu) {
       submenu.handleInput?.(data);
@@ -237,6 +304,17 @@ export function createSettingsModalBody<F extends Field>(
     if (matchesKey(data, "shift+tab") && tabs.length > 1) {
       cycleTab(-1);
       return;
+    }
+    // Alt+↑ / Alt+↓ reorders the focused row among its `reorderable`
+    // peers. Has to run before the bare up/down handlers so the
+    // modifier prefix is what dispatches — otherwise `matchesKey(data,
+    // "up")` could match the alt-modified variant first depending on
+    // the terminal's escape sequence.
+    if (matchesKey(data, "alt+up")) {
+      if (handleReorder(-1)) return;
+    }
+    if (matchesKey(data, "alt+down")) {
+      if (handleReorder(1)) return;
     }
     // Clamp against the visible-row count up front so `selected`
     // never overshoots. Without this, the footer can momentarily
@@ -349,6 +427,10 @@ export function createSettingsModalBody<F extends Field>(
     // While inline-editing a value, arrow keys belong to the editor
     // (cursor movement) — don't advertise them as row navigation.
     if (!row?.isEditing) hints.push({ key: "↑↓", label: "move" });
+    // Surface the reorder hint only when the focused row opts in.
+    if (!row?.isEditing && row?.field.reorderable) {
+      hints.push({ key: "alt+↑↓", label: "reorder" });
+    }
     hints.push(...rowHints);
     hints.push({ key: "esc", label: "close" });
     return wrapLine(formatHintLine(hints, args.theme), width);
@@ -356,7 +438,22 @@ export function createSettingsModalBody<F extends Field>(
 
   function renderRow(row: InternalRow, width: number, isSelected: boolean): string {
     const labelText = truncateToWidth(row.field.label, LABEL_PAD_TARGET, "…");
-    const labelColor = isSelected ? "text" : "muted";
+    // Per-field `dim` overrides the default focus-based coloring. The
+    // override is binary — fields that opt in are saying "this row is
+    // semantically active / inactive, color me regardless of focus".
+    // Selection background still applies on top either way, so a
+    // focused dimmed row stays visibly highlighted via the prefix
+    // chip + selectedBg, just with a muted label.
+    const dimRaw = row.field.dim;
+    const dimFlag = typeof dimRaw === "function" ? dimRaw() : dimRaw;
+    const labelColor =
+      dimFlag === true
+        ? "muted"
+        : dimFlag === false
+          ? "text"
+          : isSelected
+            ? "text"
+            : "muted";
     const label = args.theme.fg(labelColor, labelText);
     const renderer = rendererFor(row.field);
     const valueText = renderer.renderValue(
