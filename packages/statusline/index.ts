@@ -9,217 +9,60 @@ import {
 import type { EditorComponent } from "@earendil-works/pi-tui";
 
 type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
-import type { AssistantMessage, Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { Component, EditorTheme, SelectItem, TUI } from "@earendil-works/pi-tui";
 import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { NotifyLevel, NotifyStatusEvent, NotifyToastEvent } from "@wierdbytes/pi-events";
+import type { NotifyLevel, NotifyStatusEvent } from "@wierdbytes/pi-events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
 import {
   type EventsConfig,
   loadEventsConfig,
   setDisplayConfig,
+  setLayoutConfig,
   setSubagentsConfig,
   setToastTimeout,
 } from "./events-config.ts";
 import {
   ICON_SET_DESCRIPTIONS,
   ICON_SET_LABELS,
-  type IconKey,
   type IconSet,
   isIconSet,
-  resolveIcon,
   VALID_ICON_SETS,
 } from "./icons.ts";
+import {
+  C_BLUE,
+  C_GRAY,
+  C_GREEN,
+  C_RED,
+  C_RESET,
+  C_YELLOW,
+  composeStatusLine,
+  type BlockId,
+  KNOWN_BLOCK_IDS,
+  levelColor,
+  levelIcon,
+  oneLine,
+  shortenModelName,
+  type RenderInputs,
+} from "./blocks.ts";
+import {
+  type LayoutConfig,
+  SEPARATOR_LABELS,
+  SEPARATOR_OPTIONS,
+  type SeparatorOption,
+} from "./layout-config.ts";
+import { blockHasSubSettings, createBlockSettingsSubmenu } from "./block-settings-submenu.ts";
 import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
 import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
 import { SubagentsTracker } from "./subagents-tracker.ts";
 import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
 import { emergencyTerminalModeReset, TerminalSplitCompositor } from "./fixed-editor/terminal-split.ts";
 
-const C_RED = "\x1b[38;2;247;118;142m";
-const C_YELLOW = "\x1b[38;2;224;175;104m";
-const C_GREEN = "\x1b[38;2;158;206;106m";
-const C_CYAN = "\x1b[38;2;125;207;255m";
-const C_BLUE = "\x1b[38;2;122;162;247m";
-const C_PURPLE = "\x1b[38;2;187;154;247m";
-const C_PINK = "\x1b[38;2;215;135;175m";
-const C_ORANGE = "\x1b[38;2;255;158;100m";
-const C_GRAY = "\x1b[38;2;86;95;137m";
-const C_RESET = "\x1b[0m";
-
-const THINK_COLORS: Record<string, string> = {
-  off: C_GRAY,
-  minimal: C_GRAY,
-  low: C_BLUE,
-  medium: C_CYAN,
-  high: C_ORANGE,
-  xhigh: C_RED,
-};
-
-const THINK_LABELS: Record<string, string> = {
-  off: "off",
-  minimal: "min",
-  low: "low",
-  medium: "med",
-  high: "high",
-  xhigh: "xhigh",
-};
-
-const AUTOCOMPACT_BUFFER = 33000;
-const BAR_WIDTH = 10;
 const PROMPT_PADDING = 0;
-
-function shortenPath(cwd: string): string {
-  const segments = cwd.split("/");
-  if (segments.length <= 3) return cwd;
-  const n = segments.length;
-  return `…/${segments[n - 3]}/${segments[n - 2]}/${segments[n - 1]}`;
-}
-
-function formatTokens(n: number): string {
-  if (n < 1000) return `${n}`;
-  if (n < 10000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1000000) return `${Math.round(n / 1000)}k`;
-  if (n < 10000000) return `${(n / 1000000).toFixed(1)}M`;
-  return `${Math.round(n / 1000000)}M`;
-}
-
-function formatCost(cost: number): string {
-  return cost.toFixed(2);
-}
-
-function buildBar(pct: number, pctColor: string): string {
-  const clamped = Math.max(0, Math.min(100, pct));
-  let filled = Math.floor((clamped * BAR_WIDTH) / 100);
-  if (filled > BAR_WIDTH) filled = BAR_WIDTH;
-  if (filled < 0) filled = 0;
-  const empty = BAR_WIDTH - filled;
-  return `${pctColor}${"▓".repeat(filled)}${C_GRAY}${"░".repeat(empty)}${C_RESET}`;
-}
-
-function pctColorFor(pct: number): string {
-  if (pct > 80) return C_RED;
-  if (pct > 60) return C_YELLOW;
-  return C_GREEN;
-}
-
-function shortenModelName(model: { id?: string; name?: string } | undefined): string {
-  let name = model?.name || model?.id || "no-model";
-  if (name.startsWith("Claude ")) name = name.slice(7);
-  if (name.startsWith("anthropic/")) name = name.slice("anthropic/".length);
-  return name;
-}
-
-function resolveThinkingLabel(
-  thinkingLevel: string,
-  thinkingLevelMap: ThinkingLevelMap | undefined,
-): string {
-  const mapped = thinkingLevelMap?.[thinkingLevel as keyof ThinkingLevelMap];
-  if (typeof mapped === "string" && mapped.length > 0) return mapped;
-  return THINK_LABELS[thinkingLevel] ?? thinkingLevel;
-}
-
-/** Maximum visible width for a single chip's label (icon excluded). */
-const CHIP_LABEL_MAX_WIDTH = 16;
-
-/**
- * Collapse any whitespace (newlines, tabs, runs of spaces) in an
- * extension-supplied string down to a single space and trim the
- * result. Used before rendering free-form payload fields
- * (`title` / `message` / `label`) into a single statusline row —
- * a stray `\n` would otherwise survive `truncateToWidth` and break
- * the widget layout. The full original text is still kept in the
- * tracker's log for `/statusline events log`.
- */
-function oneLine(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
-}
-
-/** Map a notification level to its icon-key in the active set. */
-const LEVEL_ICON_KEYS: Record<NotifyLevel, IconKey> = {
-  debug: "debug",
-  info: "info",
-  success: "success",
-  warning: "warning",
-  error: "error",
-};
-
-/** Resolve the toast/chip icon for a level under the given set. */
-function levelIcon(set: IconSet, level: NotifyLevel): string {
-  return resolveIcon(set, LEVEL_ICON_KEYS[level]);
-}
-
-/** ANSI color for a notification level. */
-function levelColor(level: NotifyLevel | undefined): string {
-  switch (level) {
-    case "error":
-      return C_RED;
-    case "warning":
-      return C_YELLOW;
-    case "success":
-      return C_GREEN;
-    case "debug":
-      return C_GRAY;
-    case "info":
-    default:
-      return C_BLUE;
-  }
-}
-
-/** Pick a chip icon, preferring the payload's icon, then a level default. */
-function chipIcon(status: NotifyStatusEvent, set: IconSet): string {
-  if (status.icon) return status.icon;
-  // For chips, fall back to a level-derived icon. "error" state without
-  // explicit icon gets a warning glyph regardless of the optional `level`
-  // field so the user always sees something is wrong.
-  if (status.state === "error") return levelIcon(set, "warning");
-  return levelIcon(set, status.level ?? "info");
-}
-
-/** Color hint for a chip — `state: "error"` always wins over the
- *  level so error chips render red even when no level is set. */
-function chipColor(status: NotifyStatusEvent): string {
-  if (status.state === "error") return C_RED;
-  if (status.level) return levelColor(status.level);
-  return C_CYAN;
-}
-
-/** Build the inline progress suffix for a chip. Width-aware: drops
- *  the unit / total when budget is tight. */
-function formatChipProgress(
-  progress: NotifyStatusEvent["progress"],
-): string {
-  if (!progress) return "";
-  const { current, total, unit } = progress;
-  if (typeof total === "number" && total > 0) {
-    const num = `${current}/${total}`;
-    return unit ? ` ${num}${unit}` : ` ${num}`;
-  }
-  return unit ? ` ${current}${unit}` : ` ${current}`;
-}
-
-/** Render a single chip as `<icon> <colored label><progress>`. */
-function formatChip(status: NotifyStatusEvent, set: IconSet): string {
-  const icon = chipIcon(status, set);
-  const color = chipColor(status);
-  // Strip newlines / tabs from `label` before truncating so a
-  // multi-line payload from any emitter can never split a chip
-  // across rows.
-  const label = truncateToWidth(oneLine(status.label), CHIP_LABEL_MAX_WIDTH, "…");
-  const progressSuffix = formatChipProgress(status.progress);
-  return `${icon} ${color}${label}${C_RESET}${progressSuffix}`;
-}
-
-/** Render the chips segment, including the `│` separator. Empty when no chips. */
-function buildChipsSegment(chips: NotifyStatusEvent[], set: IconSet): string {
-  if (chips.length === 0) return "";
-  const rendered = chips.map((c) => formatChip(c, set)).join(` ${C_GRAY}·${C_RESET} `);
-  return ` ${C_GRAY}│${C_RESET} ${rendered}`;
-}
 
 /**
  * Render the toast row. Returns a width-padded line so it occupies a
@@ -267,108 +110,6 @@ function buildToastLine(active: ActiveToast, width: number, set: IconSet): strin
   return truncated + " ".repeat(fillWidth);
 }
 
-function buildStatusLine(opts: {
-  cwd: string;
-  branch: string | null;
-  dirty: boolean;
-  current: number;
-  contextWindow: number;
-  cost: number;
-  modelName: string;
-  thinkingLevel: string;
-  thinkingLevelMap: ThinkingLevelMap | undefined;
-  modelReasoning: boolean;
-  totalInput: number;
-  totalOutput: number;
-  totalCacheRead: number;
-  totalCacheWrite: number;
-  stashCount: number;
-  chipsSegment: string;
-  iconSet: IconSet;
-}): string {
-  const {
-    cwd,
-    branch,
-    dirty,
-    current,
-    contextWindow,
-    cost,
-    modelName,
-    thinkingLevel,
-    thinkingLevelMap,
-    modelReasoning,
-    totalInput,
-    totalOutput,
-    totalCacheRead,
-    totalCacheWrite,
-    stashCount,
-    chipsSegment,
-    iconSet,
-  } = opts;
-
-  // Colour the model icon the same as its label so the chip reads as
-  // one unit instead of an uncoloured glyph + coloured text. Same
-  // treatment for the thinking icon below — it picks up the
-  // level-derived colour.
-  const modelPart = `${C_PINK}${resolveIcon(iconSet, "model")} ${modelName}${C_RESET}`;
-
-  let thinkPart = "";
-  if (modelReasoning) {
-    const label = resolveThinkingLabel(thinkingLevel, thinkingLevelMap);
-    const color = THINK_COLORS[thinkingLevel] ?? C_GRAY;
-    thinkPart = ` ${color}${resolveIcon(iconSet, "thinking")} ${label}${C_RESET}`;
-  }
-
-  const shortDir = shortenPath(cwd);
-  const dirParent = dirname(shortDir);
-  const dirName = basename(shortDir) || shortDir;
-  const dirPart = `${C_GRAY}${dirParent}${C_RESET}${C_PURPLE}/${dirName}${C_RESET}`;
-
-  let gitPart = "";
-  if (branch) {
-    const mark = dirty ? `${C_RED}✗${C_RESET}` : `${C_GREEN}✓${C_RESET}`;
-    gitPart = ` ${C_GRAY}│${C_RESET}${C_CYAN} ${branch} ${mark}`;
-  }
-
-  let contextPart = "";
-  if (contextWindow > 0) {
-    const threshold = Math.max(1, contextWindow - AUTOCOMPACT_BUFFER);
-    let pct = Math.floor((current * 100) / threshold);
-    let remaining = threshold - current;
-    if (remaining < 0) {
-      remaining = 0;
-      pct = 100;
-    }
-    if (pct < 0) pct = 0;
-    const color = pctColorFor(pct);
-    const bar = buildBar(pct, color);
-    contextPart =
-      ` ${C_GRAY}│${C_RESET} ${color}${pct}%${C_RESET}: ${formatTokens(current)}` +
-      `${C_GRAY}[${C_RESET}${bar}${C_GRAY}]${C_RESET}${formatTokens(remaining)}`;
-  }
-
-  let costPart = "";
-  if (cost > 0) {
-    costPart = ` ${C_GRAY}│ \$${formatCost(cost)}${C_RESET}`;
-  }
-
-  const tokenSegments: string[] = [];
-  if (totalInput) tokenSegments.push(`↑${formatTokens(totalInput)}`);
-  if (totalOutput) tokenSegments.push(`↓${formatTokens(totalOutput)}`);
-  if (totalCacheRead) tokenSegments.push(`R${formatTokens(totalCacheRead)}`);
-  if (totalCacheWrite) tokenSegments.push(`W${formatTokens(totalCacheWrite)}`);
-  const tokensPart = tokenSegments.length
-    ? ` ${C_GRAY}│ ${tokenSegments.join(" ")}${C_RESET}`
-    : "";
-
-  const stashPart =
-    stashCount > 0
-      ? ` ${C_GRAY}│${C_RESET} ${C_YELLOW}${resolveIcon(iconSet, "stash")} ${stashCount}${C_RESET}`
-      : "";
-
-  return `${C_GRAY}─${C_RESET} ${modelPart}${thinkPart} ${C_GRAY}│${C_RESET} ${dirPart}${gitPart}${contextPart}${costPart}${tokensPart}${chipsSegment}${stashPart} `;
-}
-
 function gatherStats(ctx: ExtensionContext) {
   let cost = 0;
   let totalInput = 0;
@@ -403,6 +144,7 @@ function renderStatusContent(
   stashCount: number,
   events: { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
   iconSet: IconSet,
+  layout: LayoutConfig,
 ): string[] {
   const stats = gatherStats(ctx);
   const contextWindow =
@@ -415,7 +157,7 @@ function renderStatusContent(
   const git = getGitStatus(ctx.cwd);
 
   const model = ctx.model as Model<any> | undefined;
-  const status = buildStatusLine({
+  const inputs: RenderInputs = {
     cwd: ctx.cwd,
     branch: git.branch,
     dirty: git.dirty,
@@ -431,9 +173,11 @@ function renderStatusContent(
     totalCacheRead: stats.totalCacheRead,
     totalCacheWrite: stats.totalCacheWrite,
     stashCount,
-    chipsSegment: buildChipsSegment(events.chips, iconSet),
+    chips: events.chips,
     iconSet,
-  });
+    layout,
+  };
+  const status = composeStatusLine(layout, inputs);
 
   const truncated = truncateToWidth(status, width);
   const fillWidth = Math.max(0, width - visibleWidth(truncated));
@@ -517,6 +261,7 @@ function installStatusWidget(
   getStashCount: () => number,
   getEventsSnapshot: () => { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
   getIconSet: () => IconSet,
+  getLayout: () => LayoutConfig,
 ) {
   ctx.ui.setWidget(
     "wierd-statusline",
@@ -531,6 +276,7 @@ function installStatusWidget(
           getStashCount(),
           getEventsSnapshot(),
           getIconSet(),
+          getLayout(),
         );
       },
     }),
@@ -1022,7 +768,14 @@ export default function (pi: ExtensionAPI) {
 
   const enableStatusline = (ctx: ExtensionContext) => {
     currentCtx = ctx;
-    installStatusWidget(pi, ctx, getStashCount, getEventsSnapshot, () => eventsConfig.display.iconSet);
+    installStatusWidget(
+      pi,
+      ctx,
+      getStashCount,
+      getEventsSnapshot,
+      () => eventsConfig.display.iconSet,
+      () => eventsConfig.layout,
+    );
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
     if (footerHidden) hidePiFooter(ctx);
     else restorePiFooter(ctx);
@@ -1135,12 +888,127 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  // Layout has no extra side-effects beyond persistence + repaint:
+  // the composer reads `eventsConfig.layout` from the closure on
+  // every render so a fresh paint is enough to show changes.
+  const applyLayoutChange = (
+    _ctx: ExtensionContext,
+    patch: Partial<LayoutConfig>,
+  ): void => {
+    eventsConfig = setLayoutConfig(eventsConfig, patch);
+    activeTui?.requestRender();
+  };
+
+  // Per-block field builder for the Layout tab.
+  //
+  // The Layout tab is rendered as one custom row per block, listed in
+  // the snapshot order at modal-open time. The row's value cell
+  // reads `eventsConfig.layout` on every paint so reorder / toggle
+  // mutations from the per-block submenu show up immediately. Press
+  // Enter to open the block's sub-menu — see `block-settings-submenu.ts`.
+
+  const BLOCK_LABELS: Record<BlockId, string> = {
+    model: "Model & thinking",
+    path: "Working directory",
+    git: "Git branch",
+    context: "Context usage",
+    cost: "Session cost",
+    tokens: "Token counters",
+    chips: "Notification chips",
+    stash: "Stash count",
+  };
+
+  const BLOCK_DESCRIPTIONS: Record<BlockId, string> = {
+    model: "`🤖 <model>` plus the optional inline `🧠 <level>` thinking segment. Enter to open submenu (visibility, show-thinking toggle, move actions). CLI id: `model`.",
+    path: "Last three path segments of `cwd`. CLI id: `path`.",
+    git: "Branch name plus a clean/dirty marker. CLI id: `git`.",
+    context: "Percentage of usable context window (33k autocompact buffer reserved) with colored bar. CLI id: `context`.",
+    cost: "Session total in USD when greater than zero. CLI id: `cost`.",
+    tokens: "Cumulative `↑input ↓output R{cacheRead} W{cacheWrite}` counters. Enter to open submenu and toggle each one independently. CLI id: `tokens`.",
+    chips: "Notify-status lane fed by `@wierdbytes/pi-events` consumers. CLI id: `chips`.",
+    stash: "`📦 N` showing how many prompts are saved. CLI id: `stash`.",
+  };
+
+  /** Right-hand value cell for one block row: just the checkbox.
+   *  Color of the surrounding row is driven by `field.dim` (see
+   *  buildBlockField below), so the checkbox glyph itself stays
+   *  uncoloured here and inherits whichever shade the modal applies. */
+  const formatBlockValueCell = (id: BlockId): string => {
+    return eventsConfig.layout.enabled[id] ? "[✓]" : "[ ]";
+  };
+
+  /** Build the per-block custom Field for the Layout tab. */
+  const buildBlockField = (id: BlockId, ctx: ExtensionContext): Field => {
+    const hasSubSettings = blockHasSubSettings(id);
+    return {
+      key: `layout.block.${id}`,
+      type: "custom",
+      tab: "layout",
+      label: BLOCK_LABELS[id],
+      description: BLOCK_DESCRIPTIONS[id],
+      // Opt into alt+↑/alt+↓ reorder. The modal swaps rows internally
+      // and fires `onReorder` so we can persist the new order.
+      reorderable: true,
+      // Drive the row label color from the block's visibility flag:
+      // enabled ⇒ `text` (white), disabled ⇒ `muted` (gray),
+      // regardless of focus state.
+      dim: () => !eventsConfig.layout.enabled[id],
+      // Dummy value — render() reads from eventsConfig directly so the
+      // checkbox stays in sync with live state from the per-block
+      // submenu / imperative `/statusline layout toggle <id>`.
+      value: id,
+      render: () => formatBlockValueCell(id),
+      // `space` toggles visibility right here on the Layout tab.
+      // Returning `true` consumes the keystroke so the modal's default
+      // navigation handlers (and the custom renderer's `space-opens-
+      // submenu` branch) never see it.
+      handleInput: (data) => {
+        if (data === " " || matchesKey(data, "space")) {
+          applyLayoutChange(ctx, {
+            enabled: { ...eventsConfig.layout.enabled, [id]: !eventsConfig.layout.enabled[id] },
+          });
+          return true;
+        }
+        return false;
+      },
+      // Footer-hint override. The default `enter edit` heuristic
+      // would fire (because `handleInput` is present) and lie about
+      // what Enter does — the actual binding is `space toggle` plus
+      // optionally `enter settings` only for blocks that have a
+      // submenu.
+      hints: hasSubSettings
+        ? [
+            { key: "space", label: "toggle" },
+            { key: "enter", label: "settings" },
+          ]
+        : [{ key: "space", label: "toggle" }],
+      // Only blocks with at least one block-specific knob get a
+      // submenu. For the rest (path, git, context, cost, chips,
+      // stash) Enter is a no-op — visibility lives on `space`,
+      // reorder lives on `alt+↑↓`, and there's nothing else to
+      // configure.
+      openSubmenu: hasSubSettings
+        ? ({ theme, tui, done }) =>
+            createBlockSettingsSubmenu({
+              blockId: id,
+              getLayout: () => eventsConfig.layout,
+              title: BLOCK_LABELS[id],
+              theme,
+              tui,
+              onChange: (patch) => applyLayoutChange(ctx, patch),
+              done: () => done(),
+            })
+        : undefined,
+    };
+  };
+
   // ────────────────────────── settings modal ─────────────────────────────────
   //
-  // Owns every persisted knob across three tabs: Display, Toasts,
-  // Subagents. Imperative subcommands (`on/off/toggle`, `events log`,
-  // `events clear`) survive on the side because they're either
-  // single-keystroke shortcuts or print-only utilities.
+  // Owns every persisted knob across four tabs: Display, Layout,
+  // Toasts, Subagents. Imperative subcommands (`on/off/toggle`,
+  // `layout ...`, `events log`, `events clear`) survive on the side
+  // because they're either single-keystroke shortcuts or print-only
+  // utilities.
   const openConfigOverlay = async (ctx: ExtensionContext): Promise<void> => {
     if (!ctx.hasUI) {
       // Non-interactive sessions can't host the overlay; print a
@@ -1153,6 +1021,7 @@ export default function (pi: ExtensionAPI) {
     const display = eventsConfig.display;
     const toasts = eventsConfig.toastTimeouts;
     const subagents = eventsConfig.subagents;
+    const layout = eventsConfig.layout;
 
     const fields: Field[] = [
       // ── Display ─────────────────────────────────────────────────────
@@ -1199,6 +1068,33 @@ export default function (pi: ExtensionAPI) {
         value: display.iconSet,
         options: VALID_ICON_SETS,
         optionLabels: ICON_SET_LABELS,
+      },
+      // ── Layout (per-block rows + separator) ───────────────────────
+      //
+      // Each block is its own row, listed in the snapshot order at
+      // modal-open time. Enter on a block opens its per-block
+      // sub-menu (visibility toggle, move actions, plus the inline
+      // sub-toggles for model→thinking and tokens→counters). The
+      // value cell reads `eventsConfig.layout` on every render so the
+      // position number (`#N`) and on/off state stay in sync with
+      // live mutations.
+      ...layout.order.map((id) => buildBlockField(id, ctx)),
+      {
+        key: "layout.separator",
+        type: "enum",
+        tab: "layout",
+        label: "Separator",
+        description:
+          "Glyph rendered between visible blocks. Hand-edit `events.json` for anything outside this list.",
+        // Force the row to render with the `text` (white) label color
+        // so it doesn't fade into the disabled block rows above it.
+        // It's a normal active setting, not a per-block visibility row.
+        dim: false,
+        value: (SEPARATOR_OPTIONS as readonly string[]).includes(layout.separator)
+          ? (layout.separator as SeparatorOption)
+          : SEPARATOR_OPTIONS[0],
+        options: SEPARATOR_OPTIONS,
+        optionLabels: SEPARATOR_LABELS,
       },
       // ── Toasts (per-level lifetime in ms; 0 = sticky) ──────────────
       {
@@ -1303,11 +1199,38 @@ export default function (pi: ExtensionAPI) {
       title: "@wierdbytes/pi-statusline",
       tabs: [
         { id: "display", label: "Display" },
+        { id: "layout", label: "Layout" },
         { id: "toasts", label: "Toasts" },
         { id: "subagents", label: "Subagents" },
       ],
       initialTab: "display",
       fields,
+      // Alt+↑ / Alt+↓ on a block row swaps it with the immediate
+      // neighbour. The modal already moved its internal row and focus
+      // by the time we get here; we just mirror the change into
+      // `layout.order` so the swap persists. `fieldKey` is the moved
+      // block's `layout.block.<id>` key; `toIndex` is its new 0-based
+      // position among the reorderable peers (= the eight block rows).
+      onReorder: ({ fieldKey, fromIndex, toIndex }) => {
+        if (!fieldKey.startsWith("layout.block.")) return;
+        const id = fieldKey.slice("layout.block.".length) as BlockId;
+        if (!(KNOWN_BLOCK_IDS as readonly string[]).includes(id)) return;
+        const order = [...eventsConfig.layout.order];
+        const cur = order.indexOf(id);
+        if (cur < 0 || cur !== fromIndex) {
+          // Defensive: the modal's notion of `fromIndex` and our
+          // own `layout.order` are usually in lockstep, but a stale
+          // snapshot (e.g. the modal opened before a `/statusline
+          // layout move` ran) could put them out of sync. Recompute
+          // from the canonical `layout.order`.
+        }
+        const actualFrom = cur >= 0 ? cur : fromIndex;
+        const safeTo = Math.max(0, Math.min(order.length - 1, toIndex));
+        if (actualFrom === safeTo) return;
+        order.splice(actualFrom, 1);
+        order.splice(safeTo, 0, id);
+        applyLayoutChange(ctx, { order });
+      },
       onChange: (key, value) => {
         // Display-tab fields all share the same side-effect bus.
         if (key === "statuslineEnabled") return applyDisplayChange(ctx, { statuslineEnabled: value as boolean });
@@ -1315,6 +1238,24 @@ export default function (pi: ExtensionAPI) {
         if (key === "fixedEditorEnabled") return applyDisplayChange(ctx, { fixedEditorEnabled: value as boolean });
         if (key === "mouseScrollEnabled") return applyDisplayChange(ctx, { mouseScrollEnabled: value as boolean });
         if (key === "iconSet") return applyDisplayChange(ctx, { iconSet: value as IconSet });
+
+        // Layout-tab fields all route through `applyLayoutChange`.
+        //
+        // The per-block custom rows (`layout.block.<id>`) commit their
+        // mutations eagerly from inside the per-block submenu — the
+        // modal's commit path is never reached because we call
+        // `done()` without a value. The separator enum is the only
+        // top-level Layout field that flows through this onChange.
+        if (key === "layout.separator") {
+          return applyLayoutChange(ctx, { separator: value as string });
+        }
+        if (typeof key === "string" && key.startsWith("layout.block.")) {
+          // Defensive no-op: a per-block submenu only ever calls
+          // `done()` (no value), so this branch shouldn't fire. Kept
+          // so an accidental `done(value)` future regression is
+          // caught silently rather than throwing through the modal.
+          return;
+        }
 
         // Toast-tab fields are pure persistence — the events tracker
         // pulls timeouts via the closure each time a toast lifetime is
@@ -1357,12 +1298,28 @@ export default function (pi: ExtensionAPI) {
 
   // ────────────────────────── imperative helpers ────────────────────────────
 
+  /** Render the active layout as a single inline line, e.g.
+   *  `model > path > git! > context > ... (6/8 visible)` where `!`
+   *  marks a disabled block. Shared by `printStatusDump` and the
+   *  imperative `/statusline layout` printout. */
+  const formatLayoutLine = (): string => {
+    const { order, enabled } = eventsConfig.layout;
+    const total = KNOWN_BLOCK_IDS.length;
+    const visible = order.filter((id) => enabled[id]).length;
+    const pieces = order.map((id) => (enabled[id] ? id : `${id}!`));
+    return `${pieces.join(" > ")} (${visible}/${total} visible)`;
+  };
+
+  const isKnownBlockId = (value: string | undefined): value is BlockId =>
+    typeof value === "string" && (KNOWN_BLOCK_IDS as readonly string[]).includes(value);
+
   /** Read-only structured dump used by callers that can't host the
    *  overlay (RPC, `--print` mode). */
   const printStatusDump = (ctx: ExtensionContext): void => {
     const snap = eventsTracker.getSnapshot();
     const display = eventsConfig.display;
     const subagents = eventsConfig.subagents;
+    const layout = eventsConfig.layout;
     const counts = subagentsTracker.getCounts();
     const lines = [
       `statusline:    ${display.statuslineEnabled ? "on" : "off"}`,
@@ -1376,6 +1333,15 @@ export default function (pi: ExtensionAPI) {
       `toast timeouts: ${Object.entries(eventsConfig.toastTimeouts)
         .map(([level, ms]) => `${level}=${ms === 0 ? "sticky" : `${ms}ms`}`)
         .join(" ")}`,
+      `layout:        ${formatLayoutLine()}`,
+      `  separator:   ${JSON.stringify(layout.separator)}`,
+      `  model.think: ${layout.model.showThinking ? "yes" : "no"}`,
+      `  tokens:      ${[
+        layout.tokens.input ? "in" : "-in",
+        layout.tokens.output ? "out" : "-out",
+        layout.tokens.cacheRead ? "R" : "-R",
+        layout.tokens.cacheWrite ? "W" : "-W",
+      ].join(" ")}`,
       `subagents:     ${subagents.enabled ? "on" : "off"} (${counts.running} running / ${counts.created} queued / ${counts.total} total)`,
       `  long-ms:     ${subagents.longCompletionMs}`,
       `  on failure: ${subagents.toastOnFailure ? "yes" : "no"}`,
@@ -1383,6 +1349,84 @@ export default function (pi: ExtensionAPI) {
       `  on schedule: ${subagents.toastOnScheduled ? "yes" : "no"}`,
     ];
     ctx.ui.notify(lines.join("\n"), "info");
+  };
+
+  /** Imperative `/statusline layout` dispatcher: prints / resets /
+   *  toggles / moves blocks via the same `applyLayoutChange` bus the
+   *  modal uses. */
+  const handleLayoutCommand = (ctx: ExtensionContext, tokens: string[]): void => {
+    const sub = tokens[0];
+    if (!sub || sub === "status" || sub === "print") {
+      ctx.ui.notify(`layout: ${formatLayoutLine()}`, "info");
+      return;
+    }
+    if (sub === "reset") {
+      applyLayoutChange(ctx, {
+        order: [...KNOWN_BLOCK_IDS],
+        enabled: KNOWN_BLOCK_IDS.reduce(
+          (acc, id) => {
+            acc[id] = true;
+            return acc;
+          },
+          {} as Record<BlockId, boolean>,
+        ),
+        model: { showThinking: true },
+        tokens: { input: true, output: true, cacheRead: true, cacheWrite: true },
+      });
+      ctx.ui.notify("layout: reset to defaults", "info");
+      return;
+    }
+    if (sub === "toggle") {
+      const id = tokens[1];
+      if (!isKnownBlockId(id)) {
+        ctx.ui.notify(
+          `Unknown block: ${id ?? "(none)"}. Valid: ${KNOWN_BLOCK_IDS.join(", ")}`,
+          "warning",
+        );
+        return;
+      }
+      const next = !eventsConfig.layout.enabled[id];
+      applyLayoutChange(ctx, { enabled: { ...eventsConfig.layout.enabled, [id]: next } });
+      ctx.ui.notify(`layout: ${id} ${next ? "enabled" : "disabled"}`, "info");
+      return;
+    }
+    if (sub === "move") {
+      const id = tokens[1];
+      const direction = tokens[2];
+      if (!isKnownBlockId(id)) {
+        ctx.ui.notify(
+          `Unknown block: ${id ?? "(none)"}. Valid: ${KNOWN_BLOCK_IDS.join(", ")}`,
+          "warning",
+        );
+        return;
+      }
+      const order = [...eventsConfig.layout.order];
+      const idx = order.indexOf(id);
+      if (idx < 0) return;
+      const target =
+        direction === "up"
+          ? Math.max(0, idx - 1)
+          : direction === "down"
+          ? Math.min(order.length - 1, idx + 1)
+          : direction === "top"
+          ? 0
+          : direction === "bottom"
+          ? order.length - 1
+          : -1;
+      if (target < 0) {
+        ctx.ui.notify("Usage: /statusline layout move <block> <up|down|top|bottom>", "warning");
+        return;
+      }
+      order.splice(idx, 1);
+      order.splice(target, 0, id);
+      applyLayoutChange(ctx, { order });
+      ctx.ui.notify(`layout: moved ${id} → position ${target + 1}`, "info");
+      return;
+    }
+    ctx.ui.notify(
+      "Usage: /statusline layout [status|reset|toggle <block>|move <block> <up|down|top|bottom>]",
+      "info",
+    );
   };
 
   /** Print the most recent 16 entries from the events log. */
@@ -1405,7 +1449,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("statusline", {
     description:
-      "Open the @wierdbytes/pi-statusline settings overlay (no args). Action subcommands: on | off | toggle | status | icons [set] | events log | events clear",
+      "Open the @wierdbytes/pi-statusline settings overlay (no args). Action subcommands: on | off | toggle | status | icons [set] | layout [...] | events log | events clear",
     handler: async (args, ctx) => {
       currentCtx = ctx;
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
@@ -1457,6 +1501,13 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      // Imperative layout dispatch — mirrors the Layout tab in the
+      // modal but stays usable from RPC / scripted sessions.
+      if (cmd === "layout") {
+        handleLayoutCommand(ctx, tokens.slice(1));
+        return;
+      }
+
       // Read/clear utilities for the events log live outside the modal
       // because they print or mutate runtime state, not config.
       if (cmd === "events") {
@@ -1472,7 +1523,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       ctx.ui.notify(
-        "Usage: /statusline [on|off|toggle|status|icons [set]|events log|events clear]  (no args ⇒ open settings overlay)",
+        "Usage: /statusline [on|off|toggle|status|icons [set]|layout [status|reset|toggle <block>|move <block> <dir>]|events log|events clear]  (no args ⇒ open settings overlay)",
         "info",
       );
     },

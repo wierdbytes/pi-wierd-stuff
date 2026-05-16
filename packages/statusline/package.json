@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-statusline",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "description": "Minimal modular statusline extension for pi coding agent",
   "type": "module",
   "files": [
@@ -38,7 +38,7 @@
     ]
   },
   "dependencies": {
-    "@wierdbytes/pi-common": "^0.3.0",
+    "@wierdbytes/pi-common": "^0.5.0",
     "@wierdbytes/pi-events": "^0.1.0"
   },
   "devDependencies": {

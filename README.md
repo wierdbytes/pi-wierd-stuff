@@ -4,7 +4,7 @@ Monorepo for various extensions for the [pi](https://github.com/earendil-works/p
 
 ## Packages
 
-- [`packages/statusline`](packages/statusline) — `@wierdbytes/pi-statusline`: Tokyo Night statusline footer with a chips + toasts pipeline (consumes `@wierdbytes/pi-events`) and a built-in `@tintinweb/pi-subagents` bridge.
+- [`packages/statusline`](packages/statusline) — `@wierdbytes/pi-statusline`: Minimal modular statusline, fully modular block layout — reorder, toggle, and customise the separator from the settings overlay.
 - [`packages/web`](packages/web) — `@wierdbytes/pi-web`: Anthropic-powered server-side `web_search` and a Puppeteer + trafilatura `web_fetch` (with optional sub-agent distillation).
 - [`packages/anthropic`](packages/anthropic) — `@wierdbytes/pi-anthropic`: Claude Pro/Max OAuth provider.
 - [`packages/voice`](packages/voice) — `@wierdbytes/pi-voice`: spoken summary after each agent turn via Gemini 3.1 Flash TTS.

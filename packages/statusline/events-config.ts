@@ -14,6 +14,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { DEFAULT_ICON_SET, type IconSet, isIconSet } from "./icons.ts";
+import {
+  cloneDefaultLayout,
+  DEFAULT_LAYOUT_CONFIG,
+  type LayoutConfig,
+  normaliseLayoutConfig,
+} from "./layout-config.ts";
 
 /** Toast lifetime in ms keyed by level. `0` means sticky-until-dismissed. */
 export type ToastTimeoutMap = Record<NotifyLevel, number>;
@@ -68,20 +74,34 @@ export interface SubagentsConfig {
   toastOnScheduled: boolean;
 }
 
-/** Persisted schema. Bumped via `version` on incompatible changes. */
+/**
+ * Persisted schema. Bumped via `version` on incompatible changes.
+ *
+ * Migration history:
+ *   - v1 → v2: added the `layout` slice. Existing v1 files are
+ *     transparently migrated on first load (a fresh `layout` slice
+ *     using `DEFAULT_LAYOUT_CONFIG` is injected and the file is
+ *     rewritten with `version: 2`).
+ */
 export interface EventsConfig {
-  version: 1;
+  version: 2;
   /** Per-level toast lifetime in ms. `0` means sticky. */
   toastTimeouts: ToastTimeoutMap;
   /** Subagents bridge settings — see `SubagentsConfig`. */
   subagents: SubagentsConfig;
   /** Display-level toggles — see `DisplayConfig`. */
   display: DisplayConfig;
+  /** Block layout (order, visibility, sub-toggles, separator).
+   *  Added in v2. */
+  layout: LayoutConfig;
 }
+
+/** Current schema version written to disk. */
+export const EVENTS_CONFIG_VERSION = 2 as const;
 
 /** Built-in defaults — used when the config file is missing or invalid. */
 export const DEFAULT_EVENTS_CONFIG: EventsConfig = Object.freeze({
-  version: 1,
+  version: EVENTS_CONFIG_VERSION,
   toastTimeouts: Object.freeze({
   debug: 1000,
   info: 3000,
@@ -103,6 +123,7 @@ export const DEFAULT_EVENTS_CONFIG: EventsConfig = Object.freeze({
     mouseScrollEnabled: true,
     iconSet: DEFAULT_ICON_SET,
   }) as DisplayConfig,
+  layout: DEFAULT_LAYOUT_CONFIG,
 }) as EventsConfig;
 
 /** Resolve `~/.pi/agent/wierd-statusline/events.json`. */
@@ -116,13 +137,27 @@ export function getEventsConfigPath(): string {
  * for missing or malformed data. Always returns a fully populated
  * config object so the tracker doesn't have to deal with `undefined`
  * fields.
+ *
+ * When the on-disk file is older than `EVENTS_CONFIG_VERSION` (or has
+ * no `version` field), we transparently rewrite it with the upgraded
+ * payload so subsequent loads skip the migration branch.
  */
 export function loadEventsConfig(): EventsConfig {
   const path = getEventsConfigPath();
   if (!existsSync(path)) return cloneDefaults();
   try {
-    const raw = JSON.parse(readFileSync(path, "utf-8")) as Partial<EventsConfig>;
-    return mergeWithDefaults(raw);
+    const raw = JSON.parse(readFileSync(path, "utf-8")) as Partial<EventsConfig> & {
+      version?: number;
+    };
+    const merged = mergeWithDefaults(raw);
+    // If the file was older than the current schema (or unversioned),
+    // rewrite it now so future loads short-circuit the migration. This
+    // is best-effort — a read-only filesystem just means we'll migrate
+    // again on the next launch, which is harmless.
+    if (typeof raw.version !== "number" || raw.version < EVENTS_CONFIG_VERSION) {
+      saveEventsConfig(merged);
+    }
+    return merged;
   } catch {
     return cloneDefaults();
   }
@@ -195,13 +230,41 @@ export function setDisplayConfig(
   return next;
 }
 
+/**
+ * Patch the `layout` slice and persist. Sub-objects (`model`,
+ * `tokens`) merge field-by-field so callers can pass partial slices
+ * (e.g. `{ tokens: { input: false } }` keeps the other counters).
+ * The result is run through `normaliseLayoutConfig` so an invalid
+ * `order` / `separator` falls back to defaults the same way as a
+ * hand-edited file.
+ */
+export function setLayoutConfig(
+  config: EventsConfig,
+  patch: Partial<LayoutConfig>,
+): EventsConfig {
+  const mergedRaw: LayoutConfig = {
+    order: patch.order ? [...patch.order] : [...config.layout.order],
+    enabled: { ...config.layout.enabled, ...(patch.enabled ?? {}) },
+    model: { ...config.layout.model, ...(patch.model ?? {}) },
+    tokens: { ...config.layout.tokens, ...(patch.tokens ?? {}) },
+    separator: patch.separator ?? config.layout.separator,
+  };
+  const next: EventsConfig = {
+    ...config,
+    layout: normaliseLayoutConfig(mergedRaw),
+  };
+  saveEventsConfig(next);
+  return next;
+}
+
 /** Internal: deep-clone the frozen defaults so callers can mutate. */
 function cloneDefaults(): EventsConfig {
   return {
-    version: 1,
+    version: EVENTS_CONFIG_VERSION,
     toastTimeouts: { ...DEFAULT_EVENTS_CONFIG.toastTimeouts },
     subagents: { ...DEFAULT_EVENTS_CONFIG.subagents },
     display: { ...DEFAULT_EVENTS_CONFIG.display },
+    layout: cloneDefaultLayout(),
   };
 }
 
@@ -254,6 +317,13 @@ function mergeWithDefaults(raw: Partial<EventsConfig>): EventsConfig {
     if (typeof disp.mouseScrollEnabled === "boolean") merged.display.mouseScrollEnabled = disp.mouseScrollEnabled;
     if (isIconSet(disp.iconSet)) merged.display.iconSet = disp.iconSet;
   }
+
+  // `layout` was added in v2 — absent in v1 files. `normaliseLayoutConfig`
+  // gracefully handles `undefined` by returning the defaults, which is
+  // exactly the v1→v2 migration we want.
+  merged.layout = normaliseLayoutConfig(
+    raw.layout && typeof raw.layout === "object" ? (raw.layout as Partial<LayoutConfig>) : undefined,
+  );
 
   return merged;
 }
