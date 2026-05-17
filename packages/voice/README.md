@@ -1,6 +1,6 @@
 # @wierdbytes/pi-voice
 
-Spoken summary after each agent turn for the [pi](https://github.com/badlogic/pi-mono) coding agent.
+Spoken summary after each agent turn for the [pi](https://github.com/earendil-works/pi) coding agent.
 
 After the assistant finishes a user request, this extension:
 

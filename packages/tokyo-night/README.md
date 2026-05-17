@@ -1,7 +1,7 @@
 # @wierdbytes/pi-tokyo-night
 
 [Tokyo Night](https://github.com/folke/tokyonight.nvim) themes for the
-[pi](https://github.com/badlogic/pi-mono) coding agent — all four folke
+[pi](https://github.com/earendil-works/pi) coding agent — all four folke
 variants in one package, each mapping the canonical palette to all 51 pi
 color tokens (UI chrome, tool boxes, markdown, diffs, syntax highlighting,
 thinking-level borders, bash mode).
@@ -23,10 +23,10 @@ differs, so they're line-for-line diffable.
 
 ```bash
 # user-level (recommended)
-pi install @wierdbytes/pi-tokyo-night
+pi install npm:@wierdbytes/pi-tokyo-night
 
 # or, project-local
-pi install --local @wierdbytes/pi-tokyo-night
+pi install --local npm:@wierdbytes/pi-tokyo-night
 ```
 
 ## Activate

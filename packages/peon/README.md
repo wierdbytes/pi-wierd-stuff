@@ -13,7 +13,7 @@ will play a clip on every notable lifecycle event.
 ## Install
 
 ```bash
-pi install @wierdbytes/pi-peon
+pi install npm:@wierdbytes/pi-peon
 ```
 
 The default config points at the **peon** pack (Warcraft III Orc Peon).
@@ -142,5 +142,5 @@ tool work here, and vice versa.
 
 ## License
 
-MIT - see [LICENSE](./LICENSE). Sound packs themselves ship under their
+MIT — see [LICENSE](./LICENSE). Sound packs themselves ship under their
 own licenses; see each pack's `openpeon.json`.

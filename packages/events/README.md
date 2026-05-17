@@ -1,6 +1,6 @@
 # @wierdbytes/pi-events
 
-Typed event bus for [pi](https://github.com/badlogic/pi-mono) extensions.
+Typed event bus for [pi](https://github.com/earendil-works/pi) extensions.
 Defines exactly **two** public event names that any extension can emit
 through pi's existing `pi.events` bus, and that
 [`@wierdbytes/pi-statusline`](../statusline) (or anyone else) can subscribe to.
@@ -150,7 +150,7 @@ extension uses a consistent `source` value its chip slot is private.
 ## FAQ
 
 **Q: Why only two event names?**
-We modelled this on `~/me/dev/UniPi/packages/core/events.ts` first, then
+We modelled this on an internal prototype first, then
 deliberately moved away from a closed catalogue of dozens of named
 events. With just two names + rich payloads, the surface stays trivial
 to learn, statusline rendering is uniform, and external authors don't

@@ -1,10 +1,10 @@
 # `@wierdbytes/pi-common`
 
-Shared TUI building blocks for [pi coding agent](https://github.com/badlogic/pi-mono) extensions inside this monorepo.
+Shared TUI building blocks for [pi coding agent](https://github.com/earendil-works/pi) extensions inside this monorepo.
 
 ## Features
 
-Two independent submodules ship today, each behind its own subpath
+Three independent submodules ship today, each behind its own subpath
 export:
 
 - `@wierdbytes/pi-common/settings` — a centred **settings modal** for
@@ -12,11 +12,14 @@ export:
 - `@wierdbytes/pi-common/tool-frame` — the open-right rounded
   **tool-frame** primitives used by `@wierdbytes/pi-facelift` and
   `@wierdbytes/pi-web` to wrap `renderShell: "self"` tool output.
+- `@wierdbytes/pi-common/diff` — GitHub-style side-by-side/unified diff
+  renderer with syntax highlighting and word-level emphasis, used by
+  `@wierdbytes/pi-facelift`'s `write` / `edit` renderers.
 
 ### Settings modal
 
 ```text
-╭── @wierdbytes/pi-voice ─────────────────────────────────-────────╮
+╭── @wierdbytes/pi-voice ──────────────────────────────────────────╮
 │                                                                  │
 │ ▌ Muted                          off                             │
 │   Voice                          Umbriel                         │
@@ -252,7 +255,7 @@ pi.registerTool({
   renderResult(result, options, theme, ctx) {
     const w = getDefaultFrameWidth();
     const status = getFrameStatus(ctx);
-    if (ctx.isError)  return new Text(renderToolError(text, theme, w), 0, 0);
+    if (ctx.isError)  return new Text(renderToolError(result.content?.[0]?.text ?? "error", theme, w), 0, 0);
     if (options.isPartial)
       return new Text(frameResult("working…", "pending", theme, w), 0, 0);
     if (!options.expanded)

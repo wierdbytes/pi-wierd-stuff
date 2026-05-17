@@ -1,6 +1,6 @@
 # @wierdbytes/pi-anthropic
 
-Claude Pro/Max OAuth extension for the [pi](https://github.com/badlogic/pi-mono) coding agent.
+Claude Pro/Max OAuth extension for the [pi](https://github.com/earendil-works/pi) coding agent.
 
 Sign in with your Claude Pro or Max account and use it inside pi without an
 Anthropic API key.

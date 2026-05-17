@@ -1,6 +1,6 @@
 # @wierdbytes/pi-web
 
-Web tools for the [pi](https://github.com/badlogic/pi-mono) coding agent:
+Web tools for the [pi](https://github.com/earendil-works/pi) coding agent:
 
 - **`web_search`** — Anthropic-powered server-side search with citations.
 - **`web_fetch`** — headless-Chrome fetch + trafilatura extraction, with

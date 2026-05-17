@@ -1,6 +1,6 @@
 # @wierdbytes/pi-statusline
 
-Minimal Tokyo Night Storm statusline for [pi](https://github.com/badlogic/pi-mono).
+Minimal Tokyo Night Storm statusline for [pi](https://github.com/earendil-works/pi).
 Renders a compact one-line status row above the editor, with the editor's
 own top/bottom borders stripped so the two visually merge into a single
 cluster.

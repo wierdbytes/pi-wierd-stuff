@@ -14,6 +14,7 @@ packages/
   common/       Shared TUI: settings modal, tool-frame helpers (library)
   events/       Typed notify:toast / notify:status event bus (library)
   facelift/     Pretty rendering for built-in pi tools — bash/read/ls/find/grep (extension)
+  peon/         CESP/OpenPeon sound-pack player (extension)
   statusline/   Tokyo Night statusline footer + chips/toasts (extension)
   tokyo-night/  Four Tokyo Night theme JSONs (theme-only package)
   voice/        Spoken turn summaries via Gemini TTS (extension)
@@ -23,7 +24,8 @@ docs/plans/     Design notes per feature/package
 ```
 
 ## Extension settings
-- settings should be placed per-extension in ~/.pi/agent/@wierdbytes/pi-<package-name>/settings.json
+
+- Place per-extension settings in `~/.pi/agent/@wierdbytes/pi-<package-name>/settings.json`.
 
 ## Package conventions
 
@@ -34,8 +36,9 @@ docs/plans/     Design notes per feature/package
 - Tests live next to sources as `*.test.ts`, run via `bun run test` (vitest).
 
 ## Getting docs
-- when you need packages docs check `/opt/homebrew/lib/node_modules/...`
-- when you don't find it there - use npm or github to get actual info
+
+- When you need package docs, check `/opt/homebrew/lib/node_modules/...`.
+- When you don't find them there, use npm or GitHub to get the latest info.
 
 ## Workflow
 

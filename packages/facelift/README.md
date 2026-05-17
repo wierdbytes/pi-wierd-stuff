@@ -126,7 +126,7 @@ This package lives in the [`pi-wierd-stuff`](../../README.md) monorepo.
 ```bash
 bun install                        # from the repo root
 cd packages/facelift
-bun run test                       # 11 tests
+bun run test                       # 64 tests
 bun run test:watch                 # vitest watch mode
 bun run demo                       # render every tool block to your terminal
 ```
