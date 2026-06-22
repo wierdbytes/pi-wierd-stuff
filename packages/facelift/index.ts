@@ -44,7 +44,19 @@ import type {
 	WriteToolInput,
 } from "@earendil-works/pi-coding-agent";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+// Runtime SDK values are imported *statically* (not via `require()`).
+//
+// pi loads extensions through jiti, which aliases bare package specifiers
+// (e.g. `@earendil-works/pi-ai`) to a single `dist/index.js` file. A runtime
+// `require("@earendil-works/pi-coding-agent")` makes jiti resolve the SDK's
+// transitive subpath imports (notably `@earendil-works/pi-ai/base`, pulled in
+// by `@earendil-works/pi-agent-core` since pi 0.79.x) via prefix string
+// replacement — yielding `.../pi-ai/dist/index.js/base`, which does not exist.
+// The throw used to be swallowed by a `try/catch { return }`, silently
+// disabling the whole extension (tools fell back to pi's default rendering).
+// Static `import` resolves subpath exports correctly, so we use it instead.
+import * as piCodingAgentSdk from "@earendil-works/pi-coding-agent";
+import { Text as PiText, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { codeToANSI } from "@shikijs/cli";
 import { bundledThemes } from "shiki";
 import {
@@ -1047,7 +1059,8 @@ function setResultDetails<T>(result: ToolResultLike, details: T): void {
 
 /**
  * Dependencies that can be injected for testing.
- * In production, omit `deps` — the extension uses require() to load them.
+ * In production, omit `deps` — the extension uses the statically-imported
+ * SDK (`@earendil-works/pi-coding-agent`) and pi-tui `Text` component.
  */
 export interface PiFaceliftDeps {
 	sdk: PiFaceliftSdk;
@@ -1078,19 +1091,16 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		createEditTool = sdk.createEditToolDefinition ?? sdk.createEditTool;
 		TextComponent = deps.TextComponent;
 	} else {
-		try {
-			sdk = require("@earendil-works/pi-coding-agent");
-			createReadTool = sdk.createReadToolDefinition ?? sdk.createReadTool;
-			createBashTool = sdk.createBashToolDefinition ?? sdk.createBashTool;
-			createLsTool = sdk.createLsToolDefinition ?? sdk.createLsTool;
-			createFindTool = sdk.createFindToolDefinition ?? sdk.createFindTool;
-			createGrepTool = sdk.createGrepToolDefinition ?? sdk.createGrepTool;
-			createWriteTool = sdk.createWriteToolDefinition ?? sdk.createWriteTool;
-			createEditTool = sdk.createEditToolDefinition ?? sdk.createEditTool;
-			TextComponent = require("@earendil-works/pi-tui").Text;
-		} catch {
-			return;
-		}
+		// Production path: use the statically-imported SDK + pi-tui Text.
+		sdk = piCodingAgentSdk as unknown as PiFaceliftSdk;
+		createReadTool = sdk.createReadToolDefinition ?? sdk.createReadTool;
+		createBashTool = sdk.createBashToolDefinition ?? sdk.createBashTool;
+		createLsTool = sdk.createLsToolDefinition ?? sdk.createLsTool;
+		createFindTool = sdk.createFindToolDefinition ?? sdk.createFindTool;
+		createGrepTool = sdk.createGrepToolDefinition ?? sdk.createGrepTool;
+		createWriteTool = sdk.createWriteToolDefinition ?? sdk.createWriteTool;
+		createEditTool = sdk.createEditToolDefinition ?? sdk.createEditTool;
+		TextComponent = PiText as unknown as TextComponentCtor;
 	}
 	if (!createReadTool || !TextComponent) return;
 

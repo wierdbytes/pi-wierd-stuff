@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+- **Fix:** facelift no longer silently disables itself on pi 0.79.x — tool
+  output renders with facelift frames again instead of pi's default renderer.
+  The SDK and pi-tui are now loaded via static `import` rather than a runtime
+  `require()`, which jiti's package aliases broke for the new
+  `@earendil-works/pi-ai/base` subpath.
+
 ## 0.4.0
 
 - **New**: GitHub-style split/unified diff renderer for the `write`
