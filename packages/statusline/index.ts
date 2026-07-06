@@ -165,7 +165,7 @@ function renderStatusContent(
     contextWindow,
     cost: stats.cost,
     modelName: shortenModelName(
-      eventsConfig.layout.model.preferResponseModel && stats.lastAssistant?.responseModel
+      layout.model.preferResponseModel && stats.lastAssistant?.responseModel
         ? { id: stats.lastAssistant.responseModel }
         : ctx.model,
     ),
