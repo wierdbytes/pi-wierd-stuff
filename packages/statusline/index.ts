@@ -164,7 +164,11 @@ function renderStatusContent(
     current,
     contextWindow,
     cost: stats.cost,
-    modelName: shortenModelName(ctx.model),
+    modelName: shortenModelName(
+      eventsConfig.layout.model.preferResponseModel && stats.lastAssistant?.responseModel
+        ? { id: stats.lastAssistant.responseModel }
+        : ctx.model,
+    ),
     thinkingLevel: pi.getThinkingLevel?.() ?? "off",
     thinkingLevelMap: model?.thinkingLevelMap,
     modelReasoning: ctx.model?.reasoning ?? false,
@@ -919,7 +923,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   const BLOCK_DESCRIPTIONS: Record<BlockId, string> = {
-    model: "`🤖 <model>` plus the optional inline `🧠 <level>` thinking segment. Enter to open submenu (visibility, show-thinking toggle, move actions). CLI id: `model`.",
+    model: "`🤖 <model>` plus the optional inline `🧠 <level>` thinking segment. Enter to open submenu (visibility, response-model, show-thinking toggles, move actions). CLI id: `model`.",
     path: "Last three path segments of `cwd`. CLI id: `path`.",
     git: "Branch name plus a clean/dirty marker. CLI id: `git`.",
     context: "Percentage of usable context window (33k autocompact buffer reserved) with colored bar. CLI id: `context`.",
@@ -1336,6 +1340,7 @@ export default function (pi: ExtensionAPI) {
       `layout:        ${formatLayoutLine()}`,
       `  separator:   ${JSON.stringify(layout.separator)}`,
       `  model.think: ${layout.model.showThinking ? "yes" : "no"}`,
+      `  model.response: ${layout.model.preferResponseModel ? "yes" : "no"}`,
       `  tokens:      ${[
         layout.tokens.input ? "in" : "-in",
         layout.tokens.output ? "out" : "-out",
@@ -1370,7 +1375,7 @@ export default function (pi: ExtensionAPI) {
           },
           {} as Record<BlockId, boolean>,
         ),
-        model: { showThinking: true },
+        model: { showThinking: true, preferResponseModel: false },
         tokens: { input: true, output: true, cacheRead: true, cacheWrite: true },
       });
       ctx.ui.notify("layout: reset to defaults", "info");

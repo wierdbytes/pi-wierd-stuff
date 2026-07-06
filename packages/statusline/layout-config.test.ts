@@ -78,9 +78,9 @@ describe("normaliseLayoutConfig", () => {
 
   it("merges model sub-toggles", () => {
     const out = normaliseLayoutConfig({
-      model: { showThinking: false },
+      model: { showThinking: false, preferResponseModel: true },
     });
-    expect(out.model.showThinking).toBe(false);
+    expect(out.model).toEqual({ showThinking: false, preferResponseModel: true });
   });
 
   it("merges tokens sub-toggles independently", () => {
@@ -151,7 +151,10 @@ describe("clampSeparator", () => {
     for (const id of KNOWN_BLOCK_IDS) {
       expect(DEFAULT_LAYOUT_CONFIG.enabled[id]).toBe(true);
     }
-    expect(DEFAULT_LAYOUT_CONFIG.model.showThinking).toBe(true);
+    expect(DEFAULT_LAYOUT_CONFIG.model).toEqual({
+      showThinking: true,
+      preferResponseModel: false,
+    });
     expect(DEFAULT_LAYOUT_CONFIG.tokens).toEqual({
       input: true,
       output: true,
@@ -168,11 +171,12 @@ describe("cloneDefaultLayout", () => {
     a.order.push("model");
     a.enabled.git = false;
     a.model.showThinking = false;
+    a.model.preferResponseModel = true;
     a.tokens.input = false;
     // Mutating one clone must not affect the other.
     expect(b.order).toEqual([...KNOWN_BLOCK_IDS]);
     expect(b.enabled.git).toBe(true);
-    expect(b.model.showThinking).toBe(true);
+    expect(b.model).toEqual({ showThinking: true, preferResponseModel: false });
     expect(b.tokens.input).toBe(true);
   });
 });

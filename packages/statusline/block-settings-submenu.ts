@@ -4,7 +4,7 @@
  * Mounted from the Layout tab when the user presses Enter on a block
  * row that has block-specific knobs. Two blocks need this:
  *
- *   - `model` \xb7 a single `Show thinking level` toggle.
+ *   - `model` \xb7 `Show thinking level` and `Prefer response model` toggles.
  *   - `tokens` \xb7 four counter toggles (`input` / `output` /
  *     `cacheRead` / `cacheWrite`).
  *
@@ -62,6 +62,17 @@ export function buildBlockSettingsRows(
         value: layout.model.showThinking,
         toggle: (current) => ({
           model: { ...current.model, showThinking: !current.model.showThinking },
+        }),
+      },
+      {
+        id: "model.preferResponseModel",
+        label: "Prefer response model",
+        value: layout.model.preferResponseModel,
+        toggle: (current) => ({
+          model: {
+            ...current.model,
+            preferResponseModel: !current.model.preferResponseModel,
+          },
         }),
       },
     ];

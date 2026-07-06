@@ -75,6 +75,10 @@ Sub-menu contents (Enter on the row):
 
 - (`model`) **Show thinking level** — inline thinking segment after
   the model name. Only renders for reasoning-capable models anyway.
+- (`model`) **Prefer response model** — when Pi records a routed
+  `responseModel` on the latest assistant response (for example
+  OpenRouter `auto`), render that concrete model instead of the
+  selected alias.
 - (`tokens`) **Show input / output / cache read / cache write** —
   individual sub-toggles for the four counters inside the tokens
   block.

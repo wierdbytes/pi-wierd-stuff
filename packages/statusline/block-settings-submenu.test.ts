@@ -12,11 +12,14 @@ import { blockHasSubSettings, buildBlockSettingsRows } from "./block-settings-su
 import { cloneDefaultLayout } from "./layout-config.ts";
 
 describe("buildBlockSettingsRows", () => {
-  it("returns one row for the model block: Show thinking", () => {
+  it("returns rows for the model block settings", () => {
     const layout = cloneDefaultLayout();
     const rows = buildBlockSettingsRows("model", layout);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.id).toBe("model.showThinking");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.id)).toEqual([
+      "model.showThinking",
+      "model.preferResponseModel",
+    ]);
   });
 
   it("returns four counter toggles for the tokens block", () => {
@@ -41,10 +44,23 @@ describe("buildBlockSettingsRows", () => {
 
   it("model showThinking toggle flips just that flag", () => {
     const layout = cloneDefaultLayout();
-    const [row] = buildBlockSettingsRows("model", layout);
+    const row = buildBlockSettingsRows("model", layout).find((r) => r.id === "model.showThinking");
+    expect(row).toBeTruthy();
     const patch = row!.toggle(layout);
-    expect(patch.model?.showThinking).toBe(false);
+    expect(patch.model).toEqual({ showThinking: false, preferResponseModel: false });
     // No other slice touched.
+    expect(patch.enabled).toBeUndefined();
+    expect(patch.tokens).toBeUndefined();
+  });
+
+  it("model preferResponseModel toggle flips just that flag", () => {
+    const layout = cloneDefaultLayout();
+    const row = buildBlockSettingsRows("model", layout).find(
+      (r) => r.id === "model.preferResponseModel",
+    );
+    expect(row).toBeTruthy();
+    const patch = row!.toggle(layout);
+    expect(patch.model).toEqual({ showThinking: true, preferResponseModel: true });
     expect(patch.enabled).toBeUndefined();
     expect(patch.tokens).toBeUndefined();
   });

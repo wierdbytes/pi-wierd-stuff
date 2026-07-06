@@ -7,8 +7,8 @@
  *
  * The renderer walks `order`, calls each block's renderer when its
  * `enabled` flag is on, and joins non-empty results with `separator`.
- * Sub-toggles (`model.showThinking`, `tokens.*`) gate **content
- * inside** a single block — they never change ordering, never
+ * Sub-toggles (`model.showThinking`, `model.preferResponseModel`,
+ * `tokens.*`) gate **content inside** a single block — they never
  * introduce a new separator.
  *
  * Normalisation rules (applied on every load, hand-edit, or migration):
@@ -29,6 +29,10 @@ export interface ModelSubToggles {
   /** Show the inline thinking-level segment (only relevant for
    *  reasoning-capable models). Default: true. */
   showThinking: boolean;
+  /** Prefer the concrete model reported by the provider response
+   *  (`AssistantMessage.responseModel`) when available. Useful for
+   *  router aliases such as OpenRouter `auto`. Default: false. */
+  preferResponseModel: boolean;
 }
 
 /** Sub-toggles inside the `tokens` block. Each defaults to true. */
@@ -73,7 +77,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = Object.freeze({
     chips: true,
     stash: true,
   }) as Record<BlockId, boolean>,
-  model: Object.freeze({ showThinking: true }) as ModelSubToggles,
+  model: Object.freeze({ showThinking: true, preferResponseModel: false }) as ModelSubToggles,
   tokens: Object.freeze({
     input: true,
     output: true,
@@ -141,6 +145,9 @@ export function normaliseLayoutConfig(raw: Partial<LayoutConfig> | undefined): L
   if (raw.model && typeof raw.model === "object") {
     const src = raw.model as unknown as Record<string, unknown>;
     if (typeof src.showThinking === "boolean") merged.model.showThinking = src.showThinking;
+    if (typeof src.preferResponseModel === "boolean") {
+      merged.model.preferResponseModel = src.preferResponseModel;
+    }
   }
 
   // ── tokens sub-toggles ──────────────────────────────────────────────
