@@ -19,6 +19,7 @@ import {
   C_CYAN,
   C_GRAY,
   C_GREEN,
+  C_ORANGE,
   C_PINK,
   C_PURPLE,
   C_RED,
@@ -60,6 +61,23 @@ describe("block renderers (in isolation)", () => {
     expect(out).toContain("sonnet-4.5");
     expect(out).toContain("med"); // shortened thinking label (THINK_LABELS map)
     expect(out).toContain(C_PINK); // model color
+  });
+
+  it("renderModel keeps minimal as min when the provider maps it to low", () => {
+    const out = BLOCK_RENDERERS.model(
+      makeInputs({ thinkingLevel: "minimal", thinkingLevelMap: { minimal: "low" } }),
+    );
+    expect(out).toContain(`${C_PURPLE}[t] min${C_RESET}`);
+    expect(out).not.toContain("[t] low");
+  });
+
+  it("renderModel gradients the icon and label for mapped max effort", () => {
+    const out = BLOCK_RENDERERS.model(
+      makeInputs({ thinkingLevel: "xhigh", thinkingLevelMap: { xhigh: "max" } }),
+    );
+    expect(out).toContain(`${C_ORANGE}[`);
+    expect(out).toContain(`${C_PURPLE}x${C_RESET}`);
+    expect(out).not.toContain(`${C_RED}[t] max`);
   });
 
   it("renderModel skips thinking when sub-toggle is off", () => {

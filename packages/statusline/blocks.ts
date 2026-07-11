@@ -43,11 +43,12 @@ export const C_RESET = "\x1b[0m";
 
 const THINK_COLORS: Record<string, string> = {
   off: C_GRAY,
-  minimal: C_GRAY,
+  minimal: C_PURPLE,
   low: C_BLUE,
   medium: C_CYAN,
   high: C_ORANGE,
   xhigh: C_RED,
+  max: C_RED,
 };
 
 const THINK_LABELS: Record<string, string> = {
@@ -57,7 +58,41 @@ const THINK_LABELS: Record<string, string> = {
   medium: "med",
   high: "high",
   xhigh: "xhigh",
+  max: "max",
 };
+
+const STANDARD_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+
+const MAX_GRADIENT = [
+  [255, 158, 100], // orange
+  [247, 118, 142], // red
+  [215, 135, 175], // pink
+  [187, 154, 247], // purple
+] as const;
+
+/** Color every non-space glyph separately so max effort stands above
+ *  the solid-color effort ladder. Spaces don't consume a gradient stop. */
+function renderMaxGradient(text: string): string {
+  const glyphs = Array.from(text);
+  const coloredCount = glyphs.filter((glyph) => glyph.trim().length > 0).length;
+  let coloredIndex = 0;
+
+  return glyphs
+    .map((glyph) => {
+      if (glyph.trim().length === 0) return glyph;
+      const position = coloredCount > 1 ? coloredIndex / (coloredCount - 1) : 0;
+      const scaled = position * (MAX_GRADIENT.length - 1);
+      const leftIndex = Math.floor(scaled);
+      const rightIndex = Math.min(leftIndex + 1, MAX_GRADIENT.length - 1);
+      const mix = scaled - leftIndex;
+      const left = MAX_GRADIENT[leftIndex]!;
+      const right = MAX_GRADIENT[rightIndex]!;
+      const channel = (index: number) => Math.round(left[index]! + (right[index]! - left[index]!) * mix);
+      coloredIndex += 1;
+      return `\x1b[38;2;${channel(0)};${channel(1)};${channel(2)}m${glyph}`;
+    })
+    .join("");
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Constants
@@ -114,7 +149,16 @@ export function resolveThinkingLabel(
   thinkingLevelMap: ThinkingLevelMap | undefined,
 ): string {
   const mapped = thinkingLevelMap?.[thinkingLevel as keyof ThinkingLevelMap];
-  if (typeof mapped === "string" && mapped.length > 0) return mapped;
+  // Provider maps describe API translation as well as presentation. A map
+  // such as `minimal → low` must not rename the level the user selected.
+  // Keep only genuinely custom display values (`max`, token budgets, etc.).
+  if (
+    typeof mapped === "string" &&
+    mapped.length > 0 &&
+    !STANDARD_THINKING_LEVELS.has(mapped)
+  ) {
+    return mapped;
+  }
   return THINK_LABELS[thinkingLevel] ?? thinkingLevel;
 }
 
@@ -271,8 +315,10 @@ const renderModel: BlockRenderer = (inputs) => {
   const head = `${C_PINK}${resolveIcon(inputs.iconSet, "model")} ${inputs.modelName}${C_RESET}`;
   if (!inputs.modelReasoning || !inputs.layout.model.showThinking) return head;
   const label = resolveThinkingLabel(inputs.thinkingLevel, inputs.thinkingLevelMap);
+  const icon = resolveIcon(inputs.iconSet, "thinking");
+  if (label === "max") return `${head} ${renderMaxGradient(`${icon} ${label}`)}${C_RESET}`;
   const color = THINK_COLORS[inputs.thinkingLevel] ?? C_GRAY;
-  return `${head} ${color}${resolveIcon(inputs.iconSet, "thinking")} ${label}${C_RESET}`;
+  return `${head} ${color}${icon} ${label}${C_RESET}`;
 };
 
 /** `path` block — `…/parent/dir` with the current directory accented. */
