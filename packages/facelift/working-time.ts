@@ -121,14 +121,15 @@ export class WorkingTimeTracker {
 }
 
 /**
- * Build the live working message, e.g. `Working... 12s`. The animated
- * spinner frames are drawn by pi separately (via `setWorkingIndicator`),
- * so this only supplies the trailing text — preserving whatever spinner
- * the user/other extensions have configured.
+ * Build the live working message, e.g. `Working... 1m5s`. Uses the same
+ * `formatClock` rules as the durable history line so the live and final
+ * displays stay consistent. The animated spinner frames are drawn by pi
+ * separately (via `setWorkingIndicator`), so this only supplies the
+ * trailing text — preserving whatever spinner the user/other extensions
+ * have configured.
  */
 export function workingMessageText(elapsedMs: number): string {
-	const sec = Math.max(0, Math.floor(elapsedMs / 1000));
-	return `Working... ${sec}s`;
+	return `Working... ${formatClock(elapsedMs)}`;
 }
 
 /**

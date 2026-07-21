@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- **Fix:** live `Working...` timer now uses the same duration format as the history line (`1m5s` instead of `65s`).
+
 ## 0.6.1
 
 - **New:** live `Working... Ns` timer on the streaming spinner and a muted `⏱ worked … (total: …)` line persisted to chat history per run — `worked` is model time only (tools excluded), `total` is wall-clock incl. retries/tool calls/overhead; toggle via `showWorkingTime` in `/facelift`.

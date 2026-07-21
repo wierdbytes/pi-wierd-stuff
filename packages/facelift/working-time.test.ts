@@ -142,10 +142,11 @@ describe("formatClock", () => {
 });
 
 describe("workingMessageText / workingTimeLine", () => {
-	it("formats the live message in whole seconds", () => {
-		expect(workingMessageText(0)).toBe("Working... 0s");
-		expect(workingMessageText(1999)).toBe("Working... 1s");
-		expect(workingMessageText(65_000)).toBe("Working... 65s");
+	it("formats the live message using formatClock rules", () => {
+		expect(workingMessageText(0)).toBe("Working... 0.0s");
+		expect(workingMessageText(1999)).toBe("Working... 2.0s");
+		expect(workingMessageText(65_000)).toBe("Working... 1m5s");
+		expect(workingMessageText(720_000)).toBe("Working... 12m0s");
 	});
 
 	it("renders a muted history line with worked + total", () => {
@@ -266,8 +267,8 @@ describe("working-time wiring", () => {
 		fire("before_provider_request", {});
 		vi.advanceTimersByTime(2000);
 		const calls = ctx.ui.setWorkingMessage.mock.calls.map((c) => c[0]);
-		expect(calls[0]).toBe("Working... 0s");
-		expect(calls).toContain("Working... 2s");
+		expect(calls[0]).toBe("Working... 0.0s");
+		expect(calls).toContain("Working... 2.0s");
 		fire("message_end", asst);
 		fire("agent_settled", {});
 		vi.useRealTimers();
