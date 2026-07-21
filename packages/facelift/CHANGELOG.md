@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+
+- **New:** `tps` (output tokens/sec) next to the working timer — live `~`-prefixed estimate from streamed deltas and exact final from `usage.output`.
+
 ## 0.6.2
 
 - **Fix:** live `Working...` timer now uses the same duration format as the history line (`1m5s` instead of `65s`).

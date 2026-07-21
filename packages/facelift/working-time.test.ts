@@ -67,6 +67,38 @@ describe("WorkingTimeTracker", () => {
 		expect(t.settle()?.totalMs).toBe(3000);
 	});
 
+	it("estimates live tps from streamed deltas over worked time", () => {
+		let now = 0;
+		const t = new WorkingTimeTracker(() => now);
+		t.beginRun();
+		t.beginSegment();
+		t.addDelta(4000); // ~1000 estimated tokens at 4 chars/token
+		now = 2000; // 2s of worked time
+		expect(t.estimatedTokens()).toBe(1000);
+		expect(t.liveTps()).toBe(500); // 1000 tokens / 2s
+	});
+
+	it("liveTps is 0 before any time elapses", () => {
+		const t = new WorkingTimeTracker(() => 0);
+		t.beginRun();
+		t.beginSegment();
+		t.addDelta(400);
+		expect(t.liveTps()).toBe(0);
+	});
+
+	it("computes exact final tps from recorded tokens over worked ms", () => {
+		let now = 0;
+		const t = new WorkingTimeTracker(() => now);
+		t.beginRun();
+		t.beginSegment();
+		now = 2000;
+		t.recordExactTokens(1500);
+		t.endSegment();
+		const entry = t.settle();
+		expect(entry?.tokens).toBe(1500);
+		expect(entry?.tps).toBe(750); // 1500 tokens / 2s worked
+	});
+
 	it("excludes the gap between segments (tool execution time)", () => {
 		let now = 0;
 		const t = new WorkingTimeTracker(() => now);
@@ -143,16 +175,23 @@ describe("formatClock", () => {
 
 describe("workingMessageText / workingTimeLine", () => {
 	it("formats the live message using formatClock rules", () => {
-		expect(workingMessageText(0)).toBe("Working... 0.0s");
-		expect(workingMessageText(1999)).toBe("Working... 2.0s");
-		expect(workingMessageText(65_000)).toBe("Working... 1m5s");
-		expect(workingMessageText(720_000)).toBe("Working... 12m0s");
+		expect(workingMessageText(0, 0)).toBe("Working... 0.0s · tps: ~0");
+		expect(workingMessageText(1999, 120)).toBe("Working... 2.0s · tps: ~120");
+		expect(workingMessageText(65_000, 756)).toBe("Working... 1m5s · tps: ~756");
+		expect(workingMessageText(720_000, 800)).toBe("Working... 12m0s · tps: ~800");
 	});
 
-	it("renders a muted history line with worked + total", () => {
+	it("renders a muted history line with worked, total and exact tps", () => {
 		const dim = (s: string) => `<dim>${s}</dim>`;
-		const entry: WorkingTimeEntry = { ms: 45_200, totalMs: 75_000, startedAt: 0, endedAt: 0 };
-		expect(workingTimeLine(entry, dim)).toBe("<dim>⏱ worked 45.2s (total: 1m15s)</dim>");
+		const entry: WorkingTimeEntry = {
+			ms: 45_200,
+			totalMs: 75_000,
+			tokens: 34_200,
+			tps: 756,
+			startedAt: 0,
+			endedAt: 0,
+		};
+		expect(workingTimeLine(entry, dim)).toBe("<dim>⏱ worked 45.2s (total: 1m15s) · tps: 756</dim>");
 	});
 });
 
@@ -243,6 +282,30 @@ describe("working-time wiring", () => {
 		expect(data.totalMs).toBe(10500); // 500 + 5000 + 3000 + 2000
 	});
 
+	it("tracks live estimated tps (~) and final exact tps from usage.output", () => {
+		vi.useFakeTimers();
+		const { fire, entries, ctx } = loadExtension();
+		fire("before_agent_start", {});
+		fire("agent_start", {});
+		fire("before_provider_request", {});
+		// Stream ~4000 chars => ~1000 estimated tokens over 2s of worked time.
+		fire("message_update", {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "x".repeat(4000) },
+		});
+		vi.advanceTimersByTime(2000);
+		const calls = ctx.ui.setWorkingMessage.mock.calls.map((c) => c[0]);
+		expect(calls).toContain("Working... 2.0s · tps: ~500");
+		// Final exact tokens come from usage.output, not the estimate.
+		fire("message_end", { message: { role: "assistant", usage: { output: 1500 } } });
+		fire("agent_settled", {});
+		vi.useRealTimers();
+		expect(entries).toHaveLength(1);
+		const data = entries[0].data as WorkingTimeEntry;
+		expect(data.tokens).toBe(1500);
+		expect(data.tps).toBe(750); // 1500 / 2s worked
+	});
+
 	it("ignores non-assistant message_end (does not close the segment early)", () => {
 		vi.useFakeTimers();
 		const { fire, entries } = loadExtension();
@@ -267,8 +330,8 @@ describe("working-time wiring", () => {
 		fire("before_provider_request", {});
 		vi.advanceTimersByTime(2000);
 		const calls = ctx.ui.setWorkingMessage.mock.calls.map((c) => c[0]);
-		expect(calls[0]).toBe("Working... 0.0s");
-		expect(calls).toContain("Working... 2.0s");
+		expect(calls[0]).toBe("Working... 0.0s · tps: ~0");
+		expect(calls).toContain("Working... 2.0s · tps: ~0");
 		fire("message_end", asst);
 		fire("agent_settled", {});
 		vi.useRealTimers();
@@ -283,10 +346,10 @@ describe("working-time wiring", () => {
 		expect(renderer).toBeDefined();
 		const theme = { fg: (_k: string, s: string) => `dim(${s})` };
 		const out = renderer!(
-			{ data: { ms: 1500, totalMs: 4000, startedAt: 0, endedAt: 0 } },
+			{ data: { ms: 1500, totalMs: 4000, tokens: 300, tps: 200, startedAt: 0, endedAt: 0 } },
 			{ expanded: false },
 			theme,
 		) as MockText;
-		expect(out.getText()).toBe("dim(⏱ worked 1.5s (total: 4.0s))");
+		expect(out.getText()).toBe("dim(⏱ worked 1.5s (total: 4.0s) · tps: 200)");
 	});
 });

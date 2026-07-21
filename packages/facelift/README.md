@@ -41,16 +41,21 @@ tool output.
 
   [cd]: ../common/README.md#diff
 - **working timer** — while the model streams, the `Working...` spinner
-  line gains a live ticking timer (`Working... 12s`). When the run
-  settles, a muted line is left behind in chat history (a durable custom
-  entry, not sent to the LLM) reporting two numbers:
+  line gains a live ticking timer and a token-rate estimate
+  (`Working... 12s · tps: ~756`). When the run settles, a muted line is
+  left behind in chat history (a durable custom entry, not sent to the
+  LLM):
 
-  `⏱ worked 45.2s (total: 1m15s)`
+  `⏱ worked 45.2s (total: 1m15s) · tps: 756`
 
   - `worked` — model-only time (request dispatch → response end, so
     time-to-first-token counts; tool execution is excluded).
   - `total` — wall-clock time from your prompt to the final response,
     including retries, tool calls, and all other overhead.
+  - `tps` — output tokens per second over the `worked` time. The live
+    value is an estimate from streamed deltas (~4 chars ≈ 1 token) and is
+    prefixed with `~`; the final value is exact, from the provider's
+    reported `usage.output`.
 
   Durations auto-format as `1h12m36s` — leading zero parts are dropped
   (`0h12m0s` → `12m0s`); sub-minute values keep one decimal (`45.2s`).

@@ -1155,9 +1155,12 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	// dispatch → assistant message_end, so tools between turns are
 	// excluded, time-to-first-token included) and `total` (wall-clock
 	// from user prompt to settle — retries, tools, overhead included).
-	// While streaming, a 1s ticker rewrites the working *message* (spinner
-	// frames are left alone). On `agent_settled` both are persisted as a
-	// durable custom entry rendered as a plain muted line in history.
+	// A `tps` figure accompanies both: live it is an estimate from streamed
+	// deltas (~4 chars/token, prefixed with `~`); final it is exact, from
+	// the provider's usage.output over the worked time. While streaming, a
+	// 1s ticker rewrites the working *message* (spinner frames are left
+	// alone). On `agent_settled` everything is persisted as a durable
+	// custom entry rendered as a plain muted line in history.
 	// ===================================================================
 
 	pi.registerEntryRenderer<WorkingTimeEntry>(WORKING_TIME_ENTRY, (entry, _opts, theme) => {
@@ -1177,7 +1180,9 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	};
 
 	const renderWorkingMessage = (ctx: SessionContextLike): void => {
-		if (ctx.hasUI) ctx.ui.setWorkingMessage(workingMessageText(workingTracker.elapsedMs()));
+		if (ctx.hasUI) {
+			ctx.ui.setWorkingMessage(workingMessageText(workingTracker.elapsedMs(), workingTracker.liveTps()));
+		}
 	};
 
 	// `before_agent_start` fires right after the user submits the prompt,
@@ -1203,10 +1208,19 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		workingTick = setInterval(() => renderWorkingMessage(ctx), 1000);
 	});
 
+	pi.on("message_update", (event, _ctx) => {
+		if (!faceliftConfig.showWorkingTime) return;
+		const e = event as { message?: { role?: string }; assistantMessageEvent?: { delta?: unknown } };
+		if (e.message?.role !== "assistant") return;
+		const delta = e.assistantMessageEvent?.delta;
+		if (typeof delta === "string" && delta.length > 0) workingTracker.addDelta(delta.length);
+	});
+
 	pi.on("message_end", (event, _ctx) => {
 		if (!faceliftConfig.showWorkingTime) return;
-		const role = (event as { message?: { role?: string } }).message?.role;
-		if (role !== "assistant") return;
+		const msg = (event as { message?: { role?: string; usage?: { output?: number } } }).message;
+		if (msg?.role !== "assistant") return;
+		if (typeof msg.usage?.output === "number") workingTracker.recordExactTokens(msg.usage.output);
 		workingTracker.endSegment();
 		stopWorkingTick();
 	});
