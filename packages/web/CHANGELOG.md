@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.2
+
+- Fix `web_fetch` permanently failing with `Browser error: BrowserPool is
+  shut down` after pi emits `session_shutdown` without exiting the process
+  (session switch, `/new`, fork/clone, `ctx.reload()`). The shared
+  `BrowserPool` singleton stayed closed forever; `session_start` now
+  re-creates it, per pi's "re-establish in-memory state in session_start"
+  guidance.
+
 ## 0.5.0
 
 - Both `web_search` and `web_fetch` now use `renderShell: "self"` and

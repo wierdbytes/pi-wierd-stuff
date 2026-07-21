@@ -25,7 +25,7 @@ import {
   type WierdWebConfig,
 } from "./config.ts";
 import { createWebSearchTool } from "./search.ts";
-import { createWebFetchTool, shutdownWebFetch, startCacheCleanup } from "./fetch.ts";
+import { createWebFetchTool, resetWebFetchPool, shutdownWebFetch, startCacheCleanup } from "./fetch.ts";
 import { detectPythonRunner } from "./extract.ts";
 
 function describeAuthSource(): string {
@@ -90,6 +90,11 @@ export default function piWierdWeb(pi: ExtensionAPI) {
   }
 
   pi.on("session_start", async (_event, ctx) => {
+    // Re-establish the browser pool: session_shutdown shuts it down
+    // permanently, and pi can emit shutdown mid-process (session switch,
+    // fork, reload) while this module instance stays alive.
+    resetWebFetchPool();
+
     // Refresh from disk in case the user edited it between sessions.
     config = loadOrInitConfig();
 

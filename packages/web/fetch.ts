@@ -159,10 +159,26 @@ function cleanupCache(): void {
 
 // --- Browser pool ---
 
-const browserPool = new BrowserPool({
-  maxTabs: MAX_BROWSER_TABS,
-  idleTimeoutMs: BROWSER_IDLE_TIMEOUT_MS,
-});
+function createBrowserPool(): BrowserPool {
+  return new BrowserPool({
+    maxTabs: MAX_BROWSER_TABS,
+    idleTimeoutMs: BROWSER_IDLE_TIMEOUT_MS,
+  });
+}
+
+let browserPool = createBrowserPool();
+
+/**
+ * Recreate the browser pool. Call on `session_start`:
+ * `shutdownWebFetch()` (wired to `session_shutdown`) closes the pool
+ * permanently, and pi emits `session_shutdown` without exiting the process
+ * on session switches, forks, and reloads — if the module instance
+ * survives, every subsequent `web_fetch` would otherwise fail with
+ * "BrowserPool is shut down".
+ */
+export function resetWebFetchPool(): void {
+  browserPool = createBrowserPool();
+}
 
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
