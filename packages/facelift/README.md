@@ -40,6 +40,22 @@ tool output.
   don't happen — configurable via `diffLayout` (see below).
 
   [cd]: ../common/README.md#diff
+- **working timer** — while the model streams, the `Working...` spinner
+  line gains a live ticking timer (`Working... 12s`). When the run
+  settles, a muted line is left behind in chat history (a durable custom
+  entry, not sent to the LLM) reporting two numbers:
+
+  `⏱ worked 45.2s (total: 1m15s)`
+
+  - `worked` — model-only time (request dispatch → response end, so
+    time-to-first-token counts; tool execution is excluded).
+  - `total` — wall-clock time from your prompt to the final response,
+    including retries, tool calls, and all other overhead.
+
+  Durations auto-format as `1h12m36s` — leading zero parts are dropped
+  (`0h12m0s` → `12m0s`); sub-minute values keep one decimal (`45.2s`).
+
+  Toggle via `showWorkingTime` in `/facelift`.
 
 ## Install
 
@@ -100,7 +116,13 @@ Current schema:
   // "unified"   : always stacked single-column.
   // "per-edit"  : each diff picks independently (original pi-diff
   //               behaviour; can produce mixed layouts).
-  "diffLayout": "consistent"
+  "diffLayout": "consistent",
+
+  // Show a ticking timer in the streaming "Working..." line and persist
+  // each run's model time (`worked`, tools excluded) and wall-clock time
+  // (`total`, retries + tools + overhead) as a muted line in chat
+  // history. Default true.
+  "showWorkingTime": true
 }
 ```
 
@@ -118,6 +140,7 @@ icons, image protocols) or boot-time toggles:
 | `FACELIFT_ICONS`               | `nerd`          | Set to `none` / `off` to disable Nerd Font icons in `ls`/`find`/`grep`.       |
 | `FACELIFT_IMAGE_PROTOCOL`      | auto            | Force `kitty` / `iterm2` / `none`. Auto-detected from `$TERM_PROGRAM` etc.    |
 | `DIFF_LAYOUT`                  | (none)          | One-shot override for `diffLayout` on first-run seeding.                      |
+| `FACELIFT_SHOW_WORKING_TIME`   | `true`          | One-shot override for `showWorkingTime` on first-run seeding (`0`/`off` ⇒ off). |
 
 ## Development
 
@@ -126,7 +149,7 @@ This package lives in the [`pi-wierd-stuff`](../../README.md) monorepo.
 ```bash
 bun install                        # from the repo root
 cd packages/facelift
-bun run test                       # 64 tests
+bun run test                       # 80 tests
 bun run test:watch                 # vitest watch mode
 bun run demo                       # render every tool block to your terminal
 ```

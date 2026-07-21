@@ -54,6 +54,8 @@ function loadBashTool() {
 		registerTool: (tool: any) => tools.set(tool.name, tool),
 		registerCommand: () => {},
 		on: () => {},
+		registerEntryRenderer: () => {},
+		appendEntry: () => {},
 	};
 
 	piFaceliftExtension(pi, {

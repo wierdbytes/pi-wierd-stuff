@@ -56,6 +56,8 @@ function loadTools(opts: { writeExec?: any; editExec?: any } = {}) {
 		registerTool: (tool: any) => tools.set(tool.name, tool),
 		registerCommand: () => {},
 		on: () => {},
+		registerEntryRenderer: () => {},
+		appendEntry: () => {},
 	};
 
 	piFaceliftExtension(pi, {

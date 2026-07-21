@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- **New:** live `Working... Ns` timer on the streaming spinner and a muted `⏱ worked … (total: …)` line persisted to chat history per run — `worked` is model time only (tools excluded), `total` is wall-clock incl. retries/tool calls/overhead; toggle via `showWorkingTime` in `/facelift`.
+
 ## 0.5.0
 
 - **Fix:** facelift no longer silently disables itself on pi 0.79.x — tool

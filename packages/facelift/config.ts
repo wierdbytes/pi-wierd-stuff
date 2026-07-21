@@ -10,9 +10,9 @@
  *     extension.
  *   - Saves write atomically (one JSON.stringify + trailing newline).
  *
- * The only knob we expose today is `diffLayout`, but the schema is
- * designed to accept more fields (icon mode, max preview lines, etc.)
- * without breaking older config files.
+ * The knobs we expose today are `diffLayout` and `showWorkingTime`, and
+ * the schema is designed to accept more fields (icon mode, max preview
+ * lines, etc.) without breaking older config files.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -47,10 +47,31 @@ export interface WierdFaceliftConfig {
 	 *     pi-diff behaviour; can produce mixed layouts in one call).
 	 */
 	diffLayout: DiffLayoutPreference;
+
+	/**
+	 * Show a ticking timer in the streaming "Working…" line and persist
+	 * the total model working time per agent run as a muted line in chat
+	 * history (via a durable custom entry). Tool execution time is
+	 * excluded — only time the model spends streaming is counted.
+	 *
+	 * Defaults to `true`; override with env `FACELIFT_SHOW_WORKING_TIME`
+	 * (`0`/`false`/`off` to disable).
+	 */
+	showWorkingTime: boolean;
 }
 
 function isDiffLayout(value: unknown): value is DiffLayoutPreference {
 	return typeof value === "string" && (VALID_DIFF_LAYOUTS as readonly string[]).includes(value);
+}
+
+function parseBool(value: unknown, fallback: boolean): boolean {
+	if (typeof value === "boolean") return value;
+	if (typeof value === "string") {
+		const v = value.trim().toLowerCase();
+		if (["0", "false", "off", "no", "disabled"].includes(v)) return false;
+		if (["1", "true", "on", "yes", "enabled"].includes(v)) return true;
+	}
+	return fallback;
 }
 
 /**
@@ -66,6 +87,7 @@ export function envDefaults(): WierdFaceliftConfig {
 	const fromEnv = envLayout && isDiffLayout(envLayout) ? envLayout : undefined;
 	return {
 		diffLayout: fromEnv ?? DEFAULT_DIFF_LAYOUT,
+		showWorkingTime: parseBool(process.env.FACELIFT_SHOW_WORKING_TIME, true),
 	};
 }
 
@@ -75,6 +97,7 @@ function sanitize(raw: unknown): WierdFaceliftConfig {
 	const obj = raw as Record<string, unknown>;
 	const cfg: WierdFaceliftConfig = { ...defaults };
 	if (isDiffLayout(obj.diffLayout)) cfg.diffLayout = obj.diffLayout;
+	if (typeof obj.showWorkingTime === "boolean") cfg.showWorkingTime = obj.showWorkingTime;
 	return cfg;
 }
 
@@ -119,6 +142,7 @@ export function saveConfig(
 	}
 	const out: Record<string, unknown> = {
 		diffLayout: cfg.diffLayout,
+		showWorkingTime: cfg.showWorkingTime,
 	};
 	writeFileSync(path, `${JSON.stringify(out, null, 2)}\n`, "utf-8");
 	return path;

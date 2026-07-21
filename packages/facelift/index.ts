@@ -84,6 +84,13 @@ import {
 	type WierdFaceliftConfig,
 } from "./config.ts";
 import {
+	WorkingTimeTracker,
+	WORKING_TIME_ENTRY,
+	workingMessageText,
+	workingTimeLine,
+	type WorkingTimeEntry,
+} from "./working-time.ts";
+import {
 	formatDuration,
 	frameBodyLines,
 	frameBottom,
@@ -991,6 +998,11 @@ type PiFaceliftApi = {
 		},
 	) => void;
 	on: (event: string, handler: (event: unknown, ctx: SessionContextLike) => Promise<void> | void) => void;
+	registerEntryRenderer: <T = unknown>(
+		customType: string,
+		renderer: (entry: { data?: T }, options: { expanded: boolean }, theme: ThemeLike) => unknown,
+	) => void;
+	appendEntry: <T = unknown>(customType: string, data?: T) => void;
 };
 type ReadParams = ReadToolInput;
 type BashParams = BashToolInput;
@@ -1135,6 +1147,78 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			return faceliftEnvDefaults();
 		}
 	})();
+
+	// ===================================================================
+	// Working-time — live timer in the "Working…" line + durable history
+	// -------------------------------------------------------------------
+	// Two metrics per run: `worked` (model streaming only — request
+	// dispatch → assistant message_end, so tools between turns are
+	// excluded, time-to-first-token included) and `total` (wall-clock
+	// from user prompt to settle — retries, tools, overhead included).
+	// While streaming, a 1s ticker rewrites the working *message* (spinner
+	// frames are left alone). On `agent_settled` both are persisted as a
+	// durable custom entry rendered as a plain muted line in history.
+	// ===================================================================
+
+	pi.registerEntryRenderer<WorkingTimeEntry>(WORKING_TIME_ENTRY, (entry, _opts, theme) => {
+		const data = entry.data;
+		if (!data || typeof data.ms !== "number") return undefined;
+		return new TextComponent(workingTimeLine(data, (s) => theme.fg("dim", s)), 0, 0);
+	});
+
+	const workingTracker = new WorkingTimeTracker();
+	let workingTick: NodeJS.Timeout | undefined;
+
+	const stopWorkingTick = (): void => {
+		if (workingTick !== undefined) {
+			clearInterval(workingTick);
+			workingTick = undefined;
+		}
+	};
+
+	const renderWorkingMessage = (ctx: SessionContextLike): void => {
+		if (ctx.hasUI) ctx.ui.setWorkingMessage(workingMessageText(workingTracker.elapsedMs()));
+	};
+
+	// `before_agent_start` fires right after the user submits the prompt,
+	// so it anchors the wall-clock `total` (retries + tools + overhead).
+	pi.on("before_agent_start", () => {
+		if (!faceliftConfig.showWorkingTime) return;
+		workingTracker.beginRun();
+	});
+
+	pi.on("agent_start", () => {
+		if (!faceliftConfig.showWorkingTime) return;
+		// Fallback for flows where before_agent_start didn't fire first.
+		workingTracker.ensureRun();
+	});
+
+	pi.on("before_provider_request", (_event, ctx) => {
+		if (!faceliftConfig.showWorkingTime) return;
+		// Start the segment when the request is dispatched (not on the first
+		// token), so time-to-first-token counts as working time too.
+		workingTracker.beginSegment();
+		stopWorkingTick();
+		renderWorkingMessage(ctx);
+		workingTick = setInterval(() => renderWorkingMessage(ctx), 1000);
+	});
+
+	pi.on("message_end", (event, _ctx) => {
+		if (!faceliftConfig.showWorkingTime) return;
+		const role = (event as { message?: { role?: string } }).message?.role;
+		if (role !== "assistant") return;
+		workingTracker.endSegment();
+		stopWorkingTick();
+	});
+
+	pi.on("agent_settled", (_event, ctx) => {
+		if (!faceliftConfig.showWorkingTime) return;
+		stopWorkingTick();
+		const entry = workingTracker.settle();
+		// Restore pi's default working message for the next run.
+		if (ctx.hasUI) ctx.ui.setWorkingMessage();
+		if (entry) pi.appendEntry(WORKING_TIME_ENTRY, entry);
+	});
 
 	// ===================================================================
 	// read — syntax-highlighted file content
@@ -1735,6 +1819,15 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				options: VALID_DIFF_LAYOUTS,
 				optionLabels: diffLayoutLabels,
 			},
+			{
+				key: "showWorkingTime",
+				type: "boolean",
+				label: "Working timer",
+				description:
+					"Show a ticking timer in the streaming \u201cWorking\u2026\u201d line and persist each agent run\u2019s total model time (tools excluded) as a muted line in chat history.",
+				value: faceliftConfig.showWorkingTime,
+				default: true,
+			},
 		];
 		await openSettingsModal(extCtx, {
 			title: "@wierdbytes/pi-facelift",
@@ -1742,6 +1835,10 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			onChange: (key, value) => {
 				if (key === "diffLayout") {
 					faceliftConfig = { ...faceliftConfig, diffLayout: value as DiffLayoutPreference };
+					persistFaceliftConfig(extCtx);
+				}
+				if (key === "showWorkingTime") {
+					faceliftConfig = { ...faceliftConfig, showWorkingTime: value as boolean };
 					persistFaceliftConfig(extCtx);
 				}
 			},
@@ -1752,6 +1849,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		const lines = [
 			`config:     ${getFaceliftConfigPath()}`,
 			`diffLayout: ${faceliftConfig.diffLayout}`,
+			`workingTime: ${faceliftConfig.showWorkingTime ? "on" : "off"}`,
 		];
 		extCtx.ui.notify(`@wierdbytes/pi-facelift\n${lines.join("\n")}`, "info");
 	};
