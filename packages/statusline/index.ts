@@ -147,13 +147,14 @@ function renderStatusContent(
   layout: LayoutConfig,
 ): string[] {
   const stats = gatherStats(ctx);
-  const contextWindow =
-    ctx.getContextUsage()?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-  const current = stats.lastAssistant
-    ? stats.lastAssistant.usage.input +
-      stats.lastAssistant.usage.cacheRead +
-      stats.lastAssistant.usage.cacheWrite
+  const contextUsage = ctx.getContextUsage();
+  const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+  const lastUsage = stats.lastAssistant?.usage;
+  const fallbackCurrent = lastUsage
+    ? lastUsage.totalTokens ||
+      lastUsage.input + lastUsage.output + lastUsage.cacheRead + lastUsage.cacheWrite
     : 0;
+  const current = contextUsage ? contextUsage.tokens : fallbackCurrent;
   const git = getGitStatus(ctx.cwd);
 
   const model = ctx.model as Model<any> | undefined;

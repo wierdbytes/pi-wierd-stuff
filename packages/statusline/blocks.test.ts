@@ -128,6 +128,28 @@ describe("block renderers (in isolation)", () => {
     expect(out).toMatch(/[▓░]/);
   });
 
+  it("renderContext measures usage against the full model context window", () => {
+    const out = BLOCK_RENDERERS.context(
+      makeInputs({ current: 291_000, contextWindow: 324_000 }),
+    );
+
+    expect(out).toContain("89%");
+    expect(out).not.toContain("100%");
+    expect(out).toContain("291k");
+    expect(out).toContain("33k");
+    expect(out.match(/▓/g)).toHaveLength(8);
+    expect(out.match(/░/g)).toHaveLength(2);
+  });
+
+  it("renderContext shows unknown values while post-compaction usage is unavailable", () => {
+    const out = BLOCK_RENDERERS.context(makeInputs({ current: null }));
+
+    expect(out).toContain("?%");
+    expect(out).not.toContain("0%");
+    expect(out.match(/▓/g)).toBeNull();
+    expect(out.match(/░/g)).toHaveLength(10);
+  });
+
   it("renderCost is empty for zero cost", () => {
     expect(BLOCK_RENDERERS.cost(makeInputs({ cost: 0 }))).toBe("");
   });

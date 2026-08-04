@@ -98,7 +98,6 @@ function renderMaxGradient(text: string): string {
 // Constants
 // ─────────────────────────────────────────────────────────────────────
 
-const AUTOCOMPACT_BUFFER = 33000;
 const BAR_WIDTH = 10;
 const CHIP_LABEL_MAX_WIDTH = 16;
 
@@ -281,7 +280,7 @@ export interface RenderInputs {
   cwd: string;
   branch: string | null;
   dirty: boolean;
-  current: number;
+  current: number | null;
   contextWindow: number;
   cost: number;
   modelName: string;
@@ -339,18 +338,18 @@ const renderGit: BlockRenderer = (inputs) => {
 /** `context` block — `pct%: used[bar]remaining`; empty when no context window. */
 const renderContext: BlockRenderer = (inputs) => {
   if (inputs.contextWindow <= 0) return "";
-  const threshold = Math.max(1, inputs.contextWindow - AUTOCOMPACT_BUFFER);
-  let pct = Math.floor((inputs.current * 100) / threshold);
-  let remaining = threshold - inputs.current;
-  if (remaining < 0) {
-    remaining = 0;
-    pct = 100;
+  if (inputs.current === null) {
+    const bar = buildBar(0, C_GRAY);
+    return `${C_GRAY}?%${C_RESET}: ?${C_GRAY}[${C_RESET}${bar}${C_GRAY}]${C_RESET}?`;
   }
-  if (pct < 0) pct = 0;
+
+  const current = Math.max(0, inputs.current);
+  const pct = Math.max(0, Math.min(100, Math.floor((current * 100) / inputs.contextWindow)));
+  const remaining = Math.max(0, inputs.contextWindow - current);
   const color = pctColorFor(pct);
   const bar = buildBar(pct, color);
   return (
-    `${color}${pct}%${C_RESET}: ${formatTokens(inputs.current)}` +
+    `${color}${pct}%${C_RESET}: ${formatTokens(current)}` +
     `${C_GRAY}[${C_RESET}${bar}${C_GRAY}]${C_RESET}${formatTokens(remaining)}`
   );
 };

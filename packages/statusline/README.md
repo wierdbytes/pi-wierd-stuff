@@ -22,10 +22,11 @@ fully configurable — see [Layout](#layout) below):
   Parent segments in gray, current directory in purple.
 - **Git** — branch name plus a clean/dirty marker (`✓` green / `✗` red).
   Hidden when not in a git repo.
-- **Context** — percentage of usable context window before autocompaction
-  (33k buffer reserved), printed as `pct%: used[▓░░░]remaining` with a
+- **Context** — current context-window usage reported by pi, printed as
+  `pct%: used[▓░░░]remaining` against the model's full context window with a
   colored progress bar. Color shifts green → yellow → red as you approach
-  the threshold.
+  the limit. While usage is temporarily unknown immediately after compaction,
+  the block shows `?` markers instead of stale pre-compaction values.
 - **Cost** — session total in USD when greater than zero.
 - **Tokens** — cumulative session input/output and cache read/write
   counters: `↑input ↓output R{cacheRead} W{cacheWrite}`. Each counter
