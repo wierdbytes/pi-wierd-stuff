@@ -1,0 +1,42 @@
+{
+  "name": "@wierdbytes/pi-video-mention",
+  "version": "0.1.0",
+  "description": "Send video files to video-capable models via @mentions — routed as video_url content parts when the active model supports video, left as plain text otherwise.",
+  "type": "module",
+  "files": [
+    "*.ts",
+    "*.md",
+    "*.json"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "coding-agent",
+    "extension",
+    "video",
+    "multimodal",
+    "openrouter"
+  ],
+  "license": "MIT",
+  "author": "wierdbytes",
+  "homepage": "https://github.com/wierdbytes/pi-wierd-stuff/tree/master/packages/video-mention",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wierdbytes/pi-wierd-stuff.git",
+    "directory": "packages/video-mention"
+  },
+  "bugs": {
+    "url": "https://github.com/wierdbytes/pi-wierd-stuff/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0"
+  }
+}

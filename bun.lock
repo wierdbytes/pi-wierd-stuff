@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "pi-wierd-stuff",
@@ -45,7 +46,7 @@
     },
     "packages/facelift": {
       "name": "@wierdbytes/pi-facelift",
-      "version": "0.4.4",
+      "version": "0.6.3",
       "dependencies": {
         "@shikijs/cli": "^4.0.2",
         "@wierdbytes/pi-common": "^0.4.0",
@@ -78,7 +79,7 @@
     },
     "packages/statusline": {
       "name": "@wierdbytes/pi-statusline",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "dependencies": {
         "@wierdbytes/pi-common": "^0.5.0",
         "@wierdbytes/pi-events": "^0.1.0",
@@ -92,6 +93,13 @@
     "packages/tokyo-night": {
       "name": "@wierdbytes/pi-tokyo-night",
       "version": "0.1.0",
+    },
+    "packages/video-mention": {
+      "name": "@wierdbytes/pi-video-mention",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@earendil-works/pi-coding-agent": "^0.74.0",
+      },
     },
     "packages/voice": {
       "name": "@wierdbytes/pi-voice",
@@ -111,7 +119,7 @@
     },
     "packages/web": {
       "name": "@wierdbytes/pi-web",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "dependencies": {
         "@wierdbytes/pi-common": "^0.3.0",
         "puppeteer": "^24.0.0",
@@ -393,6 +401,8 @@
     "@wierdbytes/pi-statusline": ["@wierdbytes/pi-statusline@workspace:packages/statusline"],
 
     "@wierdbytes/pi-tokyo-night": ["@wierdbytes/pi-tokyo-night@workspace:packages/tokyo-night"],
+
+    "@wierdbytes/pi-video-mention": ["@wierdbytes/pi-video-mention@workspace:packages/video-mention"],
 
     "@wierdbytes/pi-voice": ["@wierdbytes/pi-voice@workspace:packages/voice"],
 
