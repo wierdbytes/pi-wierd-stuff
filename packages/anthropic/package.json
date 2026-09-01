@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-anthropic",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Claude Pro/Max OAuth extension for the pi coding agent",
   "type": "module",
   "files": [

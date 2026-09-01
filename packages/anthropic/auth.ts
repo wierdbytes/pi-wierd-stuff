@@ -16,7 +16,7 @@ const SCOPES = [
   "user:mcp_servers",
   "user:file_upload",
 ].join(" ");
-const USER_AGENT = "claude-code/2.1.97";
+const USER_AGENT = "claude-code/2.1.258";
 const CALLBACK_PORT = 53692;
 const CALLBACK_HOST = "127.0.0.1";
 const LOCAL_CALLBACK_TIMEOUT = 5 * 60 * 1000;
