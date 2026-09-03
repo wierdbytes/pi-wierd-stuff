@@ -7,7 +7,7 @@
     },
     "packages/anthropic": {
       "name": "@wierdbytes/pi-anthropic",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "devDependencies": {
         "@earendil-works/pi-ai": "^0.74.0",
         "@earendil-works/pi-coding-agent": "^0.74.0",
@@ -46,16 +46,16 @@
     },
     "packages/facelift": {
       "name": "@wierdbytes/pi-facelift",
-      "version": "0.6.3",
+      "version": "0.6.4",
       "dependencies": {
         "@shikijs/cli": "^4.0.2",
         "@wierdbytes/pi-common": "^0.4.0",
+        "shiki": "^4.0.2",
       },
       "devDependencies": {
         "@earendil-works/pi-ai": "^0.74.0",
         "@earendil-works/pi-coding-agent": "^0.74.0",
         "@earendil-works/pi-tui": "^0.74.0",
-        "shiki": "^4.0.2",
         "vitest": "^4.0.18",
       },
       "peerDependencies": {

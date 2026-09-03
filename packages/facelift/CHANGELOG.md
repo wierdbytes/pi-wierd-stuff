@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4
+
+- **Fix:** declare `shiki` as a runtime dependency instead of a dev-only one.
+  `index.ts` imports `bundledThemes` from `shiki` at runtime, so installs
+  without dev dependencies crashed with `Cannot find module 'shiki'` and
+  the extension failed to load.
+
 ## 0.6.3
 
 - **New:** `tps` (output tokens/sec) next to the working timer — live `~`-prefixed estimate from streamed deltas and exact final from `usage.output`.

@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-facelift",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Cosmetic facelift for built-in pi tool output — open-right rounded frames, syntax-highlighted reads, status-aware bash summaries, find/grep.",
   "type": "module",
   "files": [
@@ -53,7 +53,8 @@
   },
   "dependencies": {
     "@shikijs/cli": "^4.0.2",
-    "@wierdbytes/pi-common": "^0.4.0"
+    "@wierdbytes/pi-common": "^0.4.0",
+    "shiki": "^4.0.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.74.0",
@@ -64,7 +65,6 @@
     "@earendil-works/pi-ai": "^0.74.0",
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@earendil-works/pi-tui": "^0.74.0",
-    "shiki": "^4.0.2",
     "vitest": "^4.0.18"
   }
 }
