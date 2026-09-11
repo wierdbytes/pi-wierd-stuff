@@ -94,6 +94,9 @@ ${CONTENT_GUARDRAILS}`;
 
 // --- Schema ---
 
+const SUMMARIZE_DESCRIPTION =
+  "Set to false to disable the automatic LLM summary for large pages (>50KB) and return the raw extracted markdown instead (truncated to pi's standard tool output limits). Defaults to true. Cannot be combined with 'prompt'.";
+
 export const WebFetchSchema = Type.Object({
   url: Type.Optional(
     Type.String({
@@ -107,6 +110,11 @@ export const WebFetchSchema = Type.Object({
         "What information to extract from the page. Strongly recommended — the page content will be processed by a fast LLM and only relevant information returned. Omit only if you need the full raw content. Only used with 'url', not 'pages'.",
     }),
   ),
+  summarize: Type.Optional(
+    Type.Boolean({
+      description: `${SUMMARIZE_DESCRIPTION} Only used with 'url', not 'pages'.`,
+    }),
+  ),
   pages: Type.Optional(
     Type.Array(
       Type.Object({
@@ -114,16 +122,77 @@ export const WebFetchSchema = Type.Object({
         prompt: Type.Optional(
           Type.String({ description: "What information to extract from this page" }),
         ),
+        summarize: Type.Optional(Type.Boolean({ description: SUMMARIZE_DESCRIPTION })),
       }),
       {
         maxItems: MAX_BATCH_SIZE,
-        description: `Array of pages to fetch concurrently (max ${MAX_BATCH_SIZE}). Mutually exclusive with 'url'. Each entry can have its own prompt.`,
+        description: `Array of pages to fetch concurrently (max ${MAX_BATCH_SIZE}). Mutually exclusive with 'url'. Each entry can have its own prompt and summarize flag.`,
       },
     ),
   ),
 });
 
 export type WebFetchParams = Static<typeof WebFetchSchema>;
+
+/** One page to fetch, after `url`/`pages` have been normalized. */
+export interface PageRequest {
+  url: string;
+  prompt?: string;
+  /** `false` disables auto-summary of large pages. Defaults to `true`. */
+  summarize?: boolean;
+}
+
+// --- Param validation (exported for tests) ---
+
+type ResolvedPages = { ok: true; pages: PageRequest[] } | { ok: false; error: string };
+
+/**
+ * Normalize `url`/`pages` into a flat list and reject inconsistent input
+ * before any browser work starts.
+ */
+export function resolveFetchPages(params: WebFetchParams): ResolvedPages {
+  const hasUrl = params.url !== undefined && params.url !== null;
+  const hasPages = params.pages !== undefined && params.pages !== null;
+
+  if (hasUrl && hasPages) {
+    return {
+      ok: false,
+      error:
+        "The 'url' and 'pages' parameters are mutually exclusive. Use 'url' for a single page or 'pages' for batch fetching, not both.",
+    };
+  }
+  if (!hasUrl && !hasPages) {
+    return { ok: false, error: "Either 'url' or 'pages' must be provided." };
+  }
+
+  let pages: PageRequest[];
+  if (hasPages) {
+    pages = params.pages!;
+    if (pages.length === 0) {
+      return { ok: false, error: "The 'pages' array must contain at least one entry." };
+    }
+    if (pages.length > MAX_BATCH_SIZE) {
+      return {
+        ok: false,
+        error: `The 'pages' array exceeds the maximum batch size of ${MAX_BATCH_SIZE}.`,
+      };
+    }
+  } else {
+    pages = [{ url: params.url!, prompt: params.prompt, summarize: params.summarize }];
+  }
+
+  const conflicting = pages.filter((p) => p.summarize === false && p.prompt);
+  if (conflicting.length > 0) {
+    const where =
+      pages.length === 1 ? "" : ` (${conflicting.map((p) => p.url).join(", ")})`;
+    return {
+      ok: false,
+      error: `'summarize: false' cannot be combined with 'prompt'${where}. Drop 'prompt' to get raw content, or drop 'summarize' to have the LLM process the page.`,
+    };
+  }
+
+  return { ok: true, pages };
+}
 
 // --- Cache ---
 
@@ -310,7 +379,7 @@ async function fetchPage(
 // --- Batch result formatting (exported for tests) ---
 
 export function formatBatchResults(
-  pages: Array<{ url: string; prompt?: string }>,
+  pages: Array<{ url: string }>,
   results: PromiseSettledResult<any>[],
 ) {
   const total = pages.length;
@@ -381,8 +450,9 @@ export function createWebFetchTool(
       "",
       "Include a 'prompt' parameter to have an LLM distill the page down to just the information you need — this saves significant context compared to ingesting raw page content.",
       "Without a prompt, the full extracted markdown is returned (or a structured overview if the page is large).",
+      "Pass 'summarize: false' to skip that automatic overview and get the raw markdown (truncated to standard tool output limits) even for large pages.",
       "",
-      "Batch mode: use 'pages' instead of 'url' to fetch multiple URLs in a single call. Each entry can have its own prompt.",
+      "Batch mode: use 'pages' instead of 'url' to fetch multiple URLs in a single call. Each entry can have its own prompt and summarize flag.",
       "This is much faster than making separate web_fetch calls when you need content from several pages.",
       "The 'url' and 'pages' parameters are mutually exclusive. Maximum 10 pages per batch.",
       "",
@@ -411,57 +481,16 @@ export function createWebFetchTool(
       const thinkingLevel =
         options.getFetchThinkingLevel() || options.getSessionThinkingLevel() || "off";
 
-      const hasUrl = params.url !== undefined && params.url !== null;
-      const hasPages = params.pages !== undefined && params.pages !== null;
-
-      if (hasUrl && hasPages) {
+      const resolved = resolveFetchPages(params);
+      if (!resolved.ok) {
         return toAgentResult({
-          content: [
-            {
-              type: "text",
-              text: "The 'url' and 'pages' parameters are mutually exclusive. Use 'url' for a single page or 'pages' for batch fetching, not both.",
-            },
-          ],
+          content: [{ type: "text", text: resolved.error }],
           isError: true,
         });
-      }
-      if (!hasUrl && !hasPages) {
-        return toAgentResult({
-          content: [{ type: "text", text: "Either 'url' or 'pages' must be provided." }],
-          isError: true,
-        });
-      }
-
-      if (hasPages) {
-        const pages = params.pages!;
-        if (pages.length === 0) {
-          return toAgentResult({
-            content: [{ type: "text", text: "The 'pages' array must contain at least one entry." }],
-            isError: true,
-          });
-        }
-        if (pages.length > MAX_BATCH_SIZE) {
-          return toAgentResult({
-            content: [
-              {
-                type: "text",
-                text: `The 'pages' array exceeds the maximum batch size of ${MAX_BATCH_SIZE}.`,
-              },
-            ],
-            isError: true,
-          });
-        }
-        return toAgentResult(await executeBatch(pages, model, thinkingLevel, signal, onUpdate));
       }
 
       return toAgentResult(
-        await executeBatch(
-          [{ url: params.url!, prompt: params.prompt }],
-          model,
-          thinkingLevel,
-          signal,
-          onUpdate,
-        ),
+        await executeBatch(resolved.pages, model, thinkingLevel, signal, onUpdate),
       );
     },
 
@@ -475,14 +504,13 @@ export function createWebFetchTool(
 // --- Pipeline ---
 
 async function processSingleUrl(
-  rawUrl: string,
-  prompt: string | undefined,
+  page: PageRequest,
   model: string | undefined,
   thinkingLevel: string,
   signal?: AbortSignal,
   onUpdate?: InternalUpdate,
 ): Promise<InternalResult> {
-  const urlResult = validateAndNormalizeUrl(rawUrl);
+  const urlResult = validateAndNormalizeUrl(page.url);
   if (!urlResult.ok) {
     return {
       content: [{ type: "text", text: urlResult.error }],
@@ -494,7 +522,7 @@ async function processSingleUrl(
   const cached = getCached(url);
   if (cached) {
     onUpdate?.({ content: [{ type: "text", text: "Cache hit — processing..." }] });
-    return await runProcess(cached, prompt, model, thinkingLevel, signal, onUpdate);
+    return await runProcess(cached, page, model, thinkingLevel, signal, onUpdate);
   }
 
   const fetchOuter = await runFetch(url, signal, onUpdate);
@@ -507,11 +535,11 @@ async function processSingleUrl(
 
   setCache(url, markdown);
 
-  return await runProcess(markdown, prompt, model, thinkingLevel, signal, onUpdate);
+  return await runProcess(markdown, page, model, thinkingLevel, signal, onUpdate);
 }
 
 async function executeBatch(
-  pages: Array<{ url: string; prompt?: string }>,
+  pages: PageRequest[],
   model: string | undefined,
   thinkingLevel: string,
   signal?: AbortSignal,
@@ -552,14 +580,7 @@ async function executeBatch(
       emitBatchUpdate();
     };
 
-    const result = await processSingleUrl(
-      page.url,
-      page.prompt,
-      model,
-      thinkingLevel,
-      signal,
-      pageOnUpdate,
-    );
+    const result = await processSingleUrl(page, model, thinkingLevel, signal, pageOnUpdate);
 
     if (result.isError) {
       pageStates[i].status = "error";
@@ -646,14 +667,37 @@ async function runExtract(
   return { done: false, markdown: extractResult.markdown };
 }
 
-async function runProcess(
+/**
+ * Raw markdown capped at pi's standard tool output limits, with an
+ * optional trailing note (used for LLM-failure fallbacks).
+ */
+function truncatedRaw(markdown: string, note?: string): InternalResult {
+  const truncation = truncateHead(markdown, {
+    maxLines: DEFAULT_MAX_LINES,
+    maxBytes: DEFAULT_MAX_BYTES,
+  });
+  let text = truncation.content;
+  if (truncation.truncated) {
+    text += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)})]`;
+  }
+  if (note) text += `\n\n${note}`;
+  return { content: [{ type: "text", text }] };
+}
+
+/**
+ * Decide what to return for extracted markdown. Exported for tests — the
+ * `summarize: false` and no-model paths never touch the sub-agent.
+ */
+export async function runProcess(
   markdown: string,
-  prompt: string | undefined,
+  page: Pick<PageRequest, "prompt" | "summarize">,
   model: string | undefined,
   thinkingLevel: string,
   signal?: AbortSignal,
   onUpdate?: InternalUpdate,
 ): Promise<InternalResult> {
+  const { prompt } = page;
+
   // Prompted path — sub-agent if model available
   if (prompt && model) {
     onUpdate?.({ content: [{ type: "text", text: "Processing with LLM..." }] });
@@ -669,16 +713,10 @@ async function runProcess(
       return { content: [{ type: "text", text: agentResult.response }] };
     }
 
-    const truncation = truncateHead(markdown, {
-      maxLines: DEFAULT_MAX_LINES,
-      maxBytes: DEFAULT_MAX_BYTES,
-    });
-    let fallbackText = truncation.content;
-    if (truncation.truncated) {
-      fallbackText += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)})]`;
-    }
-    fallbackText += `\n\n⚠️ LLM processing failed: ${(agentResult as SubAgentError).error}. Returning raw extracted content instead.`;
-    return { content: [{ type: "text", text: fallbackText }] };
+    return truncatedRaw(
+      markdown,
+      `⚠️ LLM processing failed: ${(agentResult as SubAgentError).error}. Returning raw extracted content instead.`,
+    );
   }
 
   // No prompt — small content goes raw
@@ -686,17 +724,9 @@ async function runProcess(
     return { content: [{ type: "text", text: markdown }] };
   }
 
-  // Large content with no model — truncate
-  if (!model) {
-    const truncation = truncateHead(markdown, {
-      maxLines: DEFAULT_MAX_LINES,
-      maxBytes: DEFAULT_MAX_BYTES,
-    });
-    let text = truncation.content;
-    if (truncation.truncated) {
-      text += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)})]`;
-    }
-    return { content: [{ type: "text", text }] };
+  // Large content, but no model or the caller opted out of summarization — truncate
+  if (!model || page.summarize === false) {
+    return truncatedRaw(markdown);
   }
 
   // Large content with model — summarize
@@ -713,14 +743,8 @@ async function runProcess(
     return { content: [{ type: "text", text: summaryResult.response }] };
   }
 
-  const truncation = truncateHead(markdown, {
-    maxLines: DEFAULT_MAX_LINES,
-    maxBytes: DEFAULT_MAX_BYTES,
-  });
-  let fallbackText = truncation.content;
-  if (truncation.truncated) {
-    fallbackText += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)})]`;
-  }
-  fallbackText += `\n\n⚠️ Could not generate summary: ${(summaryResult as SubAgentError).error}. Returning truncated raw content. Consider calling web_fetch again with a prompt to extract specific information.`;
-  return { content: [{ type: "text", text: fallbackText }] };
+  return truncatedRaw(
+    markdown,
+    `⚠️ Could not generate summary: ${(summaryResult as SubAgentError).error}. Returning truncated raw content. Consider calling web_fetch again with a prompt to extract specific information.`,
+  );
 }

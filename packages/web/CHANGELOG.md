@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- **web_fetch:** add optional `summarize` flag (top-level and per-page) — `false` skips the auto-summary of large pages and returns truncated raw markdown; defaults to `true`.
+- **web_fetch:** reject `summarize: false` combined with `prompt` up-front, before any browser work starts.
+- **web_fetch:** frame title shows a `· raw` marker when summarization is disabled.
+
 ## 0.5.2
 
 - Fix `web_fetch` permanently failing with `Browser error: BrowserPool is

@@ -196,6 +196,8 @@ export function renderFetchCall(
     theme.fg("accent", shortenUrl(url, 70));
   if (args.prompt) {
     title += "  " + theme.fg("dim", "· " + args.prompt);
+  } else if (args.summarize === false) {
+    title += "  " + theme.fg("dim", "· raw");
   }
   return new Text(frameTop(title, status, theme, width), 0, 0);
 }

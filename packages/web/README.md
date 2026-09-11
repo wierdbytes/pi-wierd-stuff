@@ -60,8 +60,12 @@ Parameters:
 - `prompt` — optional extraction prompt. When set, the page content is
   processed by a fast LLM and only the relevant parts are returned. Omit for
   the full extracted markdown.
-- `pages` — array of `{ url, prompt? }` (max 10) for concurrent batch
-  fetching with live per-URL progress.
+- `summarize` — optional, defaults to `true`. Set to `false` to skip the
+  automatic LLM overview for large pages and get the raw markdown instead
+  (truncated to pi's standard 2000 lines / 50KB tool-output limits). Cannot
+  be combined with `prompt` — the call is rejected.
+- `pages` — array of `{ url, prompt?, summarize? }` (max 10) for concurrent
+  batch fetching with live per-URL progress.
 
 Behavior:
 
@@ -71,7 +75,9 @@ Behavior:
 - Pages are cached in-memory for 15 minutes — repeated questions about the
   same page are cheap.
 - Pages larger than ~50KB are auto-summarized (when a model is available)
-  to a structured overview when no prompt is provided.
+  to a structured overview when no prompt is provided. Pass
+  `summarize: false` to opt out and receive truncated raw markdown instead;
+  the frame title shows a `· raw` marker in that case.
 - Browser pool keeps Chrome warm: one shared instance, up to 6 concurrent
   tabs, idle-shutdown after 60s.
 - **Stealth mode** is enabled by default via

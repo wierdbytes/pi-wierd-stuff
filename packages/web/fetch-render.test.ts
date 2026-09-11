@@ -155,6 +155,24 @@ describe("renderFetchCall — single page", () => {
       expect(plain).toContain("· extract all headings");
     });
   });
+
+  it("appends a `raw` marker when summarize is false", () => {
+    withStdoutColumns(120, () => {
+      const args: WebFetchParams = { url: "https://example.com", summarize: false };
+      const out = renderFetchCall(args, mockTheme, baseCtx);
+      const plain = stripAnsi(getTextLines(out)[0]);
+      expect(plain).toContain("· raw");
+    });
+  });
+
+  it("does not add a `raw` marker when summarize is omitted", () => {
+    withStdoutColumns(120, () => {
+      const args: WebFetchParams = { url: "https://example.com" };
+      const out = renderFetchCall(args, mockTheme, baseCtx);
+      const plain = stripAnsi(getTextLines(out)[0]);
+      expect(plain).not.toContain("· raw");
+    });
+  });
 });
 
 describe("renderFetchCall — batch", () => {
