@@ -13,7 +13,10 @@ tool output.
 - **`read`** — syntax-highlighted file content with line numbers, plus
   inline image rendering (Kitty / iTerm2 protocols, with tmux passthrough).
 - **`bash`** — open-right frame with the duration + status pinned to the
-  bottom border
+  bottom border. Completed output that looks like source code is
+  syntax-highlighted automatically. Detection runs locally with VS Code's
+  language model, inspects at most the first 4 KiB, and declines ambiguous
+  results so ordinary logs and prose stay plain.
 
   Status colour follows the host theme tokens (`success` while finished,
   `warning` while running, `error` on non-zero / timeout / abort) so the

@@ -47,7 +47,7 @@ function withStdoutColumns<T>(columns: number, fn: () => T): T {
 	}
 }
 
-function loadBashTool() {
+function loadBashTool(detectLanguage?: (text: string) => Promise<any>) {
 	const noopExec = async () => ({ content: [{ type: "text", text: "" }] });
 	const tools = new Map<string, any>();
 	const pi = {
@@ -68,6 +68,7 @@ function loadBashTool() {
 			getAgentDir: () => "/tmp/pi-facelift-test",
 		},
 		TextComponent: MockText,
+		detectLanguage,
 	});
 
 	return tools.get("bash");
@@ -282,6 +283,65 @@ describe("bash renderCall expansion", () => {
 			expect(lines[0]).toContain("\x1b[36mcd /tmp");
 			expect(lines[1]).toContain("\x1b[36mecho hi");
 		});
+	});
+});
+
+describe("bash renderResult highlighting", () => {
+	it("asynchronously highlights final output when code has a detected language", async () => {
+		const detectedInputs: string[] = [];
+		const bashTool = loadBashTool(async (text) => {
+			detectedInputs.push(text);
+			return "typescript";
+		});
+		const source = "export function greet(name: string): string {\n  return `Hello ${name}`;\n}";
+		const result = {
+			content: [{ type: "text", text: source }],
+			details: { _type: "bashResult", text: source, exitCode: 0, command: "generate-code" },
+		};
+		const state = {};
+		let resolveInvalidated!: () => void;
+		const invalidated = new Promise<void>((resolve) => {
+			resolveInvalidated = resolve;
+		});
+		const context = {
+			lastComponent: new MockText(),
+			isError: false,
+			state,
+			expanded: true,
+			invalidate: resolveInvalidated,
+		};
+
+		const initial = bashTool.renderResult(result, { isPartial: false }, mockTheme, context);
+		expect(initial.getText()).toContain("export function greet");
+		await invalidated;
+
+		const highlighted = bashTool.renderResult(result, { isPartial: false }, mockTheme, context);
+		expect(detectedInputs).toEqual([source]);
+		expect(highlighted.getText()).toContain("\x1b[");
+	});
+
+	it("keeps partial output plain and does not run detection", () => {
+		let detections = 0;
+		const bashTool = loadBashTool(async () => {
+			detections++;
+			return "typescript";
+		});
+		const source = "const answer: number = 42;";
+		const result = {
+			content: [{ type: "text", text: source }],
+			details: { _type: "bashResult", text: source, exitCode: null, command: "generate-code" },
+		};
+
+		const rendered = bashTool.renderResult(result, { isPartial: true }, mockTheme, {
+			lastComponent: new MockText(),
+			isError: false,
+			state: {},
+			expanded: true,
+			invalidate: () => {},
+		});
+
+		expect(rendered.getText()).toContain(source);
+		expect(detections).toBe(0);
 	});
 });
 

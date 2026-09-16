@@ -83,6 +83,7 @@ import {
 	type DiffLayoutPreference,
 	type WierdFaceliftConfig,
 } from "./config.ts";
+import { detectCodeLanguage } from "./language-detection.ts";
 import {
 	WorkingTimeTracker,
 	WORKING_TIME_ENTRY,
@@ -1019,6 +1020,8 @@ type BashRenderState = {
 	startedAt?: number;
 	endedAt?: number;
 	interval?: NodeJS.Timeout;
+	highlightSource?: string;
+	highlightedBody?: string;
 };
 type FindResultDetails = { _type: "findResult"; text: string; pattern: string; matchCount: number };
 type GrepResultDetails = { _type: "grepResult"; text: string; pattern: string; matchCount: number };
@@ -1077,6 +1080,7 @@ function setResultDetails<T>(result: ToolResultLike, details: T): void {
 export interface PiFaceliftDeps {
 	sdk: PiFaceliftSdk;
 	TextComponent: TextComponentCtor;
+	detectLanguage?: (text: string) => Promise<BundledLanguage | undefined>;
 }
 
 export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFaceliftDeps): void {
@@ -1090,6 +1094,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	let TextComponent: TextComponentCtor;
 
 	let sdk: PiFaceliftSdk;
+	const detectLanguage = deps?.detectLanguage ?? detectCodeLanguage;
 
 	if (deps) {
 		// Test path: use injected dependencies
@@ -1502,12 +1507,33 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 
 				// Render body lines (preview-truncated when collapsed).
 				const maxShow = ctx.expanded ? lineCount : MAX_PREVIEW_LINES;
-				const show = lines.slice(0, Math.max(0, maxShow));
-				const out: string[] = [...show];
+				const shownSource = lines.slice(0, Math.max(0, maxShow)).join("\n");
+
+				// Detection and Shiki loading are asynchronous. Render plain output
+				// immediately, then refresh this row if the first 4 KiB has a clear
+				// programming-language winner. Keep streaming output plain so it does
+				// not repeatedly reclassify or flicker as each chunk arrives.
+				if (!opt.isPartial && shownSource && state.highlightSource !== shownSource) {
+					state.highlightSource = shownSource;
+					state.highlightedBody = undefined;
+					const source = shownSource;
+					detectLanguage(bodyText)
+						.then(async (language) => (language ? (await hlBlock(source, language)).join("\n") : undefined))
+						.then((highlighted) => {
+							if (state.highlightSource !== source) return;
+							state.highlightedBody = highlighted;
+							if (highlighted) ctx.invalidate();
+						})
+						.catch(() => {
+							// Highlighting is cosmetic; the plain body is already visible.
+						});
+				}
+
+				const out: string[] = [state.highlightedBody ?? shownSource];
 				if (lineCount > maxShow) {
 					out.push(`${FG_DIM}… ${lineCount - maxShow} more lines${RST}`);
 				}
-				const body = out.join("\n");
+				const body = out.filter(Boolean).join("\n");
 
 				if (label) {
 					t.setText(frameResultWithBottomLabel(body, label, status, frameTheme, frameWidth));

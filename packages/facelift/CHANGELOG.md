@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **New:** completed `bash` output that is confidently recognized as source
+  code is syntax-highlighted with Shiki. Detection uses VS Code's local
+  language model, samples at most the first 4 KiB, accepts incomplete snippets,
+  and leaves ambiguous output (including ordinary prose and logs) unchanged.
+
 ## 0.6.4
 
 - **Fix:** declare `shiki` as a runtime dependency instead of a dev-only one.

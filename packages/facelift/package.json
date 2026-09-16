@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "@shikijs/cli": "^4.0.2",
+    "@vscode/vscode-languagedetection": "^1.0.23",
     "@wierdbytes/pi-common": "^0.4.0",
     "shiki": "^4.0.2"
   },
