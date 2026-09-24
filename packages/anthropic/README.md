@@ -49,6 +49,12 @@ obtained via `/login anthropic`.
 
 ## Troubleshooting
 
+- If Opus 5.5 returns `claude_code_version_too_old` (HTTP 400), update this
+  extension and use a Pi version whose built-in Anthropic streamer sends a
+  supported Claude Code version (2.1.280 or newer). Updating only the model
+  entry will not fix a stale billing version.
+- If Opus 5.5 is missing from `/model`, update Pi's model catalog with
+  `pi update --models`, or declare `claude-opus-5-5` in `models.json`.
 - Re-run `/login anthropic` if auth looks stale.
 - If the local callback never completes, paste the final callback URL (or
   the `code#state` fragment) when prompted.
