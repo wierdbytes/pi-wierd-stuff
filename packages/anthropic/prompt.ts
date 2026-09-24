@@ -1,5 +1,7 @@
+import { CLAUDE_CODE_VERSION } from "./auth.ts";
+
 const BILLING_HEADER_LINE =
-  "x-anthropic-billing-header: cc_version=2.1.258.d1a; cc_entrypoint=cli; cch=7e48f;";
+  `x-anthropic-billing-header: cc_version=${CLAUDE_CODE_VERSION}.d1a; cc_entrypoint=cli; cch=7e48f;`;
 const BILLING_HEADER_MARKER = "x-anthropic-billing-header";
 
 const PI_REMOVAL_ANCHORS = [
