@@ -30,6 +30,7 @@ import {
 } from "./cache-timer.ts";
 import { CACHE_WARMER_MIN_SAVINGS, forcedWarmingDecision } from "./cache-warmer.ts";
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
+import { QuotaStatus } from "./quota-status.ts";
 import {
   type EventsConfig,
   loadEventsConfig,
@@ -178,6 +179,7 @@ function renderStatusContent(
   iconSet: IconSet,
   layout: LayoutConfig,
   cacheClock: CacheClock,
+  quotaStatus: string,
 ): string[] {
   const stats = gatherStats(ctx, cacheClock.getInflight());
   // Keep repainting once per second while a visible countdown is running.
@@ -209,6 +211,7 @@ function renderStatusContent(
     cacheRemainingMs: stats.cacheRemaining,
     cacheWarmerForced: cacheClock.isWarmerForced(),
     stashCount,
+    quotaStatus,
     chips: events.chips,
     iconSet,
     layout,
@@ -276,17 +279,6 @@ function makeEditorFactory(
   };
 }
 
-class EmptyFooter implements Component {
-  render(): string[] {
-    return [];
-  }
-  invalidate(): void {}
-}
-
-function hidePiFooter(ctx: ExtensionContext): void {
-  ctx.ui.setFooter(() => new EmptyFooter());
-}
-
 function restorePiFooter(ctx: ExtensionContext): void {
   ctx.ui.setFooter(undefined);
 }
@@ -300,6 +292,7 @@ function installStatusWidget(
   getLayout: () => LayoutConfig,
   getInflight: () => InflightRequest | null,
   isWarmerForced: () => boolean,
+  getQuotaStatus: () => string,
 ) {
   ctx.ui.setWidget(
     "wierd-statusline",
@@ -324,6 +317,7 @@ function installStatusWidget(
             getIconSet(),
             getLayout(),
             cacheClock,
+            getQuotaStatus(),
           );
         },
       };
@@ -578,6 +572,7 @@ export default function (pi: ExtensionAPI) {
   // `/warmer` override for pi's cache-warming decisions (see
   // cache-warmer.ts). Session-local: off on every session_start.
   let cacheWarmerForced = false;
+  const quotaStatus = new QuotaStatus();
 
   // Persistent config + the events tracker need to be initialized before
   // the session-local toggle mirrors below, since those mirrors read
@@ -807,6 +802,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    quotaStatus.clear();
     inflightRequest = null;
     teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
     stashShortcutUnsubscribe?.();
@@ -852,9 +848,10 @@ export default function (pi: ExtensionAPI) {
       () => eventsConfig.layout,
       () => inflightRequest,
       () => cacheWarmerForced,
+      () => quotaStatus.getText(),
     );
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
-    if (footerHidden) hidePiFooter(ctx);
+    if (footerHidden) quotaStatus.hideFooter(ctx);
     else restorePiFooter(ctx);
 
     // The tracker is already collecting events (started eagerly at
@@ -891,6 +888,7 @@ export default function (pi: ExtensionAPI) {
     teardownFixedEditorCompositor();
     ctx.ui.setWidget("wierd-statusline", undefined);
     ctx.ui.setEditorComponent(undefined);
+    quotaStatus.clear();
     restorePiFooter(ctx);
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe = null;
@@ -946,11 +944,12 @@ export default function (pi: ExtensionAPI) {
     if ("footerHidden" in patch && patch.footerHidden !== footerHidden) {
       footerHidden = next.footerHidden;
       if (statuslineEnabled) {
-        if (footerHidden) hidePiFooter(ctx);
+        quotaStatus.clear();
+        if (footerHidden) quotaStatus.hideFooter(ctx);
         else restorePiFooter(ctx);
         // Footer toggle replaces the component in tui.children, so the
         // compositor's captured reference is stale; reinstall to capture
-        // the new footer (or EmptyFooter) and render it under the editor.
+        // the new footer (or hidden footer) and render it under the editor.
         if (fixedEditorEnabled && activeTui) installFixedEditorCompositor(ctx, activeTui);
       }
     }
@@ -1007,6 +1006,7 @@ export default function (pi: ExtensionAPI) {
     git: "Git branch",
     context: "Context usage",
     cost: "Session cost",
+    quotas: "Quota remaining",
     cache: "Prompt cache",
     chips: "Notification chips",
     stash: "Stash count",
@@ -1021,6 +1021,7 @@ export default function (pi: ExtensionAPI) {
     cache: "Cache hit rate `99.9% (read/uncached)`, money saved (`-$0.86`) or overspent (`+$0.15`) by prompt caching on this branch, and a countdown until the cache expires. Enter to toggle each segment. CLI id: `cache`.",
     chips: "Notify-status lane fed by `@wierdbytes/pi-events` consumers. CLI id: `chips`.",
     stash: "`📦 N` showing how many prompts are saved. CLI id: `stash`.",
+    quotas: "Live quota status from pi-quotas while Hide pi footer is on. Enable Usage footer status in /quotas:settings. Hidden when no status is published. CLI id: `quotas`.",
   };
 
   /** Right-hand value cell for one block row: just the checkbox.

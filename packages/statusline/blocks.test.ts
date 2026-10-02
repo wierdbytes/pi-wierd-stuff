@@ -48,12 +48,42 @@ function makeInputs(overrides: Partial<RenderInputs> = {}): RenderInputs {
     cacheRemainingMs: null,
     cacheWarmerForced: false,
     stashCount: 0,
+    quotaStatus: "",
     chips: [],
     iconSet: "ascii",
     layout: cloneDefaultLayout(),
     ...overrides,
   };
 }
+
+describe("quota block", () => {
+  it("is absent without a published status", () => {
+    expect(BLOCK_RENDERERS.quotas(makeInputs())).toBe("");
+    expect(BLOCK_RENDERERS.quotas(makeInputs({ quotaStatus: " \n\t " }))).toBe("");
+  });
+
+  it("preserves remaining percentages, labels, and severity colors", () => {
+    const quotaStatus = `${C_GREEN}5h:91% left${C_RESET} ${C_RED}7d:12% left${C_RESET}`;
+    expect(BLOCK_RENDERERS.quotas(makeInputs({ quotaStatus }))).toBe(quotaStatus + C_RESET);
+  });
+
+  it("keeps errors and multiline statuses on one row", () => {
+    expect(BLOCK_RENDERERS.quotas(makeInputs({ quotaStatus: " usage\nunavailable\t " })))
+      .toBe(`usage unavailable${C_RESET}`);
+  });
+
+  it("supports layout ordering and hiding without stray separators", () => {
+    const layout = cloneDefaultLayout();
+    layout.order = ["quotas", "cost"];
+    const inputs = makeInputs({ quotaStatus: "7d:82% left", layout });
+    const text = composeStatusLine(layout, inputs);
+    expect(text.indexOf("7d:82% left")).toBeLessThan(text.indexOf("$0.42"));
+    layout.enabled.quotas = false;
+    const hidden = composeStatusLine(layout, inputs);
+    expect(hidden).not.toContain("7d:");
+    expect(hidden).not.toContain("│");
+  });
+});
 
 describe("block renderers (in isolation)", () => {
   it("renderModel attaches thinking when enabled + reasoning model", () => {

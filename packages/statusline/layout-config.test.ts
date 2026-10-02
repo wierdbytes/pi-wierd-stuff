@@ -52,6 +52,19 @@ describe("normaliseLayoutConfig", () => {
     expect(out.order.length).toBe(KNOWN_BLOCK_IDS.length);
   });
 
+  it("adds quotas to an existing layout without moving or enabling other blocks", () => {
+    const legacy = ["cache", "model", "path", "git", "context", "cost", "chips", "stash"] as const;
+    const out = normaliseLayoutConfig({
+      order: [...legacy],
+      enabled: { cache: false } as Record<string, boolean>,
+    });
+    expect(out.order).toEqual([...legacy, "quotas"]);
+    expect(out.enabled.quotas).toBe(true);
+    expect(out.enabled.cache).toBe(false);
+    expect(normaliseLayoutConfig({ ...out, enabled: { ...out.enabled, quotas: false } }).enabled.quotas)
+      .toBe(false);
+  });
+
   it("de-duplicates repeated ids in order", () => {
     const out = normaliseLayoutConfig({
       // Hand-edited JSON can have duplicates — the type allows the

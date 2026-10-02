@@ -73,6 +73,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = Object.freeze({
     git: true,
     context: true,
     cost: true,
+    quotas: true,
     cache: true,
     chips: true,
     stash: true,
