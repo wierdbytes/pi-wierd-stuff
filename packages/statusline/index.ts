@@ -1305,7 +1305,7 @@ export default function (pi: ExtensionAPI) {
       // by the time we get here; we just mirror the change into
       // `layout.order` so the swap persists. `fieldKey` is the moved
       // block's `layout.block.<id>` key; `toIndex` is its new 0-based
-      // position among the reorderable peers (= the eight block rows).
+      // position among the reorderable peers (= the block rows).
       onReorder: ({ fieldKey, fromIndex, toIndex }) => {
         if (!fieldKey.startsWith("layout.block.")) return;
         const id = fieldKey.slice("layout.block.".length) as BlockId;
