@@ -7,6 +7,7 @@
  *   - `model` \xb7 a single `Show thinking level` toggle.
  *   - `cache` \xb7 hit-rate, savings and expiry-timer segment toggles.
  *
+ * The `quotas` block has separate read-only setup help in quota-setup.ts.
  * Other blocks (`path`, `git`, `context`, `cost`, `chips`, `stash`)
  * have nothing to configure inside themselves \u2014 visibility lives on
  * the Layout tab via `space` and reorder via `alt+\u2191\u2193`. For those

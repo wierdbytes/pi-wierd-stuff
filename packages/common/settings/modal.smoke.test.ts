@@ -75,6 +75,44 @@ function fakeCtx(): ExtensionContext {
 // ─────────────────────────────────────────────────────────────────────
 
 describe("createSettingsModalBody — happy paths", () => {
+  it("keeps focused help and key hints visible on narrow settings screens", () => {
+    const tui = fakeTui();
+    tui.terminal.rows = 24;
+    const fields: Field[] = Array.from({ length: 9 }, (_, index) => ({
+      key: `field-${index}`, type: "custom", tab: "layout", label: `Field ${index}`, value: true,
+      render: () => "[✓] Setup needed", reorderable: true,
+      hints: [{ key: "space", label: "toggle" }, { key: "enter", label: "setup" }],
+      description: "No pi-quotas status or settings command detected. This block needs pi-quotas loaded; enabling it alone does not fetch quotas. Enter for setup instructions.",
+    }));
+    const body = createSettingsModalBody({
+      title: "Settings", fields, tabs: [{ id: "layout", label: "Layout" }, { id: "other", label: "Other" }],
+    }, { tui, theme: fakeTheme(), ctx: fakeCtx(), close: vi.fn() });
+    for (let i = 0; i < 5; i++) body.handleInput?.("\x1b[B");
+    const output = body.render(60).join("\n");
+    expect(output).toContain("enter setup");
+    expect(output).toContain("instructions.");
+    expect(output).toContain("esc close");
+    expect(output).not.toContain("more line(s)");
+  });
+
+  it("uses the user-facing field label as the submenu caption", () => {
+    const body = createSettingsModalBody({
+      title: "Settings",
+      fields: [{
+        key: "layout.block.quotas",
+        type: "custom",
+        label: "Quota remaining",
+        value: "quotas",
+        render: () => "[✓] Setup needed",
+        openSubmenu: () => ({ render: () => ["Install pi-quotas"], invalidate() {} }),
+      }],
+    }, { tui: fakeTui(), theme: fakeTheme(), ctx: fakeCtx(), close: vi.fn() });
+    body.handleInput?.("\r");
+    const lines = body.render(80);
+    expect(lines[0]).toContain("Quota remaining");
+    expect(lines[0]).not.toContain("layout.block.quotas");
+    expect(lines.join("\n")).toContain("Install pi-quotas");
+  });
   it("renders every built-in field type without throwing", () => {
     const fields: Field[] = [
       { key: "bool", type: "boolean", label: "Bool", value: false },
@@ -302,7 +340,7 @@ describe("createSettingsModalBody — happy paths", () => {
     // changes to `<key> →`.
     const lines = body.render(80);
     const titleLine = lines[0] ?? "";
-    expect(titleLine).toContain("voice");
+    expect(titleLine).toContain("Voice");
   });
 
   it("alt+↓ on a reorderable row swaps it with the next reorderable peer", () => {

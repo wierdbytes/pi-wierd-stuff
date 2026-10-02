@@ -30,6 +30,8 @@ import {
 } from "./cache-timer.ts";
 import { CACHE_WARMER_MIN_SAVINGS, forcedWarmingDecision } from "./cache-warmer.ts";
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
+import { QuotaStatus } from "./quota-status.ts";
+import { createQuotaSetupSubmenu, quotaAvailability, type QuotaSetupState } from "./quota-setup.ts";
 import {
   type EventsConfig,
   loadEventsConfig,
@@ -178,6 +180,7 @@ function renderStatusContent(
   iconSet: IconSet,
   layout: LayoutConfig,
   cacheClock: CacheClock,
+  quotaStatus: string,
 ): string[] {
   const stats = gatherStats(ctx, cacheClock.getInflight());
   // Keep repainting once per second while a visible countdown is running.
@@ -209,6 +212,7 @@ function renderStatusContent(
     cacheRemainingMs: stats.cacheRemaining,
     cacheWarmerForced: cacheClock.isWarmerForced(),
     stashCount,
+    quotaStatus,
     chips: events.chips,
     iconSet,
     layout,
@@ -276,17 +280,6 @@ function makeEditorFactory(
   };
 }
 
-class EmptyFooter implements Component {
-  render(): string[] {
-    return [];
-  }
-  invalidate(): void {}
-}
-
-function hidePiFooter(ctx: ExtensionContext): void {
-  ctx.ui.setFooter(() => new EmptyFooter());
-}
-
 function restorePiFooter(ctx: ExtensionContext): void {
   ctx.ui.setFooter(undefined);
 }
@@ -300,6 +293,7 @@ function installStatusWidget(
   getLayout: () => LayoutConfig,
   getInflight: () => InflightRequest | null,
   isWarmerForced: () => boolean,
+  getQuotaStatus: () => string,
 ) {
   ctx.ui.setWidget(
     "wierd-statusline",
@@ -324,6 +318,7 @@ function installStatusWidget(
             getIconSet(),
             getLayout(),
             cacheClock,
+            getQuotaStatus(),
           );
         },
       };
@@ -578,6 +573,7 @@ export default function (pi: ExtensionAPI) {
   // `/warmer` override for pi's cache-warming decisions (see
   // cache-warmer.ts). Session-local: off on every session_start.
   let cacheWarmerForced = false;
+  const quotaStatus = new QuotaStatus();
 
   // Persistent config + the events tracker need to be initialized before
   // the session-local toggle mirrors below, since those mirrors read
@@ -598,6 +594,13 @@ export default function (pi: ExtensionAPI) {
   let stashShortcutUnsubscribe: (() => void) | null = null;
 
   const getStashCount = () => stashedPromptHistory.length;
+  const getQuotaSetupState = (): QuotaSetupState => ({
+    enabled: eventsConfig.layout.enabled.quotas,
+    statuslineEnabled,
+    footerHidden,
+    hasSettingsCommand: pi.getCommands().some((command) => command.name === "quotas:settings"),
+    hasStatus: quotaStatus.getText().trim().length > 0,
+  });
 
   // ───────────────────────── events tracker ─────────────────────────
   //
@@ -807,6 +810,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    quotaStatus.clear();
     inflightRequest = null;
     teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
     stashShortcutUnsubscribe?.();
@@ -852,9 +856,10 @@ export default function (pi: ExtensionAPI) {
       () => eventsConfig.layout,
       () => inflightRequest,
       () => cacheWarmerForced,
+      () => quotaStatus.getText(),
     );
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
-    if (footerHidden) hidePiFooter(ctx);
+    if (footerHidden) quotaStatus.hideFooter(ctx);
     else restorePiFooter(ctx);
 
     // The tracker is already collecting events (started eagerly at
@@ -891,6 +896,7 @@ export default function (pi: ExtensionAPI) {
     teardownFixedEditorCompositor();
     ctx.ui.setWidget("wierd-statusline", undefined);
     ctx.ui.setEditorComponent(undefined);
+    quotaStatus.clear();
     restorePiFooter(ctx);
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe = null;
@@ -946,11 +952,12 @@ export default function (pi: ExtensionAPI) {
     if ("footerHidden" in patch && patch.footerHidden !== footerHidden) {
       footerHidden = next.footerHidden;
       if (statuslineEnabled) {
-        if (footerHidden) hidePiFooter(ctx);
+        quotaStatus.clear();
+        if (footerHidden) quotaStatus.hideFooter(ctx);
         else restorePiFooter(ctx);
         // Footer toggle replaces the component in tui.children, so the
         // compositor's captured reference is stale; reinstall to capture
-        // the new footer (or EmptyFooter) and render it under the editor.
+        // the new footer (or hidden footer) and render it under the editor.
         if (fixedEditorEnabled && activeTui) installFixedEditorCompositor(ctx, activeTui);
       }
     }
@@ -1007,6 +1014,7 @@ export default function (pi: ExtensionAPI) {
     git: "Git branch",
     context: "Context usage",
     cost: "Session cost",
+    quotas: "Quota remaining",
     cache: "Prompt cache",
     chips: "Notification chips",
     stash: "Stash count",
@@ -1021,25 +1029,31 @@ export default function (pi: ExtensionAPI) {
     cache: "Cache hit rate `99.9% (read/uncached)`, money saved (`-$0.86`) or overspent (`+$0.15`) by prompt caching on this branch, and a countdown until the cache expires. Enter to toggle each segment. CLI id: `cache`.",
     chips: "Notify-status lane fed by `@wierdbytes/pi-events` consumers. CLI id: `chips`.",
     stash: "`📦 N` showing how many prompts are saved. CLI id: `stash`.",
+    quotas: "Requires pi-quotas. Press Enter for installation and setup instructions. CLI id: `quotas`.",
   };
 
-  /** Right-hand value cell for one block row: just the checkbox.
+  /** Right-hand value cell: checkbox plus availability for the quota block.
    *  Color of the surrounding row is driven by `field.dim` (see
    *  buildBlockField below), so the checkbox glyph itself stays
    *  uncoloured here and inherits whichever shade the modal applies. */
   const formatBlockValueCell = (id: BlockId): string => {
-    return eventsConfig.layout.enabled[id] ? "[✓]" : "[ ]";
+    const checkbox = eventsConfig.layout.enabled[id] ? "[✓]" : "[ ]";
+    return id === "quotas" ? `${checkbox} ${quotaAvailability(getQuotaSetupState()).label}` : checkbox;
   };
 
   /** Build the per-block custom Field for the Layout tab. */
   const buildBlockField = (id: BlockId, ctx: ExtensionContext): Field => {
-    const hasSubSettings = blockHasSubSettings(id);
+    const hasSubSettings = id === "quotas" || blockHasSubSettings(id);
     return {
       key: `layout.block.${id}`,
       type: "custom",
       tab: "layout",
       label: BLOCK_LABELS[id],
-      description: BLOCK_DESCRIPTIONS[id],
+      get description() {
+        return id === "quotas"
+          ? `${quotaAvailability(getQuotaSetupState()).description} Enter for setup instructions.`
+          : BLOCK_DESCRIPTIONS[id];
+      },
       // Opt into alt+↑/alt+↓ reorder. The modal swaps rows internally
       // and fires `onReorder` so we can persist the new order.
       reorderable: true,
@@ -1073,15 +1087,22 @@ export default function (pi: ExtensionAPI) {
       hints: hasSubSettings
         ? [
             { key: "space", label: "toggle" },
-            { key: "enter", label: "settings" },
+            { key: "enter", label: id === "quotas" ? "setup" : "settings" },
           ]
         : [{ key: "space", label: "toggle" }],
-      // Only blocks with at least one block-specific knob get a
-      // submenu. For the rest (path, git, context, cost, chips,
+      // Quotas gets read-only setup help; model/cache have toggle submenus.
+      // For the rest (path, git, context, cost, chips,
       // stash) Enter is a no-op — visibility lives on `space`,
       // reorder lives on `alt+↑↓`, and there's nothing else to
       // configure.
-      openSubmenu: hasSubSettings
+      openSubmenu: id === "quotas"
+        ? ({ theme, tui, done }) => createQuotaSetupSubmenu({
+            getState: getQuotaSetupState,
+            theme,
+            tui,
+            done: () => done(),
+          })
+        : hasSubSettings
         ? ({ theme, tui, done }) =>
             createBlockSettingsSubmenu({
               blockId: id,
@@ -1304,7 +1325,7 @@ export default function (pi: ExtensionAPI) {
       // by the time we get here; we just mirror the change into
       // `layout.order` so the swap persists. `fieldKey` is the moved
       // block's `layout.block.<id>` key; `toIndex` is its new 0-based
-      // position among the reorderable peers (= the eight block rows).
+      // position among the reorderable peers (= the block rows).
       onReorder: ({ fieldKey, fromIndex, toIndex }) => {
         if (!fieldKey.startsWith("layout.block.")) return;
         const id = fieldKey.slice("layout.block.".length) as BlockId;
@@ -1480,7 +1501,11 @@ export default function (pi: ExtensionAPI) {
       }
       const next = !eventsConfig.layout.enabled[id];
       applyLayoutChange(ctx, { enabled: { ...eventsConfig.layout.enabled, [id]: next } });
-      ctx.ui.notify(`layout: ${id} ${next ? "enabled" : "disabled"}`, "info");
+      const availability = id === "quotas" && next ? quotaAvailability(getQuotaSetupState()) : undefined;
+      const guidance = availability && availability.label !== "Shown"
+        ? ` ${availability.description} Open /statusline > Layout > Quota remaining and press Enter for setup.`
+        : "";
+      ctx.ui.notify(`layout: ${id} ${next ? "enabled" : "disabled"}${guidance}`, "info");
       return;
     }
     if (sub === "move") {

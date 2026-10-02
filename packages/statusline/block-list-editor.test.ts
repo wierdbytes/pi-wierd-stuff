@@ -59,6 +59,7 @@ describe("toggleBlock", () => {
     git: true,
     context: true,
     cost: true,
+    quotas: true,
     cache: true,
     chips: true,
     stash: true,

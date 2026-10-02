@@ -304,6 +304,7 @@ export const KNOWN_BLOCK_IDS = [
   "git",
   "context",
   "cost",
+  "quotas",
   "cache",
   "chips",
   "stash",
@@ -332,6 +333,8 @@ export interface RenderInputs {
   /** `/warmer` forced cache warming is on for this session. */
   cacheWarmerForced: boolean;
   stashCount: number;
+  /** Live pi-quotas footer status; empty when absent or shown in Pi's footer. */
+  quotaStatus: string;
   chips: NotifyStatusEvent[];
   iconSet: IconSet;
   layout: LayoutConfig;
@@ -466,6 +469,12 @@ const renderStash: BlockRenderer = (inputs) => {
   return `${C_YELLOW}${resolveIcon(inputs.iconSet, "stash")} ${inputs.stashCount}${C_RESET}`;
 };
 
+/** Preserve pi-quotas' labels, remaining values, severity colors, and errors. */
+const renderQuotas: BlockRenderer = (inputs) => {
+  const text = oneLine(inputs.quotaStatus);
+  return text ? `${text}${C_RESET}` : "";
+};
+
 /** Registry consulted by `composeStatusLine`. */
 export const BLOCK_RENDERERS: Record<BlockId, BlockRenderer> = {
   model: renderModel,
@@ -473,6 +482,7 @@ export const BLOCK_RENDERERS: Record<BlockId, BlockRenderer> = {
   git: renderGit,
   context: renderContext,
   cost: renderCost,
+  quotas: renderQuotas,
   cache: renderCache,
   chips: renderChips,
   stash: renderStash,

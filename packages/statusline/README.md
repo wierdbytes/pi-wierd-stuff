@@ -28,6 +28,9 @@ fully configurable — see [Layout](#layout) below):
   the limit. While usage is temporarily unknown immediately after compaction,
   the block shows `?` markers instead of stale pre-compaction values.
 - **Cost** — session total in USD when greater than zero.
+- **Quotas** - remaining provider quota published by `@latentminds/pi-quotas`, such as `5h:91% left 7d:82% left`.
+  Appears when **Hide pi footer** is enabled and pi-quotas has published a status; otherwise it takes no space.
+  See [Quota integration](#quota-integration).
 - **Cache** — prompt-cache efficiency for the current session branch,
   e.g. ` 99.9% (200k/200) -$0.86 󰔟 4:21` (icons are shown with the
   Nerd Font icon set only). Three segments, each with its own sub-toggle:
@@ -75,8 +78,7 @@ welcome overlay pieces).
 
 ## Layout
 
-The statusline ships with eight reorderable blocks: `model`, `path`,
-`git`, `context`, `cost`, `cache`, `chips`, and `stash`. The leading
+The statusline ships with nine reorderable blocks: `model`, `path`, `git`, `context`, `cost`, `quotas`, `cache`, `chips`, and `stash`. The leading
 `─` divider is always first; everything else can be reordered or
 hidden via the **Layout** tab in the settings overlay (`/statusline`),
 or through the imperative `/statusline layout ...` subcommands.
@@ -93,10 +95,8 @@ Direct Layout-tab key bindings:
   Focus follows the moved row, persistence is immediate, and the
   separator field at the bottom is non-reorderable so it doesn't get
   in the way.
-- `enter` — open the block's sub-menu **only if the block has
-  block-specific knobs** (currently `model` and `cache`). For every
-  other block (`path`, `git`, `context`, `cost`, `chips`, `stash`)
-  Enter is a no-op and the footer hint doesn't advertise it.
+- `enter` - open the block's submenu for `model` and `cache`, or setup help for `quotas`.
+  For other blocks (`path`, `git`, `context`, `cost`, `chips`, `stash`), Enter is a no-op and the footer hint does not advertise it.
 
 Sub-menu contents (Enter on the row):
 
@@ -104,6 +104,8 @@ Sub-menu contents (Enter on the row):
   the model name. Only renders for reasoning-capable models anyway.
 - (`cache`) **Show hit rate / Show savings / Show expiry timer** —
   individual sub-toggles for the three segments inside the cache block.
+- (`quotas`) **Setup help** - installation, reload, provider login, and the required quota/footer settings.
+  The help is read-only and scrollable with Up/Down, Page Up/Down, Home, and End; Escape returns to Layout.
 
 Visibility lives on the Layout tab (`space`), not inside the sub-menu;
 reorder lives on the Layout tab (`alt+↑↓`), not inside the sub-menu.
@@ -120,7 +122,7 @@ At the bottom of the Layout tab:
 Imperative shortcuts — same persistence bus the modal uses:
 
 - `/statusline layout` — print the active order, e.g.
-  `model > path > git! > context > cost > cache > chips > stash (7/8 visible)`
+  `model > path > git! > context > cost > quotas > cache > chips > stash (8/9 visible)`
   (a trailing `!` marks a disabled block).
 - `/statusline layout reset` — restore defaults.
 - `/statusline layout toggle <block>` — flip one block's visibility.
@@ -134,6 +136,38 @@ load, so users coming from `0.6.x` see no visible change. Since
 `0.8.0` the old `tokens` counter block is replaced by `cache`: a
 persisted `tokens` entry keeps its slot and visibility but renders the
 cache block instead (the old per-counter sub-toggles are dropped).
+
+## Quota integration
+
+Install `@latentminds/pi-quotas` alongside this extension and enable **Usage footer status** in `/quotas:settings`.
+Open `/statusline`, select **Display**, and enable **Hide pi footer**.
+The **Quotas** block then displays pi-quotas' existing status in the custom row, without the standard footer's duplicate model, context, and cost information.
+It retains the quota window labels, remaining percentages, severity colors, and error messages supplied by pi-quotas.
+No additional provider requests, credentials, or dependency on pi-quotas internals are needed.
+
+Use **Layout** to move or hide **Quota remaining**, or run `/statusline layout move quotas top` and `/statusline layout toggle quotas`.
+Existing layouts retain their ordering and get the new block appended; moving it earlier helps keep it visible on narrow terminals.
+When **Hide pi footer** is off, quota display returns to the standard footer instead of being duplicated in both places.
+If pi-quotas is absent, its footer feature is disabled, or it clears its status for an unsupported provider, the block disappears from the statusline.
+
+The Layout checkbox controls visibility, not whether a data source is available.
+Its adjacent status explains what is happening:
+
+- **Setup needed**: neither a quota status nor the `/quotas:settings` command is detected in this session.
+- **Waiting for data**: `/quotas:settings` is available, but no status has arrived.
+- **Enable footer hiding**: enable **Hide pi footer** to display quotas in the custom row.
+- **Statusline off** or **Off**: the custom row or quota block is disabled.
+- **Shown**: the block is displaying pi-quotas' status, which can include its own error message.
+
+Select **Quota remaining** and press **Enter** for the complete setup instructions, including `pi install npm:@latentminds/pi-quotas`, `/reload`, and the required settings.
+Enabling the block from the CLI also points to setup help when a prerequisite is missing.
+Missing status alone is not treated as proof that pi-quotas is uninstalled.
+For reset times and other details, use `/quotas` or `/codex:quotas`.
+
+To exercise the integration in a real terminal, run `bun packages/statusline/quota-status.smoke.ts` from the repository root with Pi and tmux installed.
+Set `PI_BIN=/absolute/path/to/pi` to select a specific host binary.
+The smoke test uses temporary settings and deterministic quota statuses, makes no provider requests, and cleans up its terminal and files.
+It also starts Pi without any quota extension to verify the unavailable-state message, installation instructions, CLI guidance, and scrolling on a small terminal.
 
 ## Editor stash
 
@@ -152,15 +186,15 @@ the selected entry, and `Esc` cancels.
 
 ## Fixed editor cluster
 
-Off by default — enable with `/statusline fixed-editor on`. When enabled,
+Off by default - enable **Fixed editor** in `/statusline` under **Display**.
+When enabled,
 in interactive TUI sessions chat/feed content scrolls above the fixed
 statusline, editor, and any extension-supplied widget rows. Scroll chat with
 the mouse wheel, PageUp/PageDown, Command+PageUp/PageDown, or Ctrl+Shift+Up/Down;
 the editor stays put. Drag text to copy it, drag a selection to the viewport
 edge to scroll, double-click a line to select it, and right-click to open the
-terminal context menu. Use `/statusline fixed-editor off` for pi's regular
-scrolling layout, or `/statusline mouse-scroll off` for native terminal
-selection.
+terminal context menu.
+Disable **Fixed editor** for pi's regular scrolling layout, or **Mouse scroll** for native terminal selection in regular TUI mode.
 
 ## Install
 
@@ -175,9 +209,8 @@ Restart pi to activate.
 - `/statusline on` — enable the statusline
 - `/statusline off` — disable, restoring pi's default editor and footer
 - `/statusline toggle` — toggle
-- `/statusline footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)
-- `/statusline fixed-editor on|off|toggle` — keep the editor cluster fixed at the bottom while chat scrolls above (off by default)
-- `/statusline mouse-scroll on|off|toggle` — enable wheel/drag scrolling and selection inside the fixed editor (on by default)
+- `/statusline` - open settings; **Display** contains **Hide pi footer** (on by default), **Fixed editor** (off by default), and **Mouse scroll** (on by default).
+  These settings do not have dedicated imperative subcommands.
 - `/statusline events [status|log|clear|toast-ms <level> <ms>]` — inspect / tune the chip+toast pipeline
 - `/statusline icons [nerd-font|plain|ascii|minimal|emoji|status]` — switch the icon set used for model / thinking / stash / toast levels / subagents chip
 - `/statusline layout [status|reset|toggle <block>|move <block> <up|down|top|bottom>]` — configure block order + visibility (see [Layout](#layout))
