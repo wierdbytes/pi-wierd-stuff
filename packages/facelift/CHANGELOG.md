@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.5
+
+- **Fix:** pi crashing with "extension ctx is stale" when the session was replaced or reloaded while the working timer was ticking.
+
 ## 0.6.4
 
 - **Fix:** declare `shiki` as a runtime dependency instead of a dev-only one.

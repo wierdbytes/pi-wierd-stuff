@@ -1180,10 +1180,23 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	};
 
 	const renderWorkingMessage = (ctx: SessionContextLike): void => {
-		if (ctx.hasUI) {
-			ctx.ui.setWorkingMessage(workingMessageText(workingTracker.elapsedMs(), workingTracker.liveTps()));
+		// The ticker captures `ctx`; after session replacement / reload any
+		// access to it throws (stale ctx). Inside a timer that would be an
+		// uncaughtException and kill pi, so swallow and stop ticking.
+		try {
+			if (ctx.hasUI) {
+				ctx.ui.setWorkingMessage(workingMessageText(workingTracker.elapsedMs(), workingTracker.liveTps()));
+			}
+		} catch {
+			stopWorkingTick();
 		}
 	};
+
+	// Session replaced / reloaded / exiting mid-stream: message_end and
+	// agent_settled may never arrive, so kill the ticker here.
+	pi.on("session_shutdown", () => {
+		stopWorkingTick();
+	});
 
 	// `before_agent_start` fires right after the user submits the prompt,
 	// so it anchors the wall-clock `total` (retries + tools + overhead).
