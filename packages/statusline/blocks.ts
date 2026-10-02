@@ -194,12 +194,12 @@ export function formatHitPercent(pct: number): string {
 /** Seconds left at which the cache countdown turns yellow. */
 export const CACHE_TIMER_WARN_MS = 2 * 60 * 1000;
 
-/** Countdown color: green > 2:00, yellow 0:01–2:00, red at 0:00. */
+/** Countdown color: gray > 2:00, yellow 0:01–2:00, red at 0:00. */
 export function cacheTimerColorFor(remainingMs: number): string {
   const seconds = Math.ceil(Math.max(0, remainingMs) / 1000);
   if (seconds <= 0) return C_RED;
   if (seconds * 1000 <= CACHE_TIMER_WARN_MS) return C_YELLOW;
-  return C_GREEN;
+  return C_GRAY;
 }
 
 /** Signed, colored cache savings: green `-$0.86`, red `+$0.15`, gray `$0.00`. */
@@ -402,7 +402,7 @@ const renderCost: BlockRenderer = (inputs) => {
  *     what it would have paid without caching (see `cache-stats.ts`).
  *   - timer: countdown until the prompt cache entry expires, refreshed
  *     by real requests and pi's cache warming (see `cache-timer.ts`).
- *     Green > 2:00, yellow up to 2:00, red at 0:00.
+ *     Gray > 2:00, yellow up to 2:00, red at 0:00.
  *
  * Each segment is gated by `layout.cache.*`. Returns "" when the
  * provider never touched the cache (nothing read or written) or every

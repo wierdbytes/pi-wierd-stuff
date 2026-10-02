@@ -228,9 +228,9 @@ describe("block renderers (in isolation)", () => {
     const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
     const render = (ms: number) =>
       BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout, cache, cacheRemainingMs: ms }));
-    expect(render(261_000)).toBe(`${C_GREEN}\u{F051F} 4:21${C_RESET}`);
+    expect(render(261_000)).toBe(`${C_GRAY}\u{F051F} 4:21${C_RESET}`);
     expect(render(120_000)).toBe(`${C_YELLOW}\u{F051F} 2:00${C_RESET}`);
-    expect(render(120_400)).toBe(`${C_GREEN}\u{F051F} 2:01${C_RESET}`);
+    expect(render(120_400)).toBe(`${C_GRAY}\u{F051F} 2:01${C_RESET}`);
     expect(render(300)).toBe(`${C_YELLOW}\u{F051F} 0:01${C_RESET}`);
     expect(render(0)).toBe(`${C_RED}\u{F06AD} 0:00${C_RESET}`);
   });

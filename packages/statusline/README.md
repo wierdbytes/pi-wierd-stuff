@@ -48,7 +48,7 @@ fully configurable — see [Layout](#layout) below):
     because of caching, so their full cost is added to Δ as overhead;
     they don't count towards the hit rate.
   - **Expiry timer** — countdown until the provider evicts the prompt
-    cache (`m:ss`, ticks every second): green above 2:00, yellow up to
+    cache (`m:ss`, ticks every second): gray above 2:00, yellow up to
     2:00, red `0:00` once expired (the hourglass empties). The lifetime
     restarts on every request that reads or writes the cache — real
     requests (from the moment they are sent, not when they finish) and
