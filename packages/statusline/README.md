@@ -32,10 +32,10 @@ fully configurable — see [Layout](#layout) below):
   e.g. ` 99.9% (200k/200) -$0.86 󰔟 4:21` (icons are shown with the
   Nerd Font icon set only). Three segments, each with its own sub-toggle:
   - **Hit rate** — `cacheRead / (input + cacheRead + cacheWrite)`,
-    green at ≥ 98%, yellow at ≥ 90%, red below. The parentheses show
+    green at ≥ 98.0%, yellow from 90.0% to 97.9%, red below 90.0%. The parentheses show
     tokens served from cache vs. tokens that were not
     (`input + cacheWrite`).
-  - **Savings** — what prompt caching saved (green `-$0.86`) or cost
+  - **Savings** — what prompt caching saved (gray `-$0.86`) or cost
     extra (red `+$0.15`) compared to sending the same prompts without
     caching. Per assistant message:
     `Δ = (cost.input + cost.cacheRead + cost.cacheWrite) − (input + cacheRead + cacheWrite) × inputPrice`.
@@ -48,8 +48,8 @@ fully configurable — see [Layout](#layout) below):
     because of caching, so their full cost is added to Δ as overhead;
     they don't count towards the hit rate.
   - **Expiry timer** — countdown until the provider evicts the prompt
-    cache (`m:ss`, ticks every second): gray above 2:00, yellow up to
-    2:00, red `0:00` once expired (the hourglass empties). The lifetime
+    cache (`m:ss`, ticks every second): gray above 0:30, yellow up to
+    0:30, red `0:00` once expired (the hourglass empties). The lifetime
     restarts on every request that reads or writes the cache — real
     requests (from the moment they are sent, not when they finish) and
     pi's cache warming refreshes. Lifetime comes from the model's

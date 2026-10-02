@@ -165,17 +165,22 @@ describe("block renderers (in isolation)", () => {
       }),
     );
     expect(out).toBe(
-      `${C_GREEN}\uf1c0 99.9%${C_RESET} ${C_GRAY}(200k/200)${C_RESET} ${C_GREEN}-$0.86${C_RESET}`,
+      `${C_GREEN}\uf1c0 99.9%${C_RESET} ${C_GRAY}(200k/200)${C_RESET} ${C_GRAY}-$0.86${C_RESET}`,
     );
   });
 
-  it("renderCache colors hit rate green >= 98, yellow >= 90, red below", () => {
+  it("renderCache colors hit rate green >= 98.0, yellow 90.0–97.9, red < 90.0", () => {
     const at = (pct: number) =>
       BLOCK_RENDERERS.cache(
         makeInputs({ cache: { cacheRead: pct, uncached: 100 - pct, cacheWrite: 1, warmCost: 0, delta: null } }),
       );
+    expect(at(99).startsWith(`${C_GREEN}99.0%`)).toBe(true);
     expect(at(98).startsWith(`${C_GREEN}98.0%`)).toBe(true);
     expect(at(97).startsWith(`${C_YELLOW}97.0%`)).toBe(true);
+    const almost = BLOCK_RENDERERS.cache(
+      makeInputs({ cache: { cacheRead: 979, uncached: 21, cacheWrite: 1, warmCost: 0, delta: null } }),
+    );
+    expect(almost.startsWith(`${C_YELLOW}97.9%`)).toBe(true);
     expect(at(90).startsWith(`${C_YELLOW}90.0%`)).toBe(true);
     expect(at(89).startsWith(`${C_RED}89.0%`)).toBe(true);
   });
@@ -212,7 +217,7 @@ describe("block renderers (in isolation)", () => {
     const noHit = cloneDefaultLayout();
     noHit.cache = { hitRate: false, savings: true, timer: true };
     expect(BLOCK_RENDERERS.cache(makeInputs({ layout: noHit, cache }))).toBe(
-      `${C_GREEN}-$1.00${C_RESET}`,
+      `${C_GRAY}-$1.00${C_RESET}`,
     );
     const noSavings = cloneDefaultLayout();
     noSavings.cache = { hitRate: true, savings: false, timer: true };
@@ -229,8 +234,10 @@ describe("block renderers (in isolation)", () => {
     const render = (ms: number) =>
       BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout, cache, cacheRemainingMs: ms }));
     expect(render(261_000)).toBe(`${C_GRAY}\u{F051F} 4:21${C_RESET}`);
-    expect(render(120_000)).toBe(`${C_YELLOW}\u{F051F} 2:00${C_RESET}`);
-    expect(render(120_400)).toBe(`${C_GRAY}\u{F051F} 2:01${C_RESET}`);
+    expect(render(120_000)).toBe(`${C_GRAY}\u{F051F} 2:00${C_RESET}`);
+    expect(render(31_000)).toBe(`${C_GRAY}\u{F051F} 0:31${C_RESET}`);
+    expect(render(30_000)).toBe(`${C_YELLOW}\u{F051F} 0:30${C_RESET}`);
+    expect(render(30_400)).toBe(`${C_GRAY}\u{F051F} 0:31${C_RESET}`);
     expect(render(300)).toBe(`${C_YELLOW}\u{F051F} 0:01${C_RESET}`);
     expect(render(0)).toBe(`${C_RED}\u{F06AD} 0:00${C_RESET}`);
   });

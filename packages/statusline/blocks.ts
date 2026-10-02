@@ -178,23 +178,29 @@ function pctColorFor(pct: number): string {
   return C_GREEN;
 }
 
-/** Cache hit-rate color: green ≥ 98%, yellow ≥ 90%, red below. */
+/** Hit rate floored to one decimal, so 99.96% never reads as 100.0%. */
+function floorHitPercent(pct: number): number {
+  return Math.floor(Math.max(0, Math.min(100, pct)) * 10) / 10;
+}
+
+/** Cache hit-rate color: green ≥ 98.0%, yellow 90.0–97.9%, red < 90.0%.
+ *  Compared on the displayed (floored) value so color and text agree. */
 export function cacheHitColorFor(pct: number): string {
-  if (pct >= 98) return C_GREEN;
-  if (pct >= 90) return C_YELLOW;
+  const shown = floorHitPercent(pct);
+  if (shown >= 98) return C_GREEN;
+  if (shown >= 90) return C_YELLOW;
   return C_RED;
 }
 
 /** Hit rate with one decimal, rounded down so 99.96% never reads as 100.0%. */
 export function formatHitPercent(pct: number): string {
-  const floored = Math.floor(Math.max(0, Math.min(100, pct)) * 10) / 10;
-  return `${floored.toFixed(1)}%`;
+  return `${floorHitPercent(pct).toFixed(1)}%`;
 }
 
 /** Seconds left at which the cache countdown turns yellow. */
-export const CACHE_TIMER_WARN_MS = 2 * 60 * 1000;
+export const CACHE_TIMER_WARN_MS = 30 * 1000;
 
-/** Countdown color: gray > 2:00, yellow 0:01–2:00, red at 0:00. */
+/** Countdown color: gray > 0:30, yellow 0:01–0:30, red at 0:00. */
 export function cacheTimerColorFor(remainingMs: number): string {
   const seconds = Math.ceil(Math.max(0, remainingMs) / 1000);
   if (seconds <= 0) return C_RED;
@@ -202,10 +208,10 @@ export function cacheTimerColorFor(remainingMs: number): string {
   return C_GRAY;
 }
 
-/** Signed, colored cache savings: green `-$0.86`, red `+$0.15`, gray `$0.00`. */
+/** Signed, colored cache savings: gray `-$0.86`, red `+$0.15`, gray `$0.00`. */
 export function formatCacheDelta(delta: number): string {
   if (Math.abs(delta) < 0.005) return `${C_GRAY}$0.00${C_RESET}`;
-  if (delta < 0) return `${C_GREEN}-$${formatCost(-delta)}${C_RESET}`;
+  if (delta < 0) return `${C_GRAY}-$${formatCost(-delta)}${C_RESET}`;
   return `${C_RED}+$${formatCost(delta)}${C_RESET}`;
 }
 
@@ -396,13 +402,13 @@ const renderCost: BlockRenderer = (inputs) => {
  * `cache` block — `<icon> 99.9% (200k/200) -$0.86 <timer> 4:21`.
  *
  *   - hit rate: `cacheRead / (input + cacheRead + cacheWrite)`, colored
- *     green ≥ 98% / yellow ≥ 90% / red; parens hold
+ *     green ≥ 98.0% / yellow 90.0–97.9% / red < 90.0%; parens hold
  *     `cacheRead / (input + cacheWrite)` (served from cache vs not).
  *   - savings: Δ between what the session paid for prompt tokens and
  *     what it would have paid without caching (see `cache-stats.ts`).
  *   - timer: countdown until the prompt cache entry expires, refreshed
  *     by real requests and pi's cache warming (see `cache-timer.ts`).
- *     Gray > 2:00, yellow up to 2:00, red at 0:00.
+ *     Gray > 0:30, yellow up to 0:30, red at 0:00.
  *
  * Each segment is gated by `layout.cache.*`. Returns "" when the
  * provider never touched the cache (nothing read or written) or every
