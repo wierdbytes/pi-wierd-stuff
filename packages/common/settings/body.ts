@@ -488,9 +488,10 @@ export function createSettingsModalBody<F extends Field>(
 
     const indices = visibleRowIndices();
     const footerRows = renderFooter(width);
+    // Reserve the footer divider and both possible list scroll indicators.
     const visibleListRows = Math.max(
-      3,
-      innerRows - lines.length - footerRows.length - 2 - estimateDescriptionRows(),
+      1,
+      innerRows - lines.length - footerRows.length - 3 - descriptionRows(width),
     );
     clampSelection(visibleListRows);
 
@@ -525,13 +526,11 @@ export function createSettingsModalBody<F extends Field>(
     return lines;
   }
 
-  /** Tiny heuristic so renderBody knows roughly how much room the
-   *  description block will eat. Real content is recomputed per render
-   *  but we want the list to start scrolling before that math kicks in. */
-  function estimateDescriptionRows(): number {
+  /** Reserve the actual wrapped help height so setup text does not clip key hints. */
+  function descriptionRows(width: number): number {
     const focused = focusedRow();
     if (!focused?.field.description) return 0;
-    return 2;
+    return 1 + wrapLine(focused.field.description, Math.max(1, width - 4)).length;
   }
 
   return {
@@ -542,7 +541,7 @@ export function createSettingsModalBody<F extends Field>(
         // doesn't change shape mid-flow.
         const lines = submenu.render(frameContentWidth(width));
         const opts: FrameOptions = {
-          title: submenuTitle(submenuKey),
+          title: submenuTitle(rows.find((row) => row.field.key === submenuKey)?.field.label ?? submenuKey),
           fixedInnerRows: inner,
         };
         return frame(lines, width, args.theme, opts);

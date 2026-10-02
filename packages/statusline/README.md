@@ -95,10 +95,8 @@ Direct Layout-tab key bindings:
   Focus follows the moved row, persistence is immediate, and the
   separator field at the bottom is non-reorderable so it doesn't get
   in the way.
-- `enter` — open the block's sub-menu **only if the block has
-  block-specific knobs** (currently `model` and `cache`). For every
-  other block (`path`, `git`, `context`, `cost`, `quotas`, `chips`, `stash`)
-  Enter is a no-op and the footer hint doesn't advertise it.
+- `enter` - open the block's submenu for `model` and `cache`, or setup help for `quotas`.
+  For other blocks (`path`, `git`, `context`, `cost`, `chips`, `stash`), Enter is a no-op and the footer hint does not advertise it.
 
 Sub-menu contents (Enter on the row):
 
@@ -106,6 +104,8 @@ Sub-menu contents (Enter on the row):
   the model name. Only renders for reasoning-capable models anyway.
 - (`cache`) **Show hit rate / Show savings / Show expiry timer** —
   individual sub-toggles for the three segments inside the cache block.
+- (`quotas`) **Setup help** - installation, reload, provider login, and the required quota/footer settings.
+  The help is read-only and scrollable with Up/Down, Page Up/Down, Home, and End; Escape returns to Layout.
 
 Visibility lives on the Layout tab (`space`), not inside the sub-menu;
 reorder lives on the Layout tab (`alt+↑↓`), not inside the sub-menu.
@@ -148,12 +148,26 @@ No additional provider requests, credentials, or dependency on pi-quotas interna
 Use **Layout** to move or hide **Quota remaining**, or run `/statusline layout move quotas top` and `/statusline layout toggle quotas`.
 Existing layouts retain their ordering and get the new block appended; moving it earlier helps keep it visible on narrow terminals.
 When **Hide pi footer** is off, quota display returns to the standard footer instead of being duplicated in both places.
-If pi-quotas is absent, its footer feature is disabled, or it clears its status for an unsupported provider, the block disappears.
+If pi-quotas is absent, its footer feature is disabled, or it clears its status for an unsupported provider, the block disappears from the statusline.
+
+The Layout checkbox controls visibility, not whether a data source is available.
+Its adjacent status explains what is happening:
+
+- **Setup needed**: neither a quota status nor the `/quotas:settings` command is detected in this session.
+- **Waiting for data**: `/quotas:settings` is available, but no status has arrived.
+- **Enable footer hiding**: enable **Hide pi footer** to display quotas in the custom row.
+- **Statusline off** or **Off**: the custom row or quota block is disabled.
+- **Shown**: the block is displaying pi-quotas' status, which can include its own error message.
+
+Select **Quota remaining** and press **Enter** for the complete setup instructions, including `pi install npm:@latentminds/pi-quotas`, `/reload`, and the required settings.
+Enabling the block from the CLI also points to setup help when a prerequisite is missing.
+Missing status alone is not treated as proof that pi-quotas is uninstalled.
 For reset times and other details, use `/quotas` or `/codex:quotas`.
 
 To exercise the integration in a real terminal, run `bun packages/statusline/quota-status.smoke.ts` from the repository root with Pi and tmux installed.
 Set `PI_BIN=/absolute/path/to/pi` to select a specific host binary.
 The smoke test uses temporary settings and deterministic quota statuses, makes no provider requests, and cleans up its terminal and files.
+It also starts Pi without any quota extension to verify the unavailable-state message, installation instructions, CLI guidance, and scrolling on a small terminal.
 
 ## Editor stash
 

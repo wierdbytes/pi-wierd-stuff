@@ -28,6 +28,7 @@ writeFileSync(join(settingsDir, "events.json"), JSON.stringify({
 }));
 const fixture = join(root, "fixture.ts");
 writeFileSync(fixture, `export default function(pi) {
+  pi.registerCommand("quotas:settings", { handler: async () => {} });
   pi.on("session_start", (_event, ctx) => ctx.ui.setStatus("pi-quotas-usage", "5h:91% left 7d:82% left"));
   pi.registerCommand("quota-fixture", {
     handler: async (args, ctx) => ctx.ui.setStatus("pi-quotas-usage", args === "clear" ? undefined : args),
@@ -59,10 +60,22 @@ async function toggleFooter() {
   await sleep(250);
 }
 
+async function openQuotaRow(expected: string) {
+  await command("/statusline");
+  await waitFor((s) => s.includes("Hide pi footer"), "settings overlay did not open");
+  tmux("send-keys", "-t", "test", "Tab", "Down", "Down", "Down", "Down", "Down");
+  await waitFor((s) => s.split("\n").some((line) => line.includes("Quota remaining") && line.includes(expected)), `quota availability did not show ${expected}`);
+}
+async function escape() {
+  tmux("send-keys", "-t", "test", "Escape");
+  await sleep(250);
+}
+
 try {
-  const launch = ["env", `HOME=${home}`, `PI_CODING_AGENT_DIR=${agent}`, "PI_OFFLINE=1", "PI_TELEMETRY=0",
+  const baseLaunch = ["env", `HOME=${home}`, `PI_CODING_AGENT_DIR=${agent}`, "PI_OFFLINE=1", "PI_TELEMETRY=0",
     process.env.PI_BIN ?? "pi", "--no-extensions", "--no-skills", "--no-context-files",
-    "--no-session", "-e", extension, "-e", fixture].map(quote).join(" ");
+    "--no-session", "-e", extension];
+  const launch = [...baseLaunch, "-e", fixture].map(quote).join(" ");
   tmux("new-session", "-d", "-s", "test", "-x", "160", "-y", "32", "/bin/sh");
   tmux("set-option", "-t", "test", "remain-on-exit", "on");
   tmux("send-keys", "-t", "test", "-l", `cd ${quote(root)} && exec ${launch}`);
@@ -73,6 +86,8 @@ try {
     writeFileSync(process.env.PI_QUOTA_SMOKE_CAPTURE, tmux("capture-pane", "-ept", "test"));
   }
 
+  await openQuotaRow("Shown");
+  await escape();
   await command("/quota-fixture 7d:81% left");
   await waitFor((s) => statusRow(s).includes("7d:81% left") && !statusRow(s).includes("82%"), "live update missing");
   await command("/quota-fixture usage unavailable");
@@ -81,6 +96,9 @@ try {
   assert(!statusRow(screen()).includes("usage unavailable"));
   assert(!statusRow(screen()).includes("7d:"));
   console.log("PASS: idle updates, errors, and status removal");
+  await openQuotaRow("Waiting for data");
+  assert(!screen().includes("Setup needed"));
+  await escape();
 
   await command("/quota-fixture 7d:80% left");
   await command("/statusline layout toggle quotas");
@@ -96,6 +114,8 @@ try {
 
   await toggleFooter();
   await waitFor((s) => !statusRow(s).includes("7d:") && s.split("\n").some((line) => line.trim() === "7d:80% left"), "quota did not return to the standard footer");
+  await openQuotaRow("Enable footer hiding");
+  await escape();
   await toggleFooter();
   await waitFor((s) => statusRow(s).includes("7d:80% left"), "quota did not return to custom row");
   await command("/statusline off");
@@ -105,6 +125,45 @@ try {
   await command("/reload");
   await waitFor((s) => statusRow(s).includes("7d:82% left"), "reload did not reconnect quota");
   console.log("PASS: footer toggles, statusline disable/enable, and extension reload");
+
+  // Restart without any quota extension or fixture. A checked block must not
+  // imply that a data source is installed or functioning.
+  tmux("respawn-pane", "-k", "-t", "test", `cd ${quote(root)} && exec ${baseLaunch.map(quote).join(" ")}`);
+  await waitFor((s) => !!statusRow(s) && !statusRow(s).includes("7d:"), "source-free Pi did not start");
+  await openQuotaRow("Setup needed");
+  await waitFor((s) => s.includes("enter setup"), "quota row did not advertise setup help");
+  if (process.env.PI_QUOTA_SMOKE_CAPTURE) {
+    writeFileSync(`${process.env.PI_QUOTA_SMOKE_CAPTURE}.missing`, tmux("capture-pane", "-ept", "test"));
+  }
+  tmux("send-keys", "-t", "test", "Enter");
+  await waitFor((s) => s.includes("pi install npm:@latentminds/pi-quotas"), "setup help did not include installation command");
+  for (const text of ["/reload", "/quotas:settings", "Usage footer status", "Hide pi footer", "Quota remaining"]) {
+    assert(screen().includes(text), `missing setup instruction: ${text}`);
+  }
+  if (process.env.PI_QUOTA_SMOKE_CAPTURE) {
+    writeFileSync(`${process.env.PI_QUOTA_SMOKE_CAPTURE}.help`, tmux("capture-pane", "-ept", "test"));
+  }
+  tmux("resize-window", "-t", "test", "-x", "60", "-y", "24");
+  await sleep(250);
+  tmux("send-keys", "-t", "test", "End");
+  await waitFor((s) => s.includes("/login") && s.includes("esc back"), "setup help cannot scroll to the last instruction on a small terminal");
+  if (process.env.PI_QUOTA_SMOKE_CAPTURE) {
+    writeFileSync(`${process.env.PI_QUOTA_SMOKE_CAPTURE}.help-narrow`, tmux("capture-pane", "-ept", "test"));
+  }
+  tmux("send-keys", "-t", "test", "Home");
+  await waitFor((s) => s.includes("Setup needed"), "setup help cannot scroll back to the top");
+  await escape();
+  await waitFor((s) => s.includes("enter setup"), "narrow settings screen lost its setup key hint");
+  if (process.env.PI_QUOTA_SMOKE_CAPTURE) {
+    writeFileSync(`${process.env.PI_QUOTA_SMOKE_CAPTURE}.missing-narrow`, tmux("capture-pane", "-ept", "test"));
+  }
+  await escape();
+  tmux("resize-window", "-t", "test", "-x", "160", "-y", "32");
+  await command("/statusline layout toggle quotas");
+  await command("/statusline layout toggle quotas");
+  await waitFor((s) => s.includes("enabling it alone does not fetch quotas"), "CLI enable silently accepted a missing source");
+  assert(!statusRow(screen()).includes("7d:"));
+  console.log("PASS: source-free settings show Setup needed, complete setup help, narrow-screen scrolling, and CLI guidance");
   console.log(screen());
 } finally {
   try { tmux("kill-server"); } catch { /* Server may have exited after a startup failure. */ }
