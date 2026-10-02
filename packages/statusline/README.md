@@ -16,8 +16,8 @@ fully configurable — see [Layout](#layout) below):
   the model name when the active model is reasoning-capable and the
   `Model: show thinking` sub-toggle is on. Thinking is a sub-segment
   of the model block — they always render together and reorder as one
-  unit (mirrors how the four token counters live inside the tokens
-  block).
+  unit (mirrors how the hit-rate and savings segments live inside the
+  cache block).
 - **Path** — up to the last three segments of `cwd` with a `…/` prefix.
   Parent segments in gray, current directory in purple.
 - **Git** — branch name plus a clean/dirty marker (`✓` green / `✗` red).
@@ -28,11 +28,35 @@ fully configurable — see [Layout](#layout) below):
   the limit. While usage is temporarily unknown immediately after compaction,
   the block shows `?` markers instead of stale pre-compaction values.
 - **Cost** — session total in USD when greater than zero.
-- **Tokens** — cumulative session input/output and cache read/write
-  counters: `↑input ↓output R{cacheRead} W{cacheWrite}`. Each counter
-  has its own sub-toggle (`Tokens: input`, `Tokens: output`, `Tokens:
-  cache read`, `Tokens: cache write`) so users can keep the block at
-  one position in the layout but hide individual counters.
+- **Cache** — prompt-cache efficiency for the current session branch,
+  e.g. ` 99.9% (200k/200) -$0.86 󰔟 4:21` (icons are shown with the
+  Nerd Font icon set only). Three segments, each with its own sub-toggle:
+  - **Hit rate** — `cacheRead / (input + cacheRead + cacheWrite)`,
+    green at ≥ 98%, yellow at ≥ 90%, red below. The parentheses show
+    tokens served from cache vs. tokens that were not
+    (`input + cacheWrite`).
+  - **Savings** — what prompt caching saved (green `-$0.86`) or cost
+    extra (red `+$0.15`) compared to sending the same prompts without
+    caching. Per assistant message:
+    `Δ = (cost.input + cost.cacheRead + cost.cacheWrite) − (input + cacheRead + cacheWrite) × inputPrice`.
+    The actual side is pi's own billing, so 5m vs 1h cache writes
+    (`usage.cacheWrite1h`, billed at 2× input) and pricing tiers are
+    already accounted for; output tokens cancel out. The input price
+    is taken from the message (`cost.input / input`), falling back to
+    the model registry when a message has no uncached input.
+    pi's cache-warming requests (`cache_warm` usage entries) exist only
+    because of caching, so their full cost is added to Δ as overhead;
+    they don't count towards the hit rate.
+  - **Expiry timer** — countdown until the provider evicts the prompt
+    cache (`m:ss`, ticks every second): green above 2:00, yellow up to
+    2:00, red `0:00` once expired (the hourglass empties). The lifetime
+    restarts on every request that reads or writes the cache — real
+    requests (from the moment they are sent, not when they finish) and
+    pi's cache warming refreshes. Lifetime comes from the model's
+    `promptCache` tiers: the long tier when the request reported 1h
+    cache writes or `PI_CACHE_RETENTION=long`, the short tier otherwise.
+
+  Hidden until the provider has read from or written to the cache.
 - **Stash** — `📦 N` showing how many prompts are saved in the stash history
   (see below). Hidden when empty.
 - **Subagents** — `🤖 agents N/M` chip when [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-subagents)
@@ -50,7 +74,7 @@ welcome overlay pieces).
 ## Layout
 
 The statusline ships with eight reorderable blocks: `model`, `path`,
-`git`, `context`, `cost`, `tokens`, `chips`, and `stash`. The leading
+`git`, `context`, `cost`, `cache`, `chips`, and `stash`. The leading
 `─` divider is always first; everything else can be reordered or
 hidden via the **Layout** tab in the settings overlay (`/statusline`),
 or through the imperative `/statusline layout ...` subcommands.
@@ -68,7 +92,7 @@ Direct Layout-tab key bindings:
   separator field at the bottom is non-reorderable so it doesn't get
   in the way.
 - `enter` — open the block's sub-menu **only if the block has
-  block-specific knobs** (currently `model` and `tokens`). For every
+  block-specific knobs** (currently `model` and `cache`). For every
   other block (`path`, `git`, `context`, `cost`, `chips`, `stash`)
   Enter is a no-op and the footer hint doesn't advertise it.
 
@@ -76,9 +100,8 @@ Sub-menu contents (Enter on the row):
 
 - (`model`) **Show thinking level** — inline thinking segment after
   the model name. Only renders for reasoning-capable models anyway.
-- (`tokens`) **Show input / output / cache read / cache write** —
-  individual sub-toggles for the four counters inside the tokens
-  block.
+- (`cache`) **Show hit rate / Show savings / Show expiry timer** —
+  individual sub-toggles for the three segments inside the cache block.
 
 Visibility lives on the Layout tab (`space`), not inside the sub-menu;
 reorder lives on the Layout tab (`alt+↑↓`), not inside the sub-menu.
@@ -95,7 +118,7 @@ At the bottom of the Layout tab:
 Imperative shortcuts — same persistence bus the modal uses:
 
 - `/statusline layout` — print the active order, e.g.
-  `model > path > git! > context > cost > tokens > chips > stash (7/8 visible)`
+  `model > path > git! > context > cost > cache > chips > stash (7/8 visible)`
   (a trailing `!` marks a disabled block).
 - `/statusline layout reset` — restore defaults.
 - `/statusline layout toggle <block>` — flip one block's visibility.
@@ -105,7 +128,10 @@ The layout slice is persisted alongside the other knobs in
 `~/.pi/agent/wierd-statusline/events.json` (schema `version: 2`).
 Upgrading from a `version: 1` file is transparent: the missing layout
 slice is injected with defaults and the file is rewritten on first
-load, so users coming from `0.6.x` see no visible change.
+load, so users coming from `0.6.x` see no visible change. Since
+`0.8.0` the old `tokens` counter block is replaced by `cache`: a
+persisted `tokens` entry keeps its slot and visibility but renders the
+cache block instead (the old per-counter sub-toggles are dropped).
 
 ## Editor stash
 

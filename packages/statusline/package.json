@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-statusline",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Minimal modular statusline extension for pi coding agent",
   "type": "module",
   "files": [
@@ -41,9 +41,14 @@
     "@wierdbytes/pi-common": "^0.5.0",
     "@wierdbytes/pi-events": "^0.1.0"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0"
+  },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@earendil-works/pi-tui": "^0.74.0"
+    "@earendil-works/pi-ai": "^1.0.0",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
+    "@earendil-works/pi-tui": "^1.0.0"
   }
 }

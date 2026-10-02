@@ -41,10 +41,10 @@ describe("normaliseLayoutConfig", () => {
 
   it("appends missing known ids to the tail of order", () => {
     const out = normaliseLayoutConfig({
-      order: ["tokens", "git"],
+      order: ["cache", "git"],
     });
     // The two ids the caller provided come first…
-    expect(out.order.slice(0, 2)).toEqual(["tokens", "git"]);
+    expect(out.order.slice(0, 2)).toEqual(["cache", "git"]);
     // …and every other known id is appended.
     for (const id of KNOWN_BLOCK_IDS) {
       expect(out.order).toContain(id);
@@ -83,16 +83,30 @@ describe("normaliseLayoutConfig", () => {
     expect(out.model.showThinking).toBe(false);
   });
 
-  it("merges tokens sub-toggles independently", () => {
+  it("merges cache sub-toggles independently", () => {
+    const out = normaliseLayoutConfig({ cache: { hitRate: false, savings: true, timer: false } });
+    expect(out.cache).toEqual({ hitRate: false, savings: true, timer: false });
+  });
+
+  it("migrates the legacy tokens block to cache in place", () => {
     const out = normaliseLayoutConfig({
-      tokens: { input: false, output: true, cacheRead: false, cacheWrite: true },
-    });
-    expect(out.tokens).toEqual({
-      input: false,
-      output: true,
-      cacheRead: false,
-      cacheWrite: true,
-    });
+      order: ["model", "cost", "tokens", "path"],
+      enabled: { tokens: false },
+      tokens: { input: false },
+    } as unknown as Parameters<typeof normaliseLayoutConfig>[0]);
+    expect(out.order.slice(0, 4)).toEqual(["model", "cost", "cache", "path"]);
+    expect(out.order).not.toContain("tokens");
+    expect(out.enabled.cache).toBe(false);
+    expect(out.enabled).not.toHaveProperty("tokens");
+    expect(out).not.toHaveProperty("tokens");
+    expect(out.cache).toEqual({ hitRate: true, savings: true, timer: true });
+  });
+
+  it("prefers an explicit cache flag over the legacy tokens flag", () => {
+    const out = normaliseLayoutConfig({
+      enabled: { tokens: false, cache: true },
+    } as unknown as Parameters<typeof normaliseLayoutConfig>[0]);
+    expect(out.enabled.cache).toBe(true);
   });
 
   it("falls back to default separator for an empty string", () => {
@@ -120,8 +134,8 @@ describe("normaliseLayoutConfig", () => {
   it("is idempotent on its own output", () => {
     const first = normaliseLayoutConfig({
       order: ["chips", "model"],
-      enabled: { tokens: false },
-      tokens: { input: false },
+      enabled: { cache: false },
+      cache: { savings: false },
       separator: "·",
     } as Parameters<typeof normaliseLayoutConfig>[0]);
     const second = normaliseLayoutConfig(first);
@@ -152,12 +166,7 @@ describe("clampSeparator", () => {
       expect(DEFAULT_LAYOUT_CONFIG.enabled[id]).toBe(true);
     }
     expect(DEFAULT_LAYOUT_CONFIG.model.showThinking).toBe(true);
-    expect(DEFAULT_LAYOUT_CONFIG.tokens).toEqual({
-      input: true,
-      output: true,
-      cacheRead: true,
-      cacheWrite: true,
-    });
+    expect(DEFAULT_LAYOUT_CONFIG.cache).toEqual({ hitRate: true, savings: true, timer: true });
   });
 });
 
@@ -168,11 +177,11 @@ describe("cloneDefaultLayout", () => {
     a.order.push("model");
     a.enabled.git = false;
     a.model.showThinking = false;
-    a.tokens.input = false;
+    a.cache.hitRate = false;
     // Mutating one clone must not affect the other.
     expect(b.order).toEqual([...KNOWN_BLOCK_IDS]);
     expect(b.enabled.git).toBe(true);
     expect(b.model.showThinking).toBe(true);
-    expect(b.tokens.input).toBe(true);
+    expect(b.cache.hitRate).toBe(true);
   });
 });

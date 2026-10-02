@@ -59,7 +59,7 @@ describe("toggleBlock", () => {
     git: true,
     context: true,
     cost: true,
-    tokens: true,
+    cache: true,
     chips: true,
     stash: true,
   } as Record<BlockId, boolean>;
@@ -80,8 +80,8 @@ describe("toggleBlock", () => {
   });
 
   it("round-trips through two toggles", () => {
-    const a = toggleBlock(enabled, "tokens");
-    const b = toggleBlock(a, "tokens");
+    const a = toggleBlock(enabled, "cache");
+    const b = toggleBlock(a, "cache");
     expect(b).toEqual(enabled);
   });
 });

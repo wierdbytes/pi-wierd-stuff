@@ -19,22 +19,17 @@ describe("buildBlockSettingsRows", () => {
     expect(rows[0]!.id).toBe("model.showThinking");
   });
 
-  it("returns four counter toggles for the tokens block", () => {
+  it("returns hit-rate, savings and timer toggles for the cache block", () => {
     const layout = cloneDefaultLayout();
-    const rows = buildBlockSettingsRows("tokens", layout);
+    const rows = buildBlockSettingsRows("cache", layout);
     const ids = rows.map((r) => r.id);
-    expect(ids).toEqual([
-      "tokens.input",
-      "tokens.output",
-      "tokens.cacheRead",
-      "tokens.cacheWrite",
-    ]);
+    expect(ids).toEqual(["cache.hitRate", "cache.savings", "cache.timer"]);
   });
 
   it("returns no rows for blocks without sub-settings", () => {
     const layout = cloneDefaultLayout();
     for (const id of KNOWN_BLOCK_IDS) {
-      if (id === "model" || id === "tokens") continue;
+      if (id === "model" || id === "cache") continue;
       expect(buildBlockSettingsRows(id, layout)).toEqual([]);
     }
   });
@@ -46,32 +41,27 @@ describe("buildBlockSettingsRows", () => {
     expect(patch.model?.showThinking).toBe(false);
     // No other slice touched.
     expect(patch.enabled).toBeUndefined();
-    expect(patch.tokens).toBeUndefined();
+    expect(patch.cache).toBeUndefined();
   });
 
-  it("tokens.input toggle only flips that counter, preserving the others", () => {
+  it("cache.savings toggle only flips that segment, preserving hit rate", () => {
     const layout = cloneDefaultLayout();
-    const row = buildBlockSettingsRows("tokens", layout).find((r) => r.id === "tokens.input");
+    const row = buildBlockSettingsRows("cache", layout).find((r) => r.id === "cache.savings");
     expect(row).toBeTruthy();
     const patch = row!.toggle(layout);
-    expect(patch.tokens).toEqual({
-      input: false,
-      output: true,
-      cacheRead: true,
-      cacheWrite: true,
-    });
+    expect(patch.cache).toEqual({ hitRate: true, savings: false, timer: true });
   });
 });
 
 describe("blockHasSubSettings", () => {
-  it("returns true for model and tokens", () => {
+  it("returns true for model and cache", () => {
     expect(blockHasSubSettings("model")).toBe(true);
-    expect(blockHasSubSettings("tokens")).toBe(true);
+    expect(blockHasSubSettings("cache")).toBe(true);
   });
 
   it("returns false for every other known block", () => {
     for (const id of KNOWN_BLOCK_IDS as readonly BlockId[]) {
-      if (id === "model" || id === "tokens") continue;
+      if (id === "model" || id === "cache") continue;
       expect(blockHasSubSettings(id)).toBe(false);
     }
   });

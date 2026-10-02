@@ -4,7 +4,7 @@
  * Each `BlockRenderer` is a pure function that turns the shared
  * `RenderInputs` bundle into a "clean" ANSI string with **no leading
  * or trailing separator and no leading space**. An empty string means
- * "skip me" (e.g. git block outside a repo, tokens block with all
+ * "skip me" (e.g. git block outside a repo, cache block with all
  * sub-toggles off).
  *
  * `composeStatusLine` walks `layout.order`, calls each renderer
@@ -22,6 +22,8 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { NotifyLevel, NotifyStatusEvent } from "@wierdbytes/pi-events";
 import { basename, dirname } from "node:path";
 
+import { cacheHitPercent, type CacheStats } from "./cache-stats.ts";
+import { formatCountdown } from "./cache-timer.ts";
 import type { IconKey, IconSet } from "./icons.ts";
 import { resolveIcon } from "./icons.ts";
 import type { LayoutConfig } from "./layout-config.ts";
@@ -176,6 +178,37 @@ function pctColorFor(pct: number): string {
   return C_GREEN;
 }
 
+/** Cache hit-rate color: green ≥ 98%, yellow ≥ 90%, red below. */
+export function cacheHitColorFor(pct: number): string {
+  if (pct >= 98) return C_GREEN;
+  if (pct >= 90) return C_YELLOW;
+  return C_RED;
+}
+
+/** Hit rate with one decimal, rounded down so 99.96% never reads as 100.0%. */
+export function formatHitPercent(pct: number): string {
+  const floored = Math.floor(Math.max(0, Math.min(100, pct)) * 10) / 10;
+  return `${floored.toFixed(1)}%`;
+}
+
+/** Seconds left at which the cache countdown turns yellow. */
+export const CACHE_TIMER_WARN_MS = 2 * 60 * 1000;
+
+/** Countdown color: green > 2:00, yellow 0:01–2:00, red at 0:00. */
+export function cacheTimerColorFor(remainingMs: number): string {
+  const seconds = Math.ceil(Math.max(0, remainingMs) / 1000);
+  if (seconds <= 0) return C_RED;
+  if (seconds * 1000 <= CACHE_TIMER_WARN_MS) return C_YELLOW;
+  return C_GREEN;
+}
+
+/** Signed, colored cache savings: green `-$0.86`, red `+$0.15`, gray `$0.00`. */
+export function formatCacheDelta(delta: number): string {
+  if (Math.abs(delta) < 0.005) return `${C_GRAY}$0.00${C_RESET}`;
+  if (delta < 0) return `${C_GREEN}-$${formatCost(-delta)}${C_RESET}`;
+  return `${C_RED}+$${formatCost(delta)}${C_RESET}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Level / chip / toast formatting helpers (shared with index.ts)
 // ─────────────────────────────────────────────────────────────────────
@@ -265,7 +298,7 @@ export const KNOWN_BLOCK_IDS = [
   "git",
   "context",
   "cost",
-  "tokens",
+  "cache",
   "chips",
   "stash",
 ] as const;
@@ -287,10 +320,9 @@ export interface RenderInputs {
   thinkingLevel: string;
   thinkingLevelMap: ThinkingLevelMap | undefined;
   modelReasoning: boolean;
-  totalInput: number;
-  totalOutput: number;
-  totalCacheRead: number;
-  totalCacheWrite: number;
+  cache: CacheStats;
+  /** Ms until the branch's prompt cache entry expires; `null` when unknown / never cached. */
+  cacheRemainingMs: number | null;
   stashCount: number;
   chips: NotifyStatusEvent[];
   iconSet: IconSet;
@@ -361,20 +393,52 @@ const renderCost: BlockRenderer = (inputs) => {
 };
 
 /**
- * `tokens` block — `↑in ↓out R W`. Each counter is gated by both the
- * sub-toggle in `layout.tokens.*` AND a `> 0` check, so disabling a
- * counter hides it even when usage exists. Returns "" when every
- * gated counter is empty.
+ * `cache` block — `<icon> 99.9% (200k/200) -$0.86 <timer> 4:21`.
+ *
+ *   - hit rate: `cacheRead / (input + cacheRead + cacheWrite)`, colored
+ *     green ≥ 98% / yellow ≥ 90% / red; parens hold
+ *     `cacheRead / (input + cacheWrite)` (served from cache vs not).
+ *   - savings: Δ between what the session paid for prompt tokens and
+ *     what it would have paid without caching (see `cache-stats.ts`).
+ *   - timer: countdown until the prompt cache entry expires, refreshed
+ *     by real requests and pi's cache warming (see `cache-timer.ts`).
+ *     Green > 2:00, yellow up to 2:00, red at 0:00.
+ *
+ * Each segment is gated by `layout.cache.*`. Returns "" when the
+ * provider never touched the cache (nothing read or written) or every
+ * segment is gated off.
  */
-const renderTokens: BlockRenderer = (inputs) => {
-  const t = inputs.layout.tokens;
+const renderCache: BlockRenderer = (inputs) => {
+  const stats = inputs.cache;
+  if (stats.cacheRead + stats.cacheWrite <= 0) return "";
+
+  const toggles = inputs.layout.cache;
+  const pct = cacheHitPercent(stats);
+  const showHit = toggles.hitRate && pct !== null;
+  const showSavings = toggles.savings && stats.delta !== null;
+  const remaining = inputs.cacheRemainingMs;
+  const showTimer = toggles.timer && remaining !== null;
+  if (!showHit && !showSavings && !showTimer) return "";
+
+  const color = pct !== null ? cacheHitColorFor(pct) : C_GRAY;
+  const icon = resolveIcon(inputs.iconSet, "cache");
   const segments: string[] = [];
-  if (t.input && inputs.totalInput > 0) segments.push(`↑${formatTokens(inputs.totalInput)}`);
-  if (t.output && inputs.totalOutput > 0) segments.push(`↓${formatTokens(inputs.totalOutput)}`);
-  if (t.cacheRead && inputs.totalCacheRead > 0) segments.push(`R${formatTokens(inputs.totalCacheRead)}`);
-  if (t.cacheWrite && inputs.totalCacheWrite > 0) segments.push(`W${formatTokens(inputs.totalCacheWrite)}`);
-  if (segments.length === 0) return "";
-  return `${C_GRAY}${segments.join(" ")}${C_RESET}`;
+  if (showHit && pct !== null) {
+    const head = icon ? `${icon} ${formatHitPercent(pct)}` : formatHitPercent(pct);
+    segments.push(
+      `${color}${head}${C_RESET} ${C_GRAY}(${formatTokens(stats.cacheRead)}/${formatTokens(stats.uncached)})${C_RESET}`,
+    );
+  } else if (icon && showSavings) {
+    segments.push(`${C_GRAY}${icon}${C_RESET}`);
+  }
+  if (showSavings && stats.delta !== null) segments.push(formatCacheDelta(stats.delta));
+  if (showTimer && remaining !== null) {
+    const timerIcon = resolveIcon(inputs.iconSet, remaining > 0 ? "cacheTimer" : "cacheExpired");
+    const text = formatCountdown(remaining);
+    const body = timerIcon ? `${timerIcon} ${text}` : text;
+    segments.push(`${cacheTimerColorFor(remaining)}${body}${C_RESET}`);
+  }
+  return segments.join(" ");
 };
 
 /**
@@ -399,7 +463,7 @@ export const BLOCK_RENDERERS: Record<BlockId, BlockRenderer> = {
   git: renderGit,
   context: renderContext,
   cost: renderCost,
-  tokens: renderTokens,
+  cache: renderCache,
   chips: renderChips,
   stash: renderStash,
 };

@@ -17,6 +17,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { accumulateCacheStats, type CacheWarmLike, type PricingLookup } from "./cache-stats.ts";
+import {
+  applyInflight,
+  CacheCountdownTicker,
+  cacheRemainingMs,
+  type CacheTimelineEntry,
+  envRetention,
+  findLastCacheTouch,
+  type InflightRequest,
+  type PromptCacheLookup,
+} from "./cache-timer.ts";
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
 import {
   type EventsConfig,
@@ -110,22 +121,27 @@ function buildToastLine(active: ActiveToast, width: number, set: IconSet): strin
   return truncated + " ".repeat(fillWidth);
 }
 
-function gatherStats(ctx: ExtensionContext) {
-  let cost = 0;
-  let totalInput = 0;
-  let totalOutput = 0;
-  let totalCacheRead = 0;
-  let totalCacheWrite = 0;
-  let lastAssistant: AssistantMessage | undefined;
+/** Live state the cache countdown needs beyond the persisted branch. */
+interface CacheClock {
+  /** Real request currently streaming (refreshes the cache before it is persisted). */
+  getInflight: () => InflightRequest | null;
+  ticker: CacheCountdownTicker;
+}
 
-  for (const e of ctx.sessionManager.getBranch()) {
-    if (e.type === "message" && e.message.role === "assistant") {
+function gatherStats(ctx: ExtensionContext, inflight: InflightRequest | null) {
+  let cost = 0;
+  let lastAssistant: AssistantMessage | undefined;
+  const assistants: AssistantMessage[] = [];
+  const warms: CacheWarmLike[] = [];
+  const branch = ctx.sessionManager.getBranch();
+
+  for (const e of branch) {
+    if (e.type === "usage" && e.kind === "cache_warm") {
+      warms.push(e);
+    } else if (e.type === "message" && e.message.role === "assistant") {
       const m = e.message as AssistantMessage;
+      assistants.push(m);
       cost += m.usage.cost.total;
-      totalInput += m.usage.input;
-      totalOutput += m.usage.output;
-      totalCacheRead += m.usage.cacheRead;
-      totalCacheWrite += m.usage.cacheWrite;
       if (
         m.usage.input + m.usage.output + m.usage.cacheRead + m.usage.cacheWrite > 0
       ) {
@@ -134,7 +150,20 @@ function gatherStats(ctx: ExtensionContext) {
     }
   }
 
-  return { cost, totalInput, totalOutput, totalCacheRead, totalCacheWrite, lastAssistant };
+  const lookup: PricingLookup = (provider, modelId) =>
+    ctx.modelRegistry?.find(provider, modelId)?.cost;
+  const cache = accumulateCacheStats(assistants, lookup, warms);
+
+  const cacheLookup: PromptCacheLookup = (provider, modelId) =>
+    ctx.modelRegistry?.find(provider, modelId)?.promptCache;
+  const touch = applyInflight(
+    findLastCacheTouch(branch as readonly CacheTimelineEntry[], cacheLookup, envRetention()),
+    inflight,
+    cacheLookup,
+  );
+  const cacheRemaining = touch ? cacheRemainingMs(touch, Date.now()) : null;
+
+  return { cost, cache, cacheRemaining, lastAssistant };
 }
 
 function renderStatusContent(
@@ -145,8 +174,12 @@ function renderStatusContent(
   events: { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
   iconSet: IconSet,
   layout: LayoutConfig,
+  cacheClock: CacheClock,
 ): string[] {
-  const stats = gatherStats(ctx);
+  const stats = gatherStats(ctx, cacheClock.getInflight());
+  // Keep repainting once per second while a visible countdown is running.
+  const timerVisible = layout.enabled.cache && layout.cache.timer;
+  cacheClock.ticker.sync(timerVisible ? stats.cacheRemaining : null);
   const contextUsage = ctx.getContextUsage();
   const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
   const lastUsage = stats.lastAssistant?.usage;
@@ -169,10 +202,8 @@ function renderStatusContent(
     thinkingLevel: pi.getThinkingLevel?.() ?? "off",
     thinkingLevelMap: model?.thinkingLevelMap,
     modelReasoning: ctx.model?.reasoning ?? false,
-    totalInput: stats.totalInput,
-    totalOutput: stats.totalOutput,
-    totalCacheRead: stats.totalCacheRead,
-    totalCacheWrite: stats.totalCacheWrite,
+    cache: stats.cache,
+    cacheRemainingMs: stats.cacheRemaining,
     stashCount,
     chips: events.chips,
     iconSet,
@@ -263,24 +294,34 @@ function installStatusWidget(
   getEventsSnapshot: () => { chips: NotifyStatusEvent[]; toast: ActiveToast | null },
   getIconSet: () => IconSet,
   getLayout: () => LayoutConfig,
+  getInflight: () => InflightRequest | null,
 ) {
   ctx.ui.setWidget(
     "wierd-statusline",
-    () => ({
-      dispose() {},
-      invalidate() {},
-      render(width: number): string[] {
-        return renderStatusContent(
-          pi,
-          ctx,
-          width,
-          getStashCount(),
-          getEventsSnapshot(),
-          getIconSet(),
-          getLayout(),
-        );
-      },
-    }),
+    (tui) => {
+      const cacheClock: CacheClock = {
+        getInflight,
+        ticker: new CacheCountdownTicker(() => tui.requestRender()),
+      };
+      return {
+        dispose() {
+          cacheClock.ticker.stop();
+        },
+        invalidate() {},
+        render(width: number): string[] {
+          return renderStatusContent(
+            pi,
+            ctx,
+            width,
+            getStashCount(),
+            getEventsSnapshot(),
+            getIconSet(),
+            getLayout(),
+            cacheClock,
+          );
+        },
+      };
+    },
     { placement: "aboveEditor" },
   );
 }
@@ -524,6 +565,10 @@ export default function (pi: ExtensionAPI) {
   let fixedWidgetContainerBelow: any = null;
   let fixedFooterComponent: any = null;
   let currentCtx: ExtensionContext | undefined;
+  // Real request currently streaming. Its cache refresh happens at
+  // request start, long before the message is persisted to the branch,
+  // so the cache countdown folds it in from here (see cache-timer.ts).
+  let inflightRequest: InflightRequest | null = null;
 
   // Persistent config + the events tracker need to be initialized before
   // the session-local toggle mirrors below, since those mirrors read
@@ -730,12 +775,30 @@ export default function (pi: ExtensionAPI) {
     activeTui?.requestRender();
   });
 
+  pi.on("message_start", async (event) => {
+    const message = event.message as Partial<AssistantMessage>;
+    if (message.role !== "assistant" || !message.provider || !message.model) return;
+    inflightRequest = {
+      at: typeof message.timestamp === "number" ? message.timestamp : Date.now(),
+      provider: message.provider,
+      model: message.model,
+    };
+    activeTui?.requestRender();
+  });
+
+  pi.on("message_end", async (event) => {
+    if ((event.message as { role?: string }).role !== "assistant") return;
+    inflightRequest = null;
+    activeTui?.requestRender();
+  });
+
   pi.on("tool_result", async () => {
     invalidateGitStatus();
     activeTui?.requestRender();
   });
 
   pi.on("session_shutdown", async () => {
+    inflightRequest = null;
     teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe = null;
@@ -753,6 +816,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_end", async (_event, ctx) => {
+    // Safety net: an aborted stream must not leave a phantom in-flight request.
+    inflightRequest = null;
     if (!ctx.hasUI) return;
     if (stashedEditorText === null) return;
     if (ctx.ui.getEditorText().trim() === "") {
@@ -776,6 +841,7 @@ export default function (pi: ExtensionAPI) {
       getEventsSnapshot,
       () => eventsConfig.display.iconSet,
       () => eventsConfig.layout,
+      () => inflightRequest,
     );
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
     if (footerHidden) hidePiFooter(ctx);
@@ -914,7 +980,7 @@ export default function (pi: ExtensionAPI) {
     git: "Git branch",
     context: "Context usage",
     cost: "Session cost",
-    tokens: "Token counters",
+    cache: "Prompt cache",
     chips: "Notification chips",
     stash: "Stash count",
   };
@@ -925,7 +991,7 @@ export default function (pi: ExtensionAPI) {
     git: "Branch name plus a clean/dirty marker. CLI id: `git`.",
     context: "Percentage of usable context window (33k autocompact buffer reserved) with colored bar. CLI id: `context`.",
     cost: "Session total in USD when greater than zero. CLI id: `cost`.",
-    tokens: "Cumulative `↑input ↓output R{cacheRead} W{cacheWrite}` counters. Enter to open submenu and toggle each one independently. CLI id: `tokens`.",
+    cache: "Cache hit rate `99.9% (read/uncached)`, money saved (`-$0.86`) or overspent (`+$0.15`) by prompt caching on this branch, and a countdown until the cache expires. Enter to toggle each segment. CLI id: `cache`.",
     chips: "Notify-status lane fed by `@wierdbytes/pi-events` consumers. CLI id: `chips`.",
     stash: "`📦 N` showing how many prompts are saved. CLI id: `stash`.",
   };
@@ -1075,7 +1141,7 @@ export default function (pi: ExtensionAPI) {
       // Each block is its own row, listed in the snapshot order at
       // modal-open time. Enter on a block opens its per-block
       // sub-menu (visibility toggle, move actions, plus the inline
-      // sub-toggles for model→thinking and tokens→counters). The
+      // sub-toggles for model→thinking and cache→segments). The
       // value cell reads `eventsConfig.layout` on every render so the
       // position number (`#N`) and on/off state stay in sync with
       // live mutations.
@@ -1337,11 +1403,10 @@ export default function (pi: ExtensionAPI) {
       `layout:        ${formatLayoutLine()}`,
       `  separator:   ${JSON.stringify(layout.separator)}`,
       `  model.think: ${layout.model.showThinking ? "yes" : "no"}`,
-      `  tokens:      ${[
-        layout.tokens.input ? "in" : "-in",
-        layout.tokens.output ? "out" : "-out",
-        layout.tokens.cacheRead ? "R" : "-R",
-        layout.tokens.cacheWrite ? "W" : "-W",
+      `  cache:       ${[
+        layout.cache.hitRate ? "hit" : "-hit",
+        layout.cache.savings ? "savings" : "-savings",
+        layout.cache.timer ? "timer" : "-timer",
       ].join(" ")}`,
       `subagents:     ${subagents.enabled ? "on" : "off"} (${counts.running} running / ${counts.created} queued / ${counts.total} total)`,
       `  long-ms:     ${subagents.longCompletionMs}`,
@@ -1372,7 +1437,7 @@ export default function (pi: ExtensionAPI) {
           {} as Record<BlockId, boolean>,
         ),
         model: { showThinking: true },
-        tokens: { input: true, output: true, cacheRead: true, cacheWrite: true },
+        cache: { hitRate: true, savings: true, timer: true },
       });
       ctx.ui.notify("layout: reset to defaults", "info");
       return;

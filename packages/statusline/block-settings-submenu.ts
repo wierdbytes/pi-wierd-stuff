@@ -5,8 +5,7 @@
  * row that has block-specific knobs. Two blocks need this:
  *
  *   - `model` \xb7 a single `Show thinking level` toggle.
- *   - `tokens` \xb7 four counter toggles (`input` / `output` /
- *     `cacheRead` / `cacheWrite`).
+ *   - `cache` \xb7 hit-rate, savings and expiry-timer segment toggles.
  *
  * Other blocks (`path`, `git`, `context`, `cost`, `chips`, `stash`)
  * have nothing to configure inside themselves \u2014 visibility lives on
@@ -67,35 +66,25 @@ export function buildBlockSettingsRows(
     ];
   }
 
-  if (blockId === "tokens") {
+  if (blockId === "cache") {
     return [
       {
-        id: "tokens.input",
-        label: "Show input (\u2191)",
-        value: layout.tokens.input,
-        toggle: (current) => ({ tokens: { ...current.tokens, input: !current.tokens.input } }),
+        id: "cache.hitRate",
+        label: "Show hit rate (99.9% (200k/200))",
+        value: layout.cache.hitRate,
+        toggle: (current) => ({ cache: { ...current.cache, hitRate: !current.cache.hitRate } }),
       },
       {
-        id: "tokens.output",
-        label: "Show output (\u2193)",
-        value: layout.tokens.output,
-        toggle: (current) => ({ tokens: { ...current.tokens, output: !current.tokens.output } }),
+        id: "cache.savings",
+        label: "Show savings (-$0.86 / +$0.15)",
+        value: layout.cache.savings,
+        toggle: (current) => ({ cache: { ...current.cache, savings: !current.cache.savings } }),
       },
       {
-        id: "tokens.cacheRead",
-        label: "Show cache read (R)",
-        value: layout.tokens.cacheRead,
-        toggle: (current) => ({
-          tokens: { ...current.tokens, cacheRead: !current.tokens.cacheRead },
-        }),
-      },
-      {
-        id: "tokens.cacheWrite",
-        label: "Show cache write (W)",
-        value: layout.tokens.cacheWrite,
-        toggle: (current) => ({
-          tokens: { ...current.tokens, cacheWrite: !current.tokens.cacheWrite },
-        }),
+        id: "cache.timer",
+        label: "Show expiry timer (4:21)",
+        value: layout.cache.timer,
+        toggle: (current) => ({ cache: { ...current.cache, timer: !current.cache.timer } }),
       },
     ];
   }
@@ -106,7 +95,7 @@ export function buildBlockSettingsRows(
 /** True when `blockId` has at least one block-specific knob \u2014 used by
  *  `index.ts` to decide whether to register an `openSubmenu`. */
 export function blockHasSubSettings(blockId: BlockId): boolean {
-  return blockId === "model" || blockId === "tokens";
+  return blockId === "model" || blockId === "cache";
 }
 
 export interface CreateBlockSettingsSubmenuArgs {

@@ -232,8 +232,8 @@ export function setDisplayConfig(
 
 /**
  * Patch the `layout` slice and persist. Sub-objects (`model`,
- * `tokens`) merge field-by-field so callers can pass partial slices
- * (e.g. `{ tokens: { input: false } }` keeps the other counters).
+ * `cache`) merge field-by-field so callers can pass partial slices
+ * (e.g. `{ cache: { savings: false } }` keeps the hit-rate toggle).
  * The result is run through `normaliseLayoutConfig` so an invalid
  * `order` / `separator` falls back to defaults the same way as a
  * hand-edited file.
@@ -246,7 +246,7 @@ export function setLayoutConfig(
     order: patch.order ? [...patch.order] : [...config.layout.order],
     enabled: { ...config.layout.enabled, ...(patch.enabled ?? {}) },
     model: { ...config.layout.model, ...(patch.model ?? {}) },
-    tokens: { ...config.layout.tokens, ...(patch.tokens ?? {}) },
+    cache: { ...config.layout.cache, ...(patch.cache ?? {}) },
     separator: patch.separator ?? config.layout.separator,
   };
   const next: EventsConfig = {

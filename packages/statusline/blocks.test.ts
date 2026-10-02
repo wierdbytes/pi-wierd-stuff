@@ -28,6 +28,7 @@ import {
   composeStatusLine,
   type RenderInputs,
 } from "./blocks.ts";
+import { EMPTY_CACHE_STATS } from "./cache-stats.ts";
 import { cloneDefaultLayout } from "./layout-config.ts";
 
 /** Build a synthetic `RenderInputs` with sensible defaults. */
@@ -43,10 +44,8 @@ function makeInputs(overrides: Partial<RenderInputs> = {}): RenderInputs {
     thinkingLevel: "medium",
     thinkingLevelMap: undefined,
     modelReasoning: true,
-    totalInput: 1500,
-    totalOutput: 700,
-    totalCacheRead: 0,
-    totalCacheWrite: 0,
+    cache: { ...EMPTY_CACHE_STATS },
+    cacheRemainingMs: null,
     stashCount: 0,
     chips: [],
     iconSet: "ascii",
@@ -158,32 +157,97 @@ describe("block renderers (in isolation)", () => {
     expect(BLOCK_RENDERERS.cost(makeInputs({ cost: 12.345 }))).toContain("12.35");
   });
 
-  it("renderTokens respects each sub-toggle independently", () => {
-    const layout = cloneDefaultLayout();
-    layout.tokens = { input: false, output: true, cacheRead: false, cacheWrite: false };
-    const out = BLOCK_RENDERERS.tokens(
+  it("renderCache shows hit rate, read/uncached and savings", () => {
+    const out = BLOCK_RENDERERS.cache(
       makeInputs({
-        layout,
-        totalInput: 999,
-        totalOutput: 555,
-        totalCacheRead: 111,
-        totalCacheWrite: 222,
+        iconSet: "nerd-font",
+        cache: { cacheRead: 200_000, uncached: 200, cacheWrite: 150, warmCost: 0, delta: -0.861 },
       }),
     );
-    expect(out).not.toContain("↑"); // input gated off
-    expect(out).toContain("↓"); // output kept on
-    expect(out).not.toContain("R"); // cacheRead gated off
-    expect(out).not.toContain("W"); // cacheWrite gated off
+    expect(out).toBe(
+      `${C_GREEN}\uf1c0 99.9%${C_RESET} ${C_GRAY}(200k/200)${C_RESET} ${C_GREEN}-$0.86${C_RESET}`,
+    );
   });
 
-  it("renderTokens is empty when every counter is gated or zero", () => {
-    const out = BLOCK_RENDERERS.tokens(
+  it("renderCache colors hit rate green >= 98, yellow >= 90, red below", () => {
+    const at = (pct: number) =>
+      BLOCK_RENDERERS.cache(
+        makeInputs({ cache: { cacheRead: pct, uncached: 100 - pct, cacheWrite: 1, warmCost: 0, delta: null } }),
+      );
+    expect(at(98).startsWith(`${C_GREEN}98.0%`)).toBe(true);
+    expect(at(97).startsWith(`${C_YELLOW}97.0%`)).toBe(true);
+    expect(at(90).startsWith(`${C_YELLOW}90.0%`)).toBe(true);
+    expect(at(89).startsWith(`${C_RED}89.0%`)).toBe(true);
+  });
+
+  it("renderCache floors the percentage so 99.96% never reads 100.0%", () => {
+    const out = BLOCK_RENDERERS.cache(
+      makeInputs({ cache: { cacheRead: 9996, uncached: 4, cacheWrite: 4, warmCost: 0, delta: null } }),
+    );
+    expect(out).toContain("99.9%");
+  });
+
+  it("renderCache prints overspend in red and near-zero in gray", () => {
+    const base = { cacheRead: 10, uncached: 90, cacheWrite: 90, warmCost: 0 };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ cache: { ...base, delta: 0.15 } }))).toContain(
+      `${C_RED}+$0.15${C_RESET}`,
+    );
+    expect(BLOCK_RENDERERS.cache(makeInputs({ cache: { ...base, delta: 0.004 } }))).toContain(
+      `${C_GRAY}$0.00${C_RESET}`,
+    );
+  });
+
+  it("renderCache omits the icon for non nerd-font sets", () => {
+    const out = BLOCK_RENDERERS.cache(
       makeInputs({
-        totalInput: 0,
-        totalOutput: 0,
-        totalCacheRead: 0,
-        totalCacheWrite: 0,
+        iconSet: "plain",
+        cache: { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null },
       }),
+    );
+    expect(out.startsWith(`${C_GREEN}99.0%${C_RESET}`)).toBe(true);
+  });
+
+  it("renderCache respects each sub-toggle independently", () => {
+    const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: -1 };
+    const noHit = cloneDefaultLayout();
+    noHit.cache = { hitRate: false, savings: true, timer: true };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ layout: noHit, cache }))).toBe(
+      `${C_GREEN}-$1.00${C_RESET}`,
+    );
+    const noSavings = cloneDefaultLayout();
+    noSavings.cache = { hitRate: true, savings: false, timer: true };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ layout: noSavings, cache }))).not.toContain("$");
+    const none = cloneDefaultLayout();
+    none.cache = { hitRate: false, savings: false, timer: false };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ layout: none, cache }))).toBe("");
+  });
+
+  it("renderCache appends the expiry countdown with the nerd-font hourglass", () => {
+    const layout = cloneDefaultLayout();
+    layout.cache = { hitRate: false, savings: false, timer: true };
+    const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
+    const render = (ms: number) =>
+      BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout, cache, cacheRemainingMs: ms }));
+    expect(render(261_000)).toBe(`${C_GREEN}\u{F051F} 4:21${C_RESET}`);
+    expect(render(120_000)).toBe(`${C_YELLOW}\u{F051F} 2:00${C_RESET}`);
+    expect(render(120_400)).toBe(`${C_GREEN}\u{F051F} 2:01${C_RESET}`);
+    expect(render(300)).toBe(`${C_YELLOW}\u{F051F} 0:01${C_RESET}`);
+    expect(render(0)).toBe(`${C_RED}\u{F06AD} 0:00${C_RESET}`);
+  });
+
+  it("renderCache hides the countdown when unknown or toggled off", () => {
+    const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ cache, cacheRemainingMs: null }))).not.toContain(":");
+    const layout = cloneDefaultLayout();
+    layout.cache.timer = false;
+    expect(
+      BLOCK_RENDERERS.cache(makeInputs({ layout, cache, cacheRemainingMs: 60_000 })),
+    ).not.toContain("1:00");
+  });
+
+  it("renderCache is empty when the cache was never read or written", () => {
+    const out = BLOCK_RENDERERS.cache(
+      makeInputs({ cache: { cacheRead: 0, uncached: 5000, cacheWrite: 0, warmCost: 0, delta: null } }),
     );
     expect(out).toBe("");
   });
@@ -237,7 +301,7 @@ describe("composeStatusLine", () => {
     const layout = cloneDefaultLayout();
     // Put stash before path so the relative ordering is testable
     // without depending on optional renderers being non-empty.
-    layout.order = ["path", "model", "git", "context", "cost", "tokens", "chips", "stash"];
+    layout.order = ["path", "model", "git", "context", "cost", "cache", "chips", "stash"];
     const inputs = makeInputs({ cwd: "/some/path/here" });
     const out = composeStatusLine(layout, inputs);
     const pathIdx = out.indexOf("/here");

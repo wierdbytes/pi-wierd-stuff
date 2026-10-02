@@ -44,7 +44,14 @@ export type IconKey =
   | "warning"
   | "error"
   | "scheduled"
-  | "agents";
+  | "agents"
+  /** `cache` block prefix. Nerd Font only for now; other sets render
+   *  the block without an icon (empty string). */
+  | "cache"
+  /** `cache` block countdown while the prompt cache is alive / once it expired.
+   *  Nerd Font only for now; other sets render the countdown without an icon. */
+  | "cacheTimer"
+  | "cacheExpired";
 
 /** Ordered list of valid icon-set ids (also used by the modal field). */
 export const VALID_ICON_SETS: readonly IconSet[] = [
@@ -95,6 +102,9 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     error: "\uf467",     //  nf-oct-x
     scheduled: "\uf43a", //  nf-oct-clock
     agents: "\u{F02A9}", // 󰊩 nf-md-robot
+    cache: "\uf1c0",     //  nf-fa-database
+    cacheTimer: "\u{F051F}",   // 󰔟 nf-md-timer_sand
+    cacheExpired: "\u{F06AD}", // 󰚭 nf-md-timer_sand_empty
   },
   plain: {
     model: "◆",
@@ -107,6 +117,9 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     error: "✗",
     scheduled: "▷",
     agents: "◉",
+    cache: "",
+    cacheTimer: "",
+    cacheExpired: "",
   },
   ascii: {
     model: "[m]",
@@ -119,6 +132,9 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     error: "[x]",
     scheduled: "[@]",
     agents: "[a]",
+    cache: "",
+    cacheTimer: "",
+    cacheExpired: "",
   },
   minimal: {
     model: "▸",
@@ -131,6 +147,9 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     error: "✗",
     scheduled: "@",
     agents: "*",
+    cache: "",
+    cacheTimer: "",
+    cacheExpired: "",
   },
   emoji: {
     model: "🤖",
@@ -143,6 +162,9 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     error: "❌",
     scheduled: "⏰",
     agents: "🤖",
+    cache: "",
+    cacheTimer: "",
+    cacheExpired: "",
   },
 };
 
