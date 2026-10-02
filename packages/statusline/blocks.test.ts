@@ -46,6 +46,7 @@ function makeInputs(overrides: Partial<RenderInputs> = {}): RenderInputs {
     modelReasoning: true,
     cache: { ...EMPTY_CACHE_STATS },
     cacheRemainingMs: null,
+    cacheWarmerForced: false,
     stashCount: 0,
     chips: [],
     iconSet: "ascii",
@@ -240,6 +241,19 @@ describe("block renderers (in isolation)", () => {
     expect(render(30_400)).toBe(`${C_GRAY}\u{F051F} 0:31${C_RESET}`);
     expect(render(300)).toBe(`${C_YELLOW}\u{F051F} 0:01${C_RESET}`);
     expect(render(0)).toBe(`${C_RED}\u{F06AD} 0:00${C_RESET}`);
+  });
+
+  it("renderCache appends the warmer icon after the countdown while forced warming is on", () => {
+    const layout = cloneDefaultLayout();
+    layout.cache = { hitRate: false, savings: false, timer: true };
+    const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
+    const render = (iconSet: RenderInputs["iconSet"], cacheWarmerForced: boolean) =>
+      BLOCK_RENDERERS.cache(
+        makeInputs({ iconSet, layout, cache, cacheRemainingMs: 292_000, cacheWarmerForced }),
+      );
+    expect(render("nerd-font", true)).toBe(`${C_GRAY}\u{F051F} 4:52 \uf2f1${C_RESET}`);
+    expect(render("nerd-font", false)).toBe(`${C_GRAY}\u{F051F} 4:52${C_RESET}`);
+    expect(render("plain", true)).toBe(`${C_GRAY}4:52 *${C_RESET}`);
   });
 
   it("renderCache hides the countdown when unknown or toggled off", () => {

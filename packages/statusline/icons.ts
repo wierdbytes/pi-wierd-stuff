@@ -51,7 +51,9 @@ export type IconKey =
   /** `cache` block countdown while the prompt cache is alive / once it expired.
    *  Nerd Font only for now; other sets render the countdown without an icon. */
   | "cacheTimer"
-  | "cacheExpired";
+  | "cacheExpired"
+  /** Appended after the `cache` countdown while `/warmer` forces cache warming. */
+  | "cacheWarmer";
 
 /** Ordered list of valid icon-set ids (also used by the modal field). */
 export const VALID_ICON_SETS: readonly IconSet[] = [
@@ -105,6 +107,7 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     cache: "\uf1c0",     //  nf-fa-database
     cacheTimer: "\u{F051F}",   // 󰔟 nf-md-timer_sand
     cacheExpired: "\u{F06AD}", // 󰚭 nf-md-timer_sand_empty
+    cacheWarmer: "\uf2f1",     //  nf-fa-rotate
   },
   plain: {
     model: "◆",
@@ -120,6 +123,7 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     cache: "",
     cacheTimer: "",
     cacheExpired: "",
+    cacheWarmer: "*",
   },
   ascii: {
     model: "[m]",
@@ -135,6 +139,7 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     cache: "",
     cacheTimer: "",
     cacheExpired: "",
+    cacheWarmer: "*",
   },
   minimal: {
     model: "▸",
@@ -150,6 +155,7 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     cache: "",
     cacheTimer: "",
     cacheExpired: "",
+    cacheWarmer: "*",
   },
   emoji: {
     model: "🤖",
@@ -165,6 +171,7 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
     cache: "",
     cacheTimer: "",
     cacheExpired: "",
+    cacheWarmer: "*",
   },
 };
 

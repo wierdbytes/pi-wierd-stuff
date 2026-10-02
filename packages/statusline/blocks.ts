@@ -329,6 +329,8 @@ export interface RenderInputs {
   cache: CacheStats;
   /** Ms until the branch's prompt cache entry expires; `null` when unknown / never cached. */
   cacheRemainingMs: number | null;
+  /** `/warmer` forced cache warming is on for this session. */
+  cacheWarmerForced: boolean;
   stashCount: number;
   chips: NotifyStatusEvent[];
   iconSet: IconSet;
@@ -408,7 +410,8 @@ const renderCost: BlockRenderer = (inputs) => {
  *     what it would have paid without caching (see `cache-stats.ts`).
  *   - timer: countdown until the prompt cache entry expires, refreshed
  *     by real requests and pi's cache warming (see `cache-timer.ts`).
- *     Gray > 0:30, yellow up to 0:30, red at 0:00.
+ *     Gray > 0:30, yellow up to 0:30, red at 0:00. Followed by the
+ *     `cacheWarmer` icon while `/warmer` forces cache warming.
  *
  * Each segment is gated by `layout.cache.*`. Returns "" when the
  * provider never touched the cache (nothing read or written) or every
@@ -441,7 +444,8 @@ const renderCache: BlockRenderer = (inputs) => {
   if (showTimer && remaining !== null) {
     const timerIcon = resolveIcon(inputs.iconSet, remaining > 0 ? "cacheTimer" : "cacheExpired");
     const text = formatCountdown(remaining);
-    const body = timerIcon ? `${timerIcon} ${text}` : text;
+    const warmerIcon = inputs.cacheWarmerForced ? resolveIcon(inputs.iconSet, "cacheWarmer") : "";
+    const body = [timerIcon, text, warmerIcon].filter(Boolean).join(" ");
     segments.push(`${cacheTimerColorFor(remaining)}${body}${C_RESET}`);
   }
   return segments.join(" ");

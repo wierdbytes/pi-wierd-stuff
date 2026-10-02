@@ -28,6 +28,7 @@ import {
   type InflightRequest,
   type PromptCacheLookup,
 } from "./cache-timer.ts";
+import { CACHE_WARMER_MIN_SAVINGS, forcedWarmingDecision } from "./cache-warmer.ts";
 import { getGitStatus, invalidateGitStatus } from "./git-status.ts";
 import {
   type EventsConfig,
@@ -125,6 +126,8 @@ function buildToastLine(active: ActiveToast, width: number, set: IconSet): strin
 interface CacheClock {
   /** Real request currently streaming (refreshes the cache before it is persisted). */
   getInflight: () => InflightRequest | null;
+  /** `/warmer` forced cache warming is on for this session. */
+  isWarmerForced: () => boolean;
   ticker: CacheCountdownTicker;
 }
 
@@ -204,6 +207,7 @@ function renderStatusContent(
     modelReasoning: ctx.model?.reasoning ?? false,
     cache: stats.cache,
     cacheRemainingMs: stats.cacheRemaining,
+    cacheWarmerForced: cacheClock.isWarmerForced(),
     stashCount,
     chips: events.chips,
     iconSet,
@@ -295,12 +299,14 @@ function installStatusWidget(
   getIconSet: () => IconSet,
   getLayout: () => LayoutConfig,
   getInflight: () => InflightRequest | null,
+  isWarmerForced: () => boolean,
 ) {
   ctx.ui.setWidget(
     "wierd-statusline",
     (tui) => {
       const cacheClock: CacheClock = {
         getInflight,
+        isWarmerForced,
         ticker: new CacheCountdownTicker(() => tui.requestRender()),
       };
       return {
@@ -569,6 +575,9 @@ export default function (pi: ExtensionAPI) {
   // request start, long before the message is persisted to the branch,
   // so the cache countdown folds it in from here (see cache-timer.ts).
   let inflightRequest: InflightRequest | null = null;
+  // `/warmer` override for pi's cache-warming decisions (see
+  // cache-warmer.ts). Session-local: off on every session_start.
+  let cacheWarmerForced = false;
 
   // Persistent config + the events tracker need to be initialized before
   // the session-local toggle mirrors below, since those mirrors read
@@ -842,6 +851,7 @@ export default function (pi: ExtensionAPI) {
       () => eventsConfig.display.iconSet,
       () => eventsConfig.layout,
       () => inflightRequest,
+      () => cacheWarmerForced,
     );
     ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
     if (footerHidden) hidePiFooter(ctx);
@@ -894,7 +904,24 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    cacheWarmerForced = false;
     if (statuslineEnabled) enableStatusline(ctx);
+  });
+
+  pi.on("cache_warming_decision", async (event) => forcedWarmingDecision(cacheWarmerForced, event));
+
+  pi.registerCommand("warmer", {
+    description: "Toggle forced prompt-cache warming for this session",
+    handler: async (_args, ctx) => {
+      cacheWarmerForced = !cacheWarmerForced;
+      activeTui?.requestRender();
+      ctx.ui.notify(
+        cacheWarmerForced
+          ? `Forced cache warming on (min savings $${CACHE_WARMER_MIN_SAVINGS.toFixed(2)}). Idle warming requires cacheWarming: "idle".`
+          : "Forced cache warming off",
+        "info",
+      );
+    },
   });
 
   // ────────────────────────── display-side-effect bus ───────────────────────

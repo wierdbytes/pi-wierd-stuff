@@ -55,6 +55,8 @@ fully configurable — see [Layout](#layout) below):
     pi's cache warming refreshes. Lifetime comes from the model's
     `promptCache` tiers: the long tier when the request reported 1h
     cache writes or `PI_CACHE_RETENTION=long`, the short tier otherwise.
+    While `/warmer` is on, the timer is followed by `` (`*` in the
+    other icon sets), e.g. `󰔟 4:52 `.
 
   Hidden until the provider has read from or written to the cache.
 - **Stash** — `📦 N` showing how many prompts are saved in the stash history
@@ -179,6 +181,7 @@ Restart pi to activate.
 - `/statusline events [status|log|clear|toast-ms <level> <ms>]` — inspect / tune the chip+toast pipeline
 - `/statusline icons [nerd-font|plain|ascii|minimal|emoji|status]` — switch the icon set used for model / thinking / stash / toast levels / subagents chip
 - `/statusline layout [status|reset|toggle <block>|move <block> <up|down|top|bottom>]` — configure block order + visibility (see [Layout](#layout))
+- `/warmer` — toggle forced prompt-cache warming for the current session (off by default, resets on new / resumed / forked sessions). While on, pi's cache-warming decisions are overridden: a refresh is sent whenever the avoided cache miss exceeds the refresh cost by at least $0.01, ignoring pi's idle continuation estimate (15%) and its $0.05 threshold. pi's own limits still apply: the model needs a known cache lifetime, idle warming needs `cacheWarming: "idle"` in pi settings, and warming stops after 30 minutes idle / 60 minutes of an active run.
 - `/statusline subagents [status|on|off|long-ms <ms>|toast-failure <on|off>|toast-long <on|off>|toast-scheduled <on|off>]` — control the subagents bridge (see below)
 
 ## Icon sets
