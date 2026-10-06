@@ -1,13 +1,12 @@
 {
   "name": "@wierdbytes/pi-statusline",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "description": "Minimal modular statusline extension for pi coding agent",
   "type": "module",
   "files": [
     "*.ts",
     "*.md",
     "*.json",
-    "fixed-editor/**/*.ts",
     "assets/**"
   ],
   "keywords": [

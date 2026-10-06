@@ -1,5 +1,4 @@
 import {
-  copyToClipboard,
   CustomEditor,
   type ExtensionAPI,
   type ExtensionContext,
@@ -71,8 +70,6 @@ import { blockHasSubSettings, createBlockSettingsSubmenu } from "./block-setting
 import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
 import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
 import { SubagentsTracker } from "./subagents-tracker.ts";
-import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
-import { emergencyTerminalModeReset, TerminalSplitCompositor } from "./fixed-editor/terminal-split.ts";
 
 const PROMPT_PADDING = 0;
 
@@ -228,8 +225,6 @@ function renderStatusContent(
 function makeEditorFactory(
   ctx: ExtensionContext,
   setActiveTui: (tui: TUI | undefined) => void,
-  setCurrentEditor: (editor: any) => void,
-  onEditorMounted: (editor: any) => void,
 ): EditorFactory {
   return (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
     setActiveTui(tui);
@@ -264,15 +259,7 @@ function makeEditorFactory(
       }
     }
 
-    const editor = new WierdStatuslineEditor();
-    const originalRender = editor.render.bind(editor);
-    editor.render = (width: number): string[] => {
-      const lines = originalRender(width);
-      onEditorMounted(editor);
-      return lines;
-    };
-    setCurrentEditor(editor);
-    return editor;
+    return new WierdStatuslineEditor();
   };
 }
 
@@ -536,41 +523,12 @@ async function insertStashHistoryEntry(ctx: ExtensionContext, selected: string):
   return false;
 }
 
-function findContainerWithChild(tui: any, child: any): { container: any; index: number } | null {
-  const children = Array.isArray(tui?.children) ? tui.children : [];
-  const index = children.findIndex(
-    (candidate: any) => Array.isArray(candidate?.children) && candidate.children.includes(child),
-  );
-  if (index === -1) return null;
-  return { container: children[index], index };
-}
-
 export default function (pi: ExtensionAPI) {
   let activeTui: TUI | undefined;
   const setActiveTui = (tui: TUI | undefined) => {
     activeTui = tui;
   };
 
-  let currentEditor: any = null;
-  const setCurrentEditor = (editor: any) => {
-    currentEditor = editor;
-  };
-
-  const tryInstallFixedEditor = () => {
-    if (!statuslineEnabled || !fixedEditorEnabled) return;
-    if (fixedEditorCompositor) return;
-    if (!activeTui || !currentCtx || !currentEditor) return;
-    if (!findContainerWithChild(activeTui, currentEditor)) return;
-    installFixedEditorCompositor(currentCtx, activeTui);
-  };
-
-  let fixedEditorCompositor: TerminalSplitCompositor | null = null;
-  let fixedEditorContainer: any = null;
-  let fixedStatusContainer: any = null;
-  let fixedWidgetContainerAbove: any = null;
-  let fixedWidgetContainerBelow: any = null;
-  let fixedFooterComponent: any = null;
-  let currentCtx: ExtensionContext | undefined;
   // Real request currently streaming. Its cache refresh happens at
   // request start, long before the message is persisted to the branch,
   // so the cache countdown folds it in from here (see cache-timer.ts).
@@ -590,8 +548,6 @@ export default function (pi: ExtensionAPI) {
   // in lockstep.
   let footerHidden = eventsConfig.display.footerHidden;
   let statuslineEnabled = eventsConfig.display.statuslineEnabled;
-  let fixedEditorEnabled = eventsConfig.display.fixedEditorEnabled;
-  let mouseScrollEnabled = eventsConfig.display.mouseScrollEnabled;
 
   let stashedEditorText: string | null = null;
   let stashedPromptHistory: string[] = readPersistedStashHistory();
@@ -697,89 +653,6 @@ export default function (pi: ExtensionAPI) {
     activeTui?.requestRender();
   };
 
-  function teardownFixedEditorCompositor(options?: { resetExtendedKeyboardModes?: boolean }) {
-    const hadCompositor = fixedEditorCompositor !== null;
-    fixedEditorCompositor?.dispose(options);
-    if (!hadCompositor && options?.resetExtendedKeyboardModes) {
-      try {
-        process.stdout.write(emergencyTerminalModeReset());
-      } catch {
-        // Shutdown cleanup cannot surface useful terminal write failures.
-      }
-    }
-    fixedEditorCompositor = null;
-    fixedEditorContainer = null;
-    fixedStatusContainer = null;
-    fixedWidgetContainerAbove = null;
-    fixedWidgetContainerBelow = null;
-    fixedFooterComponent = null;
-  }
-
-  function installFixedEditorCompositor(ctx: ExtensionContext, tui: any) {
-    teardownFixedEditorCompositor();
-
-    if (!ctx.hasUI || !fixedEditorEnabled) return;
-    if (!tui?.terminal || typeof tui.terminal.write !== "function") return;
-    if (!currentEditor) return;
-
-    const editorContainerMatch = findContainerWithChild(tui, currentEditor);
-    if (!editorContainerMatch) return;
-
-    const tuiChildren = Array.isArray(tui.children) ? tui.children : [];
-    fixedEditorContainer = editorContainerMatch.container;
-    const statusContainerCandidate = tuiChildren[editorContainerMatch.index - 2] ?? null;
-    fixedStatusContainer =
-      statusContainerCandidate && typeof statusContainerCandidate.render === "function"
-        ? statusContainerCandidate
-        : null;
-    fixedWidgetContainerAbove = tuiChildren[editorContainerMatch.index - 1] ?? null;
-    fixedWidgetContainerBelow = tuiChildren[editorContainerMatch.index + 1] ?? null;
-    const footerCandidate = tuiChildren[editorContainerMatch.index + 2] ?? null;
-    fixedFooterComponent =
-      footerCandidate && typeof footerCandidate.render === "function" ? footerCandidate : null;
-
-    const compositor: TerminalSplitCompositor = new TerminalSplitCompositor({
-      tui,
-      terminal: tui.terminal,
-      mouseScroll: mouseScrollEnabled,
-      onCopySelection: (text) => {
-        void copyToClipboard(text).catch(() => {});
-      },
-      getShowHardwareCursor: () =>
-        typeof tui.getShowHardwareCursor === "function" && tui.getShowHardwareCursor(),
-      renderCluster: (width, terminalRows) => {
-        const statusContainerLines = fixedStatusContainer
-          ? compositor.renderHidden(fixedStatusContainer, width).filter((line) => visibleWidth(line) > 0)
-          : [];
-        const aboveWidgetLines = fixedWidgetContainerAbove
-          ? compositor.renderHidden(fixedWidgetContainerAbove, width)
-          : [];
-        const belowWidgetLines = fixedWidgetContainerBelow
-          ? compositor.renderHidden(fixedWidgetContainerBelow, width)
-          : [];
-        const footerLines = fixedFooterComponent
-          ? compositor.renderHidden(fixedFooterComponent, width).filter((line) => visibleWidth(line) > 0)
-          : [];
-        return renderFixedEditorCluster({
-          width,
-          terminalRows,
-          statusLines: [...statusContainerLines, ...aboveWidgetLines],
-          editorLines: fixedEditorContainer ? compositor.renderHidden(fixedEditorContainer, width) : [],
-          secondaryLines: [...belowWidgetLines, ...footerLines],
-        });
-      },
-    });
-
-    fixedEditorCompositor = compositor;
-    if (fixedStatusContainer?.render) compositor.hideRenderable(fixedStatusContainer);
-    if (fixedWidgetContainerAbove?.render) compositor.hideRenderable(fixedWidgetContainerAbove);
-    compositor.hideRenderable(fixedEditorContainer);
-    if (fixedWidgetContainerBelow?.render) compositor.hideRenderable(fixedWidgetContainerBelow);
-    if (fixedFooterComponent?.render) compositor.hideRenderable(fixedFooterComponent);
-    compositor.install();
-    tui.requestRender(true);
-  }
-
   pi.on("thinking_level_select", async () => {
     activeTui?.requestRender();
   });
@@ -808,7 +681,6 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     inflightRequest = null;
-    teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe = null;
     // Drop only the render hook — do NOT dispose the events tracker.
@@ -842,7 +714,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   const enableStatusline = (ctx: ExtensionContext) => {
-    currentCtx = ctx;
     installStatusWidget(
       pi,
       ctx,
@@ -853,7 +724,7 @@ export default function (pi: ExtensionAPI) {
       () => inflightRequest,
       () => cacheWarmerForced,
     );
-    ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui, setCurrentEditor, tryInstallFixedEditor));
+    ctx.ui.setEditorComponent(makeEditorFactory(ctx, setActiveTui));
     if (footerHidden) hidePiFooter(ctx);
     else restorePiFooter(ctx);
 
@@ -888,7 +759,6 @@ export default function (pi: ExtensionAPI) {
   };
 
   const disableStatusline = (ctx: ExtensionContext) => {
-    teardownFixedEditorCompositor();
     ctx.ui.setWidget("wierd-statusline", undefined);
     ctx.ui.setEditorComponent(undefined);
     restorePiFooter(ctx);
@@ -900,7 +770,6 @@ export default function (pi: ExtensionAPI) {
     // there waiting to be rendered.
     eventsTrackerOff?.();
     eventsTrackerOff = null;
-    currentEditor = null;
   };
 
   pi.on("session_start", async (_event, ctx) => {
@@ -948,29 +817,6 @@ export default function (pi: ExtensionAPI) {
       if (statuslineEnabled) {
         if (footerHidden) hidePiFooter(ctx);
         else restorePiFooter(ctx);
-        // Footer toggle replaces the component in tui.children, so the
-        // compositor's captured reference is stale; reinstall to capture
-        // the new footer (or EmptyFooter) and render it under the editor.
-        if (fixedEditorEnabled && activeTui) installFixedEditorCompositor(ctx, activeTui);
-      }
-    }
-
-    if ("fixedEditorEnabled" in patch && patch.fixedEditorEnabled !== fixedEditorEnabled) {
-      fixedEditorEnabled = next.fixedEditorEnabled;
-      if (statuslineEnabled && activeTui) {
-        if (fixedEditorEnabled) installFixedEditorCompositor(ctx, activeTui);
-        else {
-          teardownFixedEditorCompositor();
-          activeTui.requestRender(true);
-        }
-      }
-    }
-
-    if ("mouseScrollEnabled" in patch && patch.mouseScrollEnabled !== mouseScrollEnabled) {
-      mouseScrollEnabled = next.mouseScrollEnabled;
-      // Compositor captures the flag at install time; reinstall to pick up.
-      if (statuslineEnabled && fixedEditorEnabled && activeTui) {
-        installFixedEditorCompositor(ctx, activeTui);
       }
     }
 
@@ -1134,22 +980,6 @@ export default function (pi: ExtensionAPI) {
         label: "Hide pi footer",
         description: "Hide pi's built-in footer (we render our own statusline row).",
         value: display.footerHidden,
-      },
-      {
-        key: "fixedEditorEnabled",
-        type: "boolean",
-        tab: "display",
-        label: "Fixed editor",
-        description: "Pin the editor to the bottom of the terminal via the split compositor.",
-        value: display.fixedEditorEnabled,
-      },
-      {
-        key: "mouseScrollEnabled",
-        type: "boolean",
-        tab: "display",
-        label: "Mouse scroll",
-        description: "Let the fixed-editor compositor handle mouse-scroll events.",
-        value: display.mouseScrollEnabled,
       },
       {
         key: "iconSet",
@@ -1329,8 +1159,6 @@ export default function (pi: ExtensionAPI) {
         // Display-tab fields all share the same side-effect bus.
         if (key === "statuslineEnabled") return applyDisplayChange(ctx, { statuslineEnabled: value as boolean });
         if (key === "footerHidden") return applyDisplayChange(ctx, { footerHidden: value as boolean });
-        if (key === "fixedEditorEnabled") return applyDisplayChange(ctx, { fixedEditorEnabled: value as boolean });
-        if (key === "mouseScrollEnabled") return applyDisplayChange(ctx, { mouseScrollEnabled: value as boolean });
         if (key === "iconSet") return applyDisplayChange(ctx, { iconSet: value as IconSet });
 
         // Layout-tab fields all route through `applyLayoutChange`.
@@ -1418,8 +1246,6 @@ export default function (pi: ExtensionAPI) {
     const lines = [
       `statusline:    ${display.statuslineEnabled ? "on" : "off"}`,
       `footer:        ${display.footerHidden ? "hidden" : "shown"}`,
-      `fixed editor:  ${display.fixedEditorEnabled ? "on" : "off"}`,
-      `mouse scroll:  ${display.mouseScrollEnabled ? "on" : "off"}`,
       `icon set:      ${display.iconSet}`,
       `chips:         ${snap.chips.length}`,
       `toast:         ${snap.toast ? `${snap.toast.event.level ?? "info"} — ${snap.toast.event.message}` : "(none)"}`,
@@ -1544,7 +1370,6 @@ export default function (pi: ExtensionAPI) {
     description:
       "Open the @wierdbytes/pi-statusline settings overlay (no args). Action subcommands: on | off | toggle | status | icons [set] | layout [...] | events log | events clear",
     handler: async (args, ctx) => {
-      currentCtx = ctx;
       const tokens = (args ?? "").trim().split(/\s+/).filter(Boolean);
       const cmd = tokens[0];
 

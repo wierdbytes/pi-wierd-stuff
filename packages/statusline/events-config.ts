@@ -37,10 +37,6 @@ export interface DisplayConfig {
   statuslineEnabled: boolean;
   /** True ⇒ hide pi's built-in footer (we render our own). */
   footerHidden: boolean;
-  /** Pin the editor to the bottom of the terminal via the split compositor. */
-  fixedEditorEnabled: boolean;
-  /** Allow the fixed-editor compositor to handle mouse-scroll events. */
-  mouseScrollEnabled: boolean;
   /** Active icon set for model / thinking / stash / toast-level / chip
    *  glyphs. See `./icons.ts` for the full glyph tables. Default:
    *  `"nerd-font"` — terminal-friendly Nerd Font glyphs (the original
@@ -119,8 +115,6 @@ export const DEFAULT_EVENTS_CONFIG: EventsConfig = Object.freeze({
   display: Object.freeze({
     statuslineEnabled: true,
     footerHidden: true,
-    fixedEditorEnabled: false,
-    mouseScrollEnabled: true,
     iconSet: DEFAULT_ICON_SET,
   }) as DisplayConfig,
   layout: DEFAULT_LAYOUT_CONFIG,
@@ -313,8 +307,6 @@ function mergeWithDefaults(raw: Partial<EventsConfig>): EventsConfig {
     const disp = raw.display as unknown as Record<string, unknown>;
     if (typeof disp.statuslineEnabled === "boolean") merged.display.statuslineEnabled = disp.statuslineEnabled;
     if (typeof disp.footerHidden === "boolean") merged.display.footerHidden = disp.footerHidden;
-    if (typeof disp.fixedEditorEnabled === "boolean") merged.display.fixedEditorEnabled = disp.fixedEditorEnabled;
-    if (typeof disp.mouseScrollEnabled === "boolean") merged.display.mouseScrollEnabled = disp.mouseScrollEnabled;
     if (isIconSet(disp.iconSet)) merged.display.iconSet = disp.iconSet;
   }
 
