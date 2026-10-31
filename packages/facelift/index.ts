@@ -1211,11 +1211,22 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		workingTracker.ensureRun();
 	});
 
+	// pi emits `turn_start` (awaited) right before every agent request, so it
+	// arms the tracker. Cache-warmer replays also fire `before_provider_request`
+	// but arrive outside this window (during tools or after settle) and never
+	// get a `message_end` — unguarded they would hold a segment open forever.
+	pi.on("turn_start", () => {
+		if (!faceliftConfig.showWorkingTime) return;
+		workingTracker.armRequest();
+	});
+
 	pi.on("before_provider_request", (_event, ctx) => {
 		if (!faceliftConfig.showWorkingTime) return;
 		// Start the segment when the request is dispatched (not on the first
-		// token), so time-to-first-token counts as working time too.
-		workingTracker.beginSegment();
+		// token), so time-to-first-token counts as working time too. A `false`
+		// means a cache warm-up (not armed) or a repeat payload hook for an
+		// already-open request — leave the ticker alone.
+		if (!workingTracker.beginSegment()) return;
 		stopWorkingTick();
 		renderWorkingMessage(ctx);
 		workingTick = setInterval(() => renderWorkingMessage(ctx), 1000);

@@ -61,6 +61,7 @@ export interface WorkingTimeEntry {
  * Lifecycle (driven by pi events):
  *   before_agent_start      → beginRun()   (total clock starts here)
  *   agent_start             → ensureRun()  (fallback if before_agent_start skipped)
+ *   turn_start              → armRequest() (an agent request is coming)
  *   before_provider_request → beginSegment() + start the live ticker
  *   message_update  (asst)  → addDelta()     (feed the live tps estimate)
  *   message_end     (asst)  → recordExactTokens() + endSegment() + stop ticker
@@ -68,6 +69,15 @@ export interface WorkingTimeEntry {
  *
  * Retries / auto-compaction fire their own agent_start but pi only emits
  * `agent_settled` when it truly stops, so a run is measured end-to-end.
+ *
+ * `before_provider_request` is not exclusive to agent turns: pi's prompt
+ * cache warmer replays the last request (`maxTokens: 1`) with the same
+ * options, so the hook fires for warm-ups too — mid-run while tools execute,
+ * and after the run settles in `idle` warming mode. Those requests never
+ * produce a `message_end`, so an unguarded segment would stay open and
+ * swallow tool time (or start a phantom run while idle). Segments therefore
+ * open only while armed: from `turn_start` (pi emits one before every agent
+ * request) until the assistant `message_end`.
  */
 export class WorkingTimeTracker {
 	private readonly now: () => number;
@@ -76,6 +86,7 @@ export class WorkingTimeTracker {
 	private runStart: number | undefined;
 	private runEstChars = 0;
 	private runExactTokens = 0;
+	private requestArmed = false;
 
 	constructor(now: () => number = () => Date.now()) {
 		this.now = now;
@@ -88,6 +99,7 @@ export class WorkingTimeTracker {
 		this.runStart = this.now();
 		this.runEstChars = 0;
 		this.runExactTokens = 0;
+		this.requestArmed = false;
 	}
 
 	/** Start a run only if one isn't already in progress (idempotent). */
@@ -95,14 +107,29 @@ export class WorkingTimeTracker {
 		if (this.runStart === undefined) this.beginRun();
 	}
 
-	/** Begin timing an assistant streaming segment. */
-	beginSegment(): void {
+	/**
+	 * Mark that the agent is about to issue a real request (pi `turn_start`).
+	 * Only an armed tracker lets `beginSegment` open a segment.
+	 */
+	armRequest(): void {
 		this.ensureRun();
-		if (this.segmentStart === undefined) this.segmentStart = this.now();
+		this.requestArmed = true;
 	}
 
-	/** Close the current segment, folding its duration into the total. */
+	/**
+	 * Begin timing an assistant streaming segment. Ignored unless armed (see
+	 * `armRequest`) or when a segment is already open. Returns `true` only
+	 * when a new segment was opened.
+	 */
+	beginSegment(): boolean {
+		if (!this.requestArmed || this.segmentStart !== undefined) return false;
+		this.segmentStart = this.now();
+		return true;
+	}
+
+	/** Close the current segment, folding its duration into the total, and disarm. */
 	endSegment(): void {
+		this.requestArmed = false;
 		if (this.segmentStart !== undefined) {
 			this.accumulatorMs += Math.max(0, this.now() - this.segmentStart);
 			this.segmentStart = undefined;

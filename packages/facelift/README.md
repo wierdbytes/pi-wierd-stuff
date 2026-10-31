@@ -49,7 +49,8 @@ tool output.
   `⏱ worked 45.2s (total: 1m15s) · tps: 756`
 
   - `worked` — model-only time (request dispatch → response end, so
-    time-to-first-token counts; tool execution is excluded).
+    time-to-first-token counts; tool execution and pi's prompt-cache
+    warm-up requests are excluded).
   - `total` — wall-clock time from your prompt to the final response,
     including retries, tool calls, and all other overhead.
   - `tps` — output tokens per second over the `worked` time. The live

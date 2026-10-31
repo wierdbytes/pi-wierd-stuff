@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.6
+
+- **Fix:** prompt-cache warm-ups no longer inflate `worked` time / deflate `tps` or start a phantom working timer while idle.
+
 ## 0.6.5
 
 - **Fix:** pi crashing with "extension ctx is stale" when the session was replaced or reloaded while the working timer was ticking.

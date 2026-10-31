@@ -4,9 +4,13 @@
  * The tracker measures two metrics: `worked` (model streaming only,
  * tools excluded) and `totalMs` (wall-clock from user prompt to settle,
  * retries/tools/overhead included). The wiring drives it from pi
- * lifecycle events: before_agent_start / agent_start /
+ * lifecycle events: before_agent_start / agent_start / turn_start /
  * before_provider_request / message_end / agent_settled. The durable
  * history line is produced via pi.appendEntry + registerEntryRenderer.
+ *
+ * `before_provider_request` also fires for pi's prompt-cache warm-ups,
+ * which never produce a `message_end`; only requests armed by `turn_start`
+ * may open a segment.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +31,7 @@ describe("WorkingTimeTracker", () => {
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
 		now = 2000;
+		t.armRequest();
 		t.beginSegment();
 		now = 4500;
 		t.endSegment();
@@ -40,11 +45,13 @@ describe("WorkingTimeTracker", () => {
 		let now = 0;
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
+		t.armRequest();
 		t.beginSegment();
 		now = 1000;
 		t.endSegment();
 		// tool + overhead from 1000..9000 counts toward total, not worked
 		now = 9000;
+		t.armRequest();
 		t.beginSegment();
 		now = 10000;
 		t.endSegment();
@@ -57,6 +64,7 @@ describe("WorkingTimeTracker", () => {
 		let now = 0;
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
+		t.armRequest();
 		t.beginSegment();
 		now = 500;
 		t.endSegment();
@@ -71,6 +79,7 @@ describe("WorkingTimeTracker", () => {
 		let now = 0;
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
+		t.armRequest();
 		t.beginSegment();
 		t.addDelta(4000); // ~1000 estimated tokens at 4 chars/token
 		now = 2000; // 2s of worked time
@@ -81,6 +90,7 @@ describe("WorkingTimeTracker", () => {
 	it("liveTps is 0 before any time elapses", () => {
 		const t = new WorkingTimeTracker(() => 0);
 		t.beginRun();
+		t.armRequest();
 		t.beginSegment();
 		t.addDelta(400);
 		expect(t.liveTps()).toBe(0);
@@ -90,6 +100,7 @@ describe("WorkingTimeTracker", () => {
 		let now = 0;
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
+		t.armRequest();
 		t.beginSegment();
 		now = 2000;
 		t.recordExactTokens(1500);
@@ -104,12 +115,14 @@ describe("WorkingTimeTracker", () => {
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
 		// first model segment: 0..1000
+		t.armRequest();
 		t.beginSegment();
 		now = 1000;
 		t.endSegment();
 		// "tool" runs from 1000..9000 — must NOT count
 		now = 9000;
 		// second model segment: 9000..10000
+		t.armRequest();
 		t.beginSegment();
 		now = 10000;
 		t.endSegment();
@@ -120,6 +133,7 @@ describe("WorkingTimeTracker", () => {
 		let now = 0;
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
+		t.armRequest();
 		t.beginSegment();
 		now = 3000;
 		expect(t.elapsedMs()).toBe(3000);
@@ -132,10 +146,63 @@ describe("WorkingTimeTracker", () => {
 		expect(t.settle()).toBeUndefined();
 	});
 
+	it("ignores an unarmed request (cache warm-up while idle)", () => {
+		let now = 0;
+		const t = new WorkingTimeTracker(() => now);
+		expect(t.beginSegment()).toBe(false);
+		now = 5000;
+		expect(t.isActive()).toBe(false);
+		expect(t.elapsedMs()).toBe(0);
+	});
+
+	it("ignores a cache warm-up during tool execution", () => {
+		let now = 0;
+		const t = new WorkingTimeTracker(() => now);
+		t.beginRun();
+		t.armRequest();
+		expect(t.beginSegment()).toBe(true);
+		now = 1000;
+		t.endSegment();
+		// tool runs 1000..9000; the warmer replays the request at 4000
+		now = 4000;
+		expect(t.beginSegment()).toBe(false);
+		now = 9000;
+		t.armRequest();
+		expect(t.beginSegment()).toBe(true);
+		now = 10000;
+		t.endSegment();
+		expect(t.settle()?.ms).toBe(2000);
+	});
+
+	it("keeps the first start when the request hook fires again mid-segment", () => {
+		let now = 0;
+		const t = new WorkingTimeTracker(() => now);
+		t.beginRun();
+		t.armRequest();
+		expect(t.beginSegment()).toBe(true);
+		now = 1000;
+		expect(t.beginSegment()).toBe(false); // e.g. a provider re-sending the payload
+		now = 3000;
+		t.endSegment();
+		expect(t.settle()?.ms).toBe(3000);
+	});
+
+	it("disarms on settle and on beginRun", () => {
+		const t = new WorkingTimeTracker(() => 0);
+		t.beginRun();
+		t.armRequest();
+		t.settle();
+		expect(t.beginSegment()).toBe(false);
+		t.armRequest();
+		t.beginRun();
+		expect(t.beginSegment()).toBe(false);
+	});
+
 	it("resets state after settle", () => {
 		let now = 0;
 		const t = new WorkingTimeTracker(() => now);
 		t.beginRun();
+		t.armRequest();
 		t.beginSegment();
 		now = 1000;
 		t.endSegment();
@@ -264,11 +331,13 @@ describe("working-time wiring", () => {
 		fire("before_agent_start", {}); // anchors the total clock
 		vi.advanceTimersByTime(500); // pre-loop overhead
 		fire("agent_start", {});
+		fire("turn_start", {});
 		fire("before_provider_request", {});
 		vi.advanceTimersByTime(5000);
 		fire("message_end", asst);
 		// tool gap — counts toward total, NOT worked
 		vi.advanceTimersByTime(3000);
+		fire("turn_start", {});
 		fire("before_provider_request", {});
 		vi.advanceTimersByTime(2000);
 		fire("message_end", asst);
@@ -287,6 +356,7 @@ describe("working-time wiring", () => {
 		const { fire, entries, ctx } = loadExtension();
 		fire("before_agent_start", {});
 		fire("agent_start", {});
+		fire("turn_start", {});
 		fire("before_provider_request", {});
 		// Stream ~4000 chars => ~1000 estimated tokens over 2s of worked time.
 		fire("message_update", {
@@ -311,6 +381,7 @@ describe("working-time wiring", () => {
 		const { fire, entries } = loadExtension();
 		fire("before_agent_start", {});
 		fire("agent_start", {});
+		fire("turn_start", {});
 		fire("before_provider_request", {});
 		vi.advanceTimersByTime(1000);
 		fire("message_end", user); // stray non-assistant end — ignored
@@ -327,6 +398,7 @@ describe("working-time wiring", () => {
 		const { fire, ctx } = loadExtension();
 		fire("before_agent_start", {});
 		fire("agent_start", {});
+		fire("turn_start", {});
 		fire("before_provider_request", {});
 		vi.advanceTimersByTime(2000);
 		const calls = ctx.ui.setWorkingMessage.mock.calls.map((c) => c[0]);
@@ -338,6 +410,64 @@ describe("working-time wiring", () => {
 		// last call restores the default (undefined)
 		const last = ctx.ui.setWorkingMessage.mock.calls.at(-1);
 		expect(last?.[0]).toBeUndefined();
+	});
+
+	it("ignores a cache warm-up during tool execution (no segment, no ticker)", () => {
+		vi.useFakeTimers();
+		const { fire, entries, ctx } = loadExtension();
+		fire("before_agent_start", {});
+		fire("agent_start", {});
+		fire("turn_start", {});
+		fire("before_provider_request", {});
+		vi.advanceTimersByTime(1000);
+		fire("message_end", asst);
+		// tool executes; the cache warmer replays the request mid-tool
+		vi.advanceTimersByTime(2000);
+		const callsBefore = ctx.ui.setWorkingMessage.mock.calls.length;
+		fire("before_provider_request", {});
+		vi.advanceTimersByTime(5000);
+		expect(ctx.ui.setWorkingMessage.mock.calls.length).toBe(callsBefore);
+		fire("turn_start", {});
+		fire("before_provider_request", {});
+		vi.advanceTimersByTime(1000);
+		fire("message_end", asst);
+		fire("agent_settled", {});
+		vi.useRealTimers();
+		expect(entries).toHaveLength(1);
+		const data = entries[0].data as WorkingTimeEntry;
+		expect(data.ms).toBe(2000); // the 7s tool gap stays excluded
+		expect(data.totalMs).toBe(9000);
+	});
+
+	it("ignores a cache warm-up after settle (idle warming): no phantom run or ticker", () => {
+		vi.useFakeTimers();
+		const { fire, entries, ctx } = loadExtension();
+		fire("before_agent_start", {});
+		fire("agent_start", {});
+		fire("turn_start", {});
+		fire("before_provider_request", {});
+		vi.advanceTimersByTime(1000);
+		fire("message_end", asst);
+		fire("agent_settled", {});
+		ctx.ui.setWorkingMessage.mockClear();
+		// idle warm-up minutes later
+		vi.advanceTimersByTime(270_000);
+		fire("before_provider_request", {});
+		vi.advanceTimersByTime(5000);
+		expect(ctx.ui.setWorkingMessage).not.toHaveBeenCalled();
+		// the next real run is measured from its own prompt
+		fire("before_agent_start", {});
+		fire("agent_start", {});
+		fire("turn_start", {});
+		fire("before_provider_request", {});
+		vi.advanceTimersByTime(1500);
+		fire("message_end", asst);
+		fire("agent_settled", {});
+		vi.useRealTimers();
+		expect(entries).toHaveLength(2);
+		const data = entries[1].data as WorkingTimeEntry;
+		expect(data.ms).toBe(1500);
+		expect(data.totalMs).toBe(1500);
 	});
 
 	it("registers an entry renderer that produces a dim worked+total line", () => {
