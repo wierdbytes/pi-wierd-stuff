@@ -1,0 +1,69 @@
+{
+  "name": "@wierdbytes/pi-ask",
+  "version": "0.1.0",
+  "description": "Interactive ask_user clarification tool for the pi coding agent that reports pi as blocked (OSC 7501) while a question waits — fork of @eko24ive/pi-ask",
+  "type": "module",
+  "files": [
+    "*.ts",
+    "config/**/*.ts",
+    "constants/**/*.ts",
+    "state/**/*.ts",
+    "ui/**/*.ts",
+    "skills/**",
+    "docs/**",
+    "*.md",
+    "*.json",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "coding-agent",
+    "extension",
+    "ask_user",
+    "clarification",
+    "terminal-ui"
+  ],
+  "license": "MIT",
+  "author": "wierdbytes",
+  "contributors": [
+    "eko24ive (original @eko24ive/pi-ask)"
+  ],
+  "homepage": "https://github.com/wierdbytes/pi-wierd-stuff/tree/master/packages/ask",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wierdbytes/pi-wierd-stuff.git",
+    "directory": "packages/ask"
+  },
+  "bugs": {
+    "url": "https://github.com/wierdbytes/pi-wierd-stuff/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.84.1",
+    "@earendil-works/pi-coding-agent": ">=0.84.1",
+    "@earendil-works/pi-tui": ">=0.84.1",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^1.5.0",
+    "@earendil-works/pi-coding-agent": "^1.5.0",
+    "@earendil-works/pi-tui": "^1.5.0",
+    "typebox": "^1.3.7",
+    "vitest": "^4.0.18"
+  }
+}

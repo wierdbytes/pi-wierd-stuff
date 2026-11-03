@@ -5,6 +5,7 @@ Monorepo for various extensions for the [pi](https://github.com/earendil-works/p
 ## Packages
 
 - [`packages/anthropic`](packages/anthropic) — `@wierdbytes/pi-anthropic`: Claude Pro/Max OAuth provider.
+- [`packages/ask`](packages/ask) — `@wierdbytes/pi-ask`: Interactive `ask_user` clarification tool (fork of `@eko24ive/pi-ask`) that reports pi as blocked on a question (OSC 7501) while a form waits, so herdr and other agent dashboards alert.
 - [`packages/common`](packages/common) — `@wierdbytes/pi-common`: Shared TUI building blocks for sibling packages — a one-call settings modal (ratatui-style frame, built-in field types, model + reasoning-effort widget), tool-frame helpers, and diff renderers.
 - [`packages/events`](packages/events) — `@wierdbytes/pi-events`: Typed `notify:toast` / `notify:status` event bus that lets any extension surface chips and toasts in the statusline.
 - [`packages/facelift`](packages/facelift) — `@wierdbytes/pi-facelift`: Cosmetic facelift for built-in pi tool output — open-right rounded frames, syntax-highlighted reads, status-aware bash summaries with execution duration, themed `ls`/`find`/`grep` rendering.
