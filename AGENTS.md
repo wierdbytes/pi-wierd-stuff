@@ -34,6 +34,13 @@ docs/plans/     Design notes per feature/package
 - Internal deps use `@wierdbytes/pi-common` and `@wierdbytes/pi-events`.
 - Ship sources: `files` lists `*.ts`, `*.md`, `*.json`, `LICENSE`. No `dist/`.
 - Tests live next to sources as `*.test.ts`, run via `bun run test` (vitest).
+- Every extension package ships a `CHANGELOG.md` at its root (covered by `*.md` in `files`). Pi reads it after an update and shows entries newer than the last seen version under "Extension Updates" — library/theme-only packages are not shown, but keep one anyway when it exists.
+
+## Changelog
+
+- Every version bump of an extension package gets a `## <version>` heading at the top of its `CHANGELOG.md`, exactly matching `package.json` `version` (pi matches entries by `## x.y.z` / `## [x.y.z]`).
+- Newest first, no `Unreleased` section, no dates.
+- One-line bullets prefixed with `**New:**`, `**Fix:**`, `**Change:**`, `**Removed:**` or `**Breaking:**`; describe the user-visible effect, not the implementation.
 
 ## Getting docs
 
@@ -49,7 +56,7 @@ docs/plans/     Design notes per feature/package
 ## Publishing
 
 - Automatic on push to `master` via `.github/workflows/publish.yml`.
-- To release: bump `version` in the package's `package.json`, commit. Do **not** rename `publish.yml` — its filename is registered as the Trusted Publisher on npmjs.com.
+- To release: bump `version` in the package's `package.json`, add a matching `CHANGELOG.md` entry, commit. Do **not** rename `publish.yml` — its filename is registered as the Trusted Publisher on npmjs.com.
 
 ## Conventions for changes
 

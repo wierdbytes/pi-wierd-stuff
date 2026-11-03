@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-video-mention",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Send video files to video-capable models via @mentions — routed as video_url content parts when the active model supports video, left as plain text otherwise.",
   "type": "module",
   "files": [
