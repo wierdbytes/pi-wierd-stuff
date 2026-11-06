@@ -12,6 +12,7 @@ Monorepo of extensions, themes, and shared TUI helpers for the [pi](https://gith
 packages/
   anthropic/    Claude Pro/Max OAuth provider (pi extension)
   ask/          ask_user clarification tool, fork of @eko24ive/pi-ask + OSC 7501 blocked status (extension)
+  autoname/     Auto session name + terminal title from a cheap model (extension)
   common/       Shared TUI: settings modal, tool-frame helpers (library)
   events/       Typed notify:toast / notify:status event bus (library)
   facelift/     Pretty rendering for built-in pi tools — bash/read/ls/find/grep (extension)
