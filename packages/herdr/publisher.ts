@@ -4,6 +4,12 @@
  * one request, unchanged values are never sent, and only one request is in
  * flight at a time. A failed write keeps the old picture, so the next
  * publish retries the difference.
+ *
+ * A new publisher doesn't know what the terminal carries: pi rebuilds its
+ * extensions on `/new`, `/resume`, `/fork` and reload, and the old instance
+ * leaves its labels in place (no flicker). So the first write sends every
+ * owned key, removing whatever the previous session left behind (its cache
+ * expiry, its context size) instead of trusting an empty picture.
  */
 
 import { clearLabels, diffLabels, type Labels } from "./meta.ts";
@@ -11,8 +17,8 @@ import { clearLabels, diffLabels, type Labels } from "./meta.ts";
 export type SendLabels = (labels: Record<string, string>) => Promise<boolean>;
 
 export class LabelPublisher {
-  /** What the terminal is believed to carry. */
-  private applied: Labels = {};
+  /** What the terminal is believed to carry; undefined until the first write lands. */
+  private applied: Labels | undefined;
   /** What it should carry once the queue drains. */
   private desired: Labels = {};
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -59,7 +65,7 @@ export class LabelPublisher {
       this.again = false;
       if (this.stopped) return;
       const target = this.desired;
-      const change = diffLabels(this.applied, target);
+      const change = this.applied ? diffLabels(this.applied, target) : { ...clearLabels(), ...target };
       if (Object.keys(change).length === 0) continue;
       const ok = await this.send(change).catch(() => false);
       if (!ok) return;
@@ -88,6 +94,6 @@ export class LabelPublisher {
   cancel(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
-    this.desired = this.applied;
+    this.desired = this.applied ?? this.desired;
   }
 }

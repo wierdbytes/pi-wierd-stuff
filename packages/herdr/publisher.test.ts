@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LABEL_KEYS } from "./meta.ts";
+import { clearLabels, LABEL_KEYS, type Labels } from "./meta.ts";
 import { LabelPublisher } from "./publisher.ts";
 
 describe("LabelPublisher", () => {
+  /** A fresh publisher's first write: every owned key, the missing ones removed. */
+  const full = (labels: Labels) => ({ ...clearLabels(), ...labels });
   let sent: Record<string, string>[];
   let ok: boolean;
   const send = vi.fn(async (labels: Record<string, string>) => {
@@ -24,7 +26,7 @@ describe("LabelPublisher", () => {
     p.publish({ "agent.ctx": "2" });
     p.publish({ "agent.ctx": "3", "agent.model": "M" });
     await vi.advanceTimersByTimeAsync(100);
-    expect(sent).toEqual([{ "agent.ctx": "3", "agent.model": "M" }]);
+    expect(sent).toEqual([full({ "agent.ctx": "3", "agent.model": "M" })]);
   });
 
   it("skips writes that change nothing and removes dropped keys", async () => {
@@ -35,7 +37,7 @@ describe("LabelPublisher", () => {
     await p.flush();
     p.publish({ "agent.model": "M" });
     await p.flush();
-    expect(sent).toEqual([{ "agent.model": "M", "agent.effort": "high" }, { "agent.effort": "" }]);
+    expect(sent).toEqual([full({ "agent.model": "M", "agent.effort": "high" }), { "agent.effort": "" }]);
   });
 
   it("retries the difference after a failed write", async () => {
@@ -46,7 +48,7 @@ describe("LabelPublisher", () => {
     ok = true;
     p.publish({ "agent.ctx": "1", "agent.model": "M" });
     await p.flush();
-    expect(sent).toEqual([{ "agent.ctx": "1" }, { "agent.ctx": "1", "agent.model": "M" }]);
+    expect(sent).toEqual([full({ "agent.ctx": "1" }), full({ "agent.ctx": "1", "agent.model": "M" })]);
   });
 
   it("sends what was queued while a write was out", async () => {
@@ -67,7 +69,7 @@ describe("LabelPublisher", () => {
     await vi.advanceTimersByTimeAsync(0);
     release();
     await Promise.all([first, second]);
-    expect(sent).toEqual([{ "agent.ctx": "1" }, { "agent.ctx": "2" }]);
+    expect(sent).toEqual([full({ "agent.ctx": "1" }), { "agent.ctx": "2" }]);
   });
 
   it("cancel drops queued work but keeps publishing afterwards", async () => {
@@ -78,7 +80,19 @@ describe("LabelPublisher", () => {
     expect(sent).toEqual([]);
     p.publish({ "agent.ctx": "2" });
     await vi.advanceTimersByTimeAsync(100);
-    expect(sent).toEqual([{ "agent.ctx": "2" }]);
+    expect(sent).toEqual([full({ "agent.ctx": "2" })]);
+  });
+
+  it("removes what a previous instance left on the terminal (/new, /resume, reload)", async () => {
+    // The old session's publisher left its cache expiry and context size in place;
+    // the new session has neither yet.
+    const p = new LabelPublisher(send, 10);
+    p.publish({ "agent.app": "pi", "agent.model": "M" });
+    await p.flush();
+    expect(sent[0]["agent.cache_until"]).toBe("");
+    expect(sent[0]["agent.cache_ttl"]).toBe("");
+    expect(sent[0]["agent.ctx"]).toBe("");
+    expect(sent[0]["agent.model"]).toBe("M");
   });
 
   it("clear removes every owned label and stops publishing", async () => {

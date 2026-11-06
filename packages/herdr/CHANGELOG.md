@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- **Fix:** after `/new`, `/resume`, `/fork` or a reload, the previous session's cache countdown and context size no longer stay on the terminal.
+
 ## 0.3.0
 
 - **New:** publish when the prompt cache expires and how long it lives as `agent.cache_until` / `agent.cache_ttl`, so herdr can show how much of each pi's cache lifetime is left.
