@@ -1,0 +1,6 @@
+# Changelog
+
+## 0.1.0
+
+- **New:** publish the session's model, reasoning effort, context size and running pi-subagents count as `agent.*` labels on its herdr-core terminal, so herdr agent lists can show `Opus 5.5 @high · 228k` under each pi.
+- **New:** labels follow `/model`, effort changes, every reply and compaction, and are removed when pi quits.

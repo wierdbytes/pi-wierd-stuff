@@ -16,6 +16,7 @@ packages/
   common/       Shared TUI: settings modal, tool-frame helpers (library)
   events/       Typed notify:toast / notify:status event bus (library)
   facelift/     Pretty rendering for built-in pi tools — bash/read/ls/find/grep (extension)
+  herdr/        model / effort / context as agent.* labels on the herdr-core terminal (extension)
   peon/         CESP/OpenPeon sound-pack player (extension)
   statusline/   Tokyo Night statusline footer + chips/toasts (extension)
   tokyo-night/  Four Tokyo Night theme JSONs (theme-only package)
