@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- **Fix:** context size no longer lags behind pi's statusline after a tool result or a prompt.
+
 ## 0.3.1
 
 - **Fix:** after `/new`, `/resume`, `/fork` or a reload, the previous session's cache countdown and context size no longer stay on the terminal.

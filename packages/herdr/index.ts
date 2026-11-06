@@ -90,9 +90,10 @@ export default function piHerdr(pi: ExtensionAPI) {
     };
     update(next);
   });
+  // Every message, not only replies: a tool result or the person's prompt
+  // lands in the context the moment it ends, long before the turn does.
   pi.on("message_end", async (event, next) => {
-    if (event.message.role !== "assistant") return;
-    inflight = undefined;
+    if (event.message.role === "assistant") inflight = undefined;
     update(next);
   });
   pi.on("turn_end", async (_event, next) => update(next));
