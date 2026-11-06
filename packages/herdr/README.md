@@ -30,6 +30,8 @@ Nothing to configure. Outside a herdr-core terminal (no `HC_TERMINAL_ID` / `HC_T
 | `agent.ctx` | `228432` | Tokens in the context now. Absent while unknown (right after compaction) |
 | `agent.ctx_max` | `1000000` | Context window |
 | `agent.session` | `019f8940-4b3b-7d72-8112-3a9ebd007d5c` | The open session's id (`pi --session <id>` opens it again). Follows `/new`, `/resume` and forks; absent for `--no-session` |
+| `agent.cache_until` | `1793534700000` | When the prompt cache of the current branch expires (epoch ms), as pi-statusline's countdown reads it: the last request or cache warming that touched the cache, plus the model's cache lifetime. Stays after expiry (compare with now); absent when the cache was never touched or the model's cache lifetime is unknown |
+| `agent.cache_ttl` | `300000` | How long that cache entry lives from its last refresh (ms): the model's short or long tier. Set with `agent.cache_until`; together they give the share of the lifetime left |
 | `agent.subagents` | `2` | [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-subagents) agents queued or running. Absent when none |
 
 Read them in a herdr mod from `terminals()`:
@@ -42,7 +44,7 @@ meta["agent.model"]; // "Claude Opus 5.5"
 
 ## How it works
 
-- Updates on session start, `/model` and model cycling, effort changes, every assistant reply, turn end, compaction and tree navigation.
+- Updates on session start, `/model` and model cycling, effort changes, every assistant request and reply, turn end, compaction, tree navigation and cache warming.
 - Changes within 150 ms collapse into one `terminal.label` request over herdr-core's JSON-RPC socket; unchanged values are never sent. No `hc` process is spawned.
 - Only the interactive pi owns the terminal: `pi -p`, RPC hosts and in-process sub-agents never write labels.
 - Quitting pi removes every label it set. Switching sessions and `/reload` keep them and the next session republishes.

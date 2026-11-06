@@ -21,6 +21,8 @@ export const LABEL_KEYS = [
   "agent.ctx_max",
   "agent.subagents",
   "agent.session",
+  "agent.cache_until",
+  "agent.cache_ttl",
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];
@@ -50,6 +52,8 @@ export interface MetaInputs {
   subagents: number;
   /** The session's id; absent for an in-memory session (`--no-session`). */
   session?: string;
+  /** The branch's prompt cache (`cache.ts`): its expiry (epoch ms) and lifetime; absent when unknown. */
+  cache?: { until: number; ttlMs: number };
 }
 
 /** The effort to show: pi's level, or the model's own word for it (`max`, a token budget). */
@@ -77,6 +81,11 @@ export function collectLabels(inputs: MetaInputs): Labels {
   if (max) labels["agent.ctx_max"] = String(Math.round(max));
   if (inputs.subagents > 0) labels["agent.subagents"] = String(inputs.subagents);
   if (inputs.session) labels["agent.session"] = inputs.session;
+  const cache = inputs.cache;
+  if (cache && Number.isFinite(cache.until) && cache.ttlMs > 0) {
+    labels["agent.cache_until"] = String(Math.round(cache.until));
+    labels["agent.cache_ttl"] = String(Math.round(cache.ttlMs));
+  }
   return labels;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-herdr",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tell herdr which model, reasoning effort and context size each pi runs with — as agent.* labels on its herdr-core terminal, so agent lists can show them next to the status.",
   "type": "module",
   "files": [

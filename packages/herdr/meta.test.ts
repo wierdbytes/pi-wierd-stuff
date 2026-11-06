@@ -37,6 +37,7 @@ describe("collectLabels", () => {
         context: { tokens: 228_431.6, contextWindow: 1_000_000 },
         subagents: 2,
         session: "019f8940-4b3b-7d72-8112-3a9ebd007d5c",
+        cache: { until: 1_793_534_700_000.4, ttlMs: 300_000 },
       }),
     ).toEqual({
       "agent.app": "pi",
@@ -49,6 +50,8 @@ describe("collectLabels", () => {
       "agent.ctx_max": "1000000",
       "agent.subagents": "2",
       "agent.session": "019f8940-4b3b-7d72-8112-3a9ebd007d5c",
+      "agent.cache_until": "1793534700000",
+      "agent.cache_ttl": "300000",
     });
   });
 
