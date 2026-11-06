@@ -31,8 +31,11 @@ export default function piHerdr(pi: ExtensionAPI) {
     if (!ctx) return;
     if (next) ctx = next;
     let context: { tokens: number | null; contextWindow: number } | undefined;
+    let session: string | undefined;
     try {
       context = ctx.getContextUsage();
+      // Only a session saved to a file can be opened again (`pi --session <id>`).
+      if (ctx.sessionManager.getSessionFile()) session = ctx.sessionManager.getSessionId();
       model = nextModel ?? (ctx.model as MetaModel | undefined) ?? model;
     } catch {
       // A replaced session's ctx goes stale; the next event brings a fresh one.
@@ -45,6 +48,7 @@ export default function piHerdr(pi: ExtensionAPI) {
         thinkingLevel: pi.getThinkingLevel?.(),
         context,
         subagents: subagents.count,
+        session,
       }),
     );
   }

@@ -29,6 +29,7 @@ Nothing to configure. Outside a herdr-core terminal (no `HC_TERMINAL_ID` / `HC_T
 | `agent.effort` | `high` | Thinking level, or the model's own word for it (`max`, a token budget). Absent when off or the model doesn't reason |
 | `agent.ctx` | `228432` | Tokens in the context now. Absent while unknown (right after compaction) |
 | `agent.ctx_max` | `1000000` | Context window |
+| `agent.session` | `019f8940-4b3b-7d72-8112-3a9ebd007d5c` | The open session's id (`pi --session <id>` opens it again). Follows `/new`, `/resume` and forks; absent for `--no-session` |
 | `agent.subagents` | `2` | [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-subagents) agents queued or running. Absent when none |
 
 Read them in a herdr mod from `terminals()`:

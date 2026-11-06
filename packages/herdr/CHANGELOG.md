@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- **New:** publish the session id as `agent.session`, so herdr can tell which session each pi has open and switch to it instead of opening the session twice.
+
 ## 0.1.0
 
 - **New:** publish the session's model, reasoning effort, context size and running pi-subagents count as `agent.*` labels on its herdr-core terminal, so herdr agent lists can show `Opus 5.5 @high · 228k` under each pi.

@@ -20,6 +20,7 @@ export const LABEL_KEYS = [
   "agent.ctx",
   "agent.ctx_max",
   "agent.subagents",
+  "agent.session",
 ] as const;
 
 export type LabelKey = (typeof LABEL_KEYS)[number];
@@ -47,6 +48,8 @@ export interface MetaInputs {
   thinkingLevel: string | undefined;
   context: { tokens: number | null; contextWindow: number } | undefined;
   subagents: number;
+  /** The session's id; absent for an in-memory session (`--no-session`). */
+  session?: string;
 }
 
 /** The effort to show: pi's level, or the model's own word for it (`max`, a token budget). */
@@ -73,6 +76,7 @@ export function collectLabels(inputs: MetaInputs): Labels {
   const max = context?.contextWindow || model?.contextWindow;
   if (max) labels["agent.ctx_max"] = String(Math.round(max));
   if (inputs.subagents > 0) labels["agent.subagents"] = String(inputs.subagents);
+  if (inputs.session) labels["agent.session"] = inputs.session;
   return labels;
 }
 
