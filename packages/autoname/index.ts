@@ -49,6 +49,9 @@ export default function piAutoname(pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => namer.stop());
   pi.on("session_info_changed", async (event, ctx) => namer.onNameChanged(ctx, event.name));
   pi.on("agent_start", async (_event, ctx) => namer.onAgentStart(ctx));
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (event.messageType === "user") void namer.onPrompt(ctx, event.prompt);
+  });
   // Fire and forget: naming never delays the next turn.
   pi.on("agent_settled", async (_event, ctx) => void namer.onSettled(ctx));
 

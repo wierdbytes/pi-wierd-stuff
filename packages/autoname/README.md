@@ -41,7 +41,7 @@ pi install npm:@wierdbytes/pi-autoname
 | `mode` | `"first"` | `first` — name once after the first turn; `auto` — after each turn the model keeps the name (`KEEP`) or picks a new one; `follow` — rename after every turn |
 | `model` | `"anthropic/claude-haiku-5-5"` | `provider/id` of the naming model; `""` uses the session model |
 | `thinking` | `"off"` | Reasoning effort for the naming model |
-| `maxLength` | `40` | Longest name, characters (10–120) |
+| `maxLength` | `50` | Longest name, characters (10–120) |
 | `titleTemplate` | `"{name}"` | Terminal title; `{name}` (required), `{cwd}` (folder name), e.g. `"{name} · {cwd}"` |
 | `fallback` | `true` | Name from the first prompt line when the model call fails |
 

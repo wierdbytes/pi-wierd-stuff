@@ -82,6 +82,17 @@ describe("Autonamer", () => {
     expect(h.calls).toHaveLength(1);
   });
 
+  it("names an unnamed session from the prompt alone, before the reply", async () => {
+    const h = harness({ entries: [], config: { mode: "auto" } });
+    h.namer.reset(h.ctx);
+    await h.namer.onPrompt(h.ctx, "fix the login bug");
+    expect(h.calls[0].input).toEqual({ first: "fix the login bug", recent: [], assistant: "" });
+    expect(h.calls[0].current).toBeUndefined();
+    expect(h.sessionName).toBe("Login bug fix");
+    await h.namer.onPrompt(h.ctx, "next prompt");
+    expect(h.calls).toHaveLength(1);
+  });
+
   it("title-only target leaves the session name alone", async () => {
     const h = harness({ config: { target: "title", titleTemplate: "{name} · {cwd}" } });
     h.namer.reset(h.ctx);
@@ -161,7 +172,7 @@ describe("Autonamer", () => {
     const h = harness({ answers: Array.from({ length: MAX_FAILURES }, () => fail) });
     h.namer.reset(h.ctx);
     await h.namer.onSettled(h.ctx);
-    expect(h.sessionName).toBe("fix the login bug");
+    expect(h.sessionName).toBe("Fix the login bug");
     expect(h.namer.status().source).toBe("fallback");
     for (let i = 1; i < MAX_FAILURES; i++) await h.namer.onSettled(h.ctx);
     expect(h.calls).toHaveLength(MAX_FAILURES);

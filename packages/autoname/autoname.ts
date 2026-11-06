@@ -21,7 +21,7 @@
 import { basename } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AutonameConfig } from "./config.ts";
-import { collectInput } from "./conversation.ts";
+import { clip, collectInput, FIRST_REQUEST_CHARS, type NamingInput, stripInjected } from "./conversation.ts";
 import { generateName, resolveModel, type GenerateOptions, type GenerateResult, type ModelLookup } from "./generator.ts";
 import { fallbackName, KEEP, piDefaultTitle, renderTitle } from "./prompt.ts";
 
@@ -118,6 +118,19 @@ export class Autonamer {
     this.applyTitle(ctx);
   }
 
+  /**
+   * A user prompt was submitted. An unnamed session is named right away from
+   * the first request alone, as Claude Code does, so the title shows up while
+   * the agent is still working on its reply.
+   */
+  onPrompt(ctx: ExtensionContext, prompt: string): Promise<void> {
+    if (this.auto && !this.autoIsFallback) return Promise.resolve();
+    const branch = collectInput(ctx.sessionManager.getBranch());
+    const first = branch?.first ?? clip(stripInjected(prompt), FIRST_REQUEST_CHARS);
+    if (!first) return Promise.resolve();
+    return this.maybeGenerate(ctx, false, { first, recent: [], assistant: "" });
+  }
+
   onSettled(ctx: ExtensionContext): Promise<void> {
     this.applyTitle(ctx);
     return this.maybeGenerate(ctx, false);
@@ -158,7 +171,7 @@ export class Autonamer {
     return this.manual ? this.deps.getSessionName() : this.auto;
   }
 
-  private async maybeGenerate(ctx: ExtensionContext, force: boolean): Promise<void> {
+  private async maybeGenerate(ctx: ExtensionContext, force: boolean, override?: NamingInput): Promise<void> {
     const cfg = this.deps.config();
     if (!ctx.hasUI) return;
     if (!force) {
@@ -166,7 +179,7 @@ export class Autonamer {
       if (cfg.mode === "first" && this.auto && !this.autoIsFallback) return;
     }
 
-    const input = collectInput(ctx.sessionManager.getBranch());
+    const input = override ?? collectInput(ctx.sessionManager.getBranch());
     if (!input) {
       if (force) this.deps.toast("info", "autoname: nothing to name yet");
       return;

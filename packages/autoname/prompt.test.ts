@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fallbackName, KEEP, normalizeName, piDefaultTitle, renderTitle, systemPrompt, truncate, userPrompt } from "./prompt.ts";
+import { fallbackName, KEEP, normalizeName, parseAnswer, piDefaultTitle, renderTitle, systemPrompt, truncate, userPrompt } from "./prompt.ts";
 
 describe("normalizeName", () => {
   it("takes the first non-empty line and strips decoration", () => {
@@ -44,19 +44,39 @@ describe("fallbackName", () => {
 });
 
 describe("prompts", () => {
-  it("system prompt carries the length and KEEP instructions only with a current name", () => {
-    expect(systemPrompt(40)).toContain("at most 40 characters");
-    expect(systemPrompt(40)).not.toContain(KEEP);
-    expect(systemPrompt(40, "Old name")).toContain("The current name is: Old name");
-    expect(systemPrompt(40, "Old name")).toContain(`exactly ${KEEP}`);
+  it("system prompt: noun-phrase rules, no 'session', KEEP only with a current name, JSON answer", () => {
+    const p = systemPrompt(40);
+    expect(p).toContain("at most 40 characters");
+    expect(p).toContain('Never put the word "session"');
+    expect(p).toContain('{"title": "..."}');
+    expect(p).not.toContain('"keep"');
+    expect(systemPrompt(40, "Old name")).toContain("current title is: Old name");
+    expect(systemPrompt(40, "Old name")).toContain('{"keep": true}');
   });
 
-  it("user prompt frames each part", () => {
-    const p = userPrompt({ first: "do X", recent: ["then Y"], assistant: "done" });
-    expect(p).toContain("<first_request>\ndo X\n</first_request>");
-    expect(p).toContain("<recent_requests>\n- then Y\n</recent_requests>");
-    expect(p).toContain("<assistant_reply>\ndone\n</assistant_reply>");
-    expect(userPrompt({ first: "a", recent: [], assistant: "" })).not.toContain("recent_requests");
+  it("user prompt wraps the session as data", () => {
+    const first = userPrompt({ first: "tell me a joke", recent: [], assistant: "" });
+    expect(first.startsWith("<session>\ntell me a joke\n</session>")).toBe(true);
+    const later = userPrompt({ first: "do X", recent: ["then Y"], assistant: "done" });
+    expect(later).toContain("<session>\nUser: do X\n\nUser: then Y\n\nAssistant: done\n</session>");
+  });
+});
+
+describe("parseAnswer", () => {
+  it("reads JSON titles and keep", () => {
+    expect(parseAnswer('{"title": "Joke request"}', 40)).toBe("Joke request");
+    expect(parseAnswer('```json\n{"title":"auth.ts 401 after refresh."}\n```', 40)).toBe("auth.ts 401 after refresh");
+    expect(parseAnswer('{"keep": true}', 40)).toBe(KEEP);
+  });
+  it("falls back to plain text when the model ignores the format", () => {
+    expect(parseAnswer("Joke request", 40)).toBe("Joke request");
+    expect(parseAnswer("KEEP", 40)).toBe(KEEP);
+    expect(parseAnswer('{"title": ""}', 40)).toBeUndefined();
+  });
+  it("capitalizes the first letter, but not a leading code identifier", () => {
+    expect(parseAnswer('{"title": "таймер в statusline"}', 40)).toBe("Таймер в statusline");
+    expect(parseAnswer('{"title": "agent_end vs agent_settled"}', 40)).toBe("agent_end vs agent_settled");
+    expect(parseAnswer('{"title": "fetch.ts ECONNRESET"}', 40)).toBe("fetch.ts ECONNRESET");
   });
 });
 

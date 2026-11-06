@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-autoname",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Auto-name pi sessions and the terminal title with a short summary from a cheap model — so herdr, tmux and terminal tabs show what each pi is doing.",
   "type": "module",
   "files": [

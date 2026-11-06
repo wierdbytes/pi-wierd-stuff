@@ -56,7 +56,7 @@ export function defaults(): AutonameConfig {
     mode: "first",
     model: DEFAULT_MODEL,
     thinking: "off",
-    maxLength: 40,
+    maxLength: 50,
     titleTemplate: DEFAULT_TEMPLATE,
     fallback: true,
   };

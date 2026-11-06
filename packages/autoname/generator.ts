@@ -9,7 +9,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "./config.ts";
 import type { NamingInput } from "./conversation.ts";
-import { normalizeName, systemPrompt, userPrompt } from "./prompt.ts";
+import { parseAnswer, systemPrompt, userPrompt } from "./prompt.ts";
 
 export const TIMEOUT_MS = 20_000;
 
@@ -71,7 +71,7 @@ export async function generateName(ctx: ExtensionContext, opts: GenerateOptions)
       .filter((p) => p.type === "text")
       .map((p) => (p as { text: string }).text)
       .join("\n");
-    const name = normalizeName(text, opts.maxLength);
+    const name = parseAnswer(text, opts.maxLength);
     if (!name) return { ok: false, error: "empty answer" };
     return { ok: true, name };
   } catch (err) {

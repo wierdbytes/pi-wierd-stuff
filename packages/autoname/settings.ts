@@ -83,7 +83,7 @@ export async function openAutonameSettings(ctx: ExtensionContext, h: SettingsHan
       min: MIN_LENGTH,
       max: MAX_LENGTH,
       integer: true,
-      default: 40,
+      default: 50,
     },
     {
       key: "titleTemplate",
