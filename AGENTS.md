@@ -47,7 +47,7 @@ docs/plans/     Design notes per feature/package
 
 ## Getting docs
 
-- When you need package docs, check `/opt/homebrew/lib/node_modules/...`.
+- When you need pi package docs/sources, check `~/.bun/install/global/node_modules/@earendil-works/` (pi-coding-agent, pi-ai, pi-agent-core); other global packages may be in `/opt/homebrew/lib/node_modules/...`. Never search from `/`.
 - When you don't find them there, use npm or GitHub to get the latest info.
 
 ## Workflow
