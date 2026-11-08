@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-dream",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Offline memory consolidation (\"dreaming\") for pi: distills past sessions into small, evidence-backed memory notes, sends every change to a GitHub pull request for review, injects the approved index into new sessions and adds memory search / read / inbox tools.",
   "type": "module",
   "files": [

@@ -30,6 +30,8 @@ export interface ReportChange extends Change {
 	verdict?: { verdict: string; reason: string; corrected: boolean };
 	/** The curator's title when the fact checker rewrote it. */
 	proposedTitle?: string;
+	/** supersede / deprecate: evidence of the old note newer than this change's. */
+	newerEvidence?: Evidence[];
 }
 
 export interface ReportRejected {
@@ -91,6 +93,7 @@ const RU = {
 	check: "проверка",
 	corrected: "исправлено проверяющим",
 	proposed: "куратор предлагал",
+	newer: "⚠️ у старой заметки есть доказательства новее, чем у этого изменения — проверь, что они не показывают её актуальной",
 	reviewer: "по комментарию ревью",
 	agents: "Предложения для AGENTS.md / CLAUDE.md",
 	rejected: "Отклонено проверкой (в память не попало)",
@@ -136,6 +139,7 @@ const EN: typeof RU = {
 	check: "check",
 	corrected: "corrected by the fact checker",
 	proposed: "the curator proposed",
+	newer: "⚠️ the old note has evidence newer than this change's — check that it does not show the note still holds",
 	reviewer: "from a review comment",
 	agents: "AGENTS.md / CLAUDE.md proposals",
 	rejected: "Rejected by the fact check (not in memory)",
@@ -167,13 +171,22 @@ function money(n: number): string {
 	return `$${n.toFixed(n < 1 ? 3 : 2)}`;
 }
 
+/** `2026-10-31 16:09` in local time when the time is known, else the day. */
+function evidenceWhen(e: Evidence): string {
+	const ms = e.at ? Date.parse(e.at) : Number.NaN;
+	if (!Number.isFinite(ms)) return e.date ?? "";
+	const x = new Date(ms);
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())} ${p(x.getHours())}:${p(x.getMinutes())}`;
+}
+
 function evidenceLine(e: Evidence, d: ReportData, t: typeof RU): string {
 	if (e.s.startsWith("inbox:")) return `inbox \`${e.s.slice(6)}\``;
 	if (e.s.startsWith("pr#")) return `${t.comment} ${e.s}`;
 	const title = d.sessionTitles[e.s];
 	const ids = e.e.length ? `, ${t.entries} ${e.e.map((x) => `\`${x}\``).join(" ")}` : "";
 	const kind = e.kind === "user" ? " 👤" : "";
-	return `${t.session}${title ? ` «${title}»` : ""} ${e.date ?? ""} \`${e.s.slice(0, 8)}\`${ids}${kind}`.replace(/\s+/g, " ");
+	return `${t.session}${title ? ` «${title}»` : ""} ${evidenceWhen(e)} \`${e.s.slice(0, 8)}\`${ids}${kind}`.replace(/\s+/g, " ");
 }
 
 function scopeLabel(scope: string, d: ReportData): string {
@@ -234,6 +247,7 @@ export function renderReport(d: ReportData): string {
 			if (c.verdict)
 				out.push(`  - ${t.check}: **${c.verdict.verdict}**${c.verdict.corrected ? ` (${t.corrected})` : ""} — ${c.verdict.reason}`);
 			if (c.proposedTitle && c.proposedTitle !== c.title) out.push(`  - ${t.proposed}: «${c.proposedTitle}»`);
+			if (c.newerEvidence?.length) out.push(`  - ${t.newer}: ${c.newerEvidence.map((e) => evidenceLine(e, d, t)).join("; ")}`);
 			if (c.note) out.push(`  - ${c.note}`);
 		}
 		out.push("");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNoteId, newNoteId, type Note, parseNote, serializeNote, slugify } from "./notes.ts";
+import { evidenceTime, isNoteId, isoMinute, newNoteId, type Note, parseNote, serializeNote, slugify, uuidV7Time } from "./notes.ts";
 
 const base: Note = {
 	id: "m-7f3a2c",
@@ -58,6 +58,27 @@ describe("notes", () => {
 		expect(slugify("Dotfiles → chezmoi без коммита")).toBe("dotfiles-chezmoi-bez-kommita");
 		expect(slugify("!!!")).toBe("note");
 		expect(slugify("a".repeat(100)).length).toBeLessThanOrEqual(60);
+	});
+
+	it("keeps the time of the evidence", () => {
+		const n = { ...base, evidence: [{ s: "01a19202-e4ab-7629-a42b-a404cab8735b", e: ["74b4b06c"], date: "2026-10-31", at: "2026-10-31T13:52Z", kind: "observed" as const }] };
+		const back = parseNote(serializeNote(n), n.file, n.scope);
+		expect(back.evidence).toEqual(n.evidence);
+		expect(isoMinute("2026-10-31T13:52:41.123Z")).toBe("2026-10-31T13:52Z");
+		expect(isoMinute("garbage")).toBeUndefined();
+	});
+
+	it("orders evidence by entry time, session start, session id, day", () => {
+		// pi session ids are UUIDv7: the first 48 bits are the creation time.
+		expect(uuidV7Time("01a19202-e4ab-7629-a42b-a404cab8735b")).toBe(Date.parse("2026-10-31T12:50:25.579Z"));
+		expect(uuidV7Time("01a19202-e4ab-4629-a42b-a404cab8735b")).toBeUndefined();
+		expect(uuidV7Time("inbox:abc")).toBeUndefined();
+		const s = "01a19281-dcb6-75c0-9080-217b869ab2fa";
+		expect(evidenceTime({ s, e: [], at: "2026-10-31T16:30Z" })).toBe(Date.parse("2026-10-31T16:30Z"));
+		expect(evidenceTime({ s, e: [] }, () => "2026-10-31T15:09:06.615Z")).toBe(Date.parse("2026-10-31T15:09:06.615Z"));
+		expect(evidenceTime({ s, e: [] })).toBe(uuidV7Time(s));
+		expect(evidenceTime({ s: "inbox:x", e: [], date: "2026-11-01" })).toBe(Date.parse("2026-11-01"));
+		expect(evidenceTime({ s: "pr#3", e: [] })).toBeUndefined();
 	});
 
 	it("makes unique ids", () => {

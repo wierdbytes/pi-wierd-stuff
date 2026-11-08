@@ -20,7 +20,7 @@ import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type AgentsEdit, findContextFile, openAgentsPr, publishAgentsEdits, renderEditsDiff } from "./agentsmd.ts";
 import { type DreamConfig, loadConfig } from "./config.ts";
-import { type AgentsMdOp, applyOp, applyVotes, type IndexStat, type Op, type ParsedOps, parseOps, regenerateIndexes, Workspace } from "./curate.ts";
+import { type AgentsMdOp, applyOp, applyVotes, type EvidenceRef, type IndexStat, type Op, type ParsedOps, parseOps, regenerateIndexes, Workspace } from "./curate.ts";
 import { buildDigest, clipHead, digestHeader, renderDigest, renderEntryFull } from "./digest.ts";
 import { gh, ghJson, ghOk, git, githubRepoOf, gitOk } from "./gitops.ts";
 import { type InboxItem, readInbox } from "./inbox.ts";
@@ -28,7 +28,7 @@ import { CHARTER_FILE, GLOBAL_SCOPE, keyToDir, type MemoryPaths, memoryPaths, ne
 import { Llm } from "./llm.ts";
 import { acquireLock, releaseLock } from "./lock.ts";
 import { buildIndex } from "./memindex.ts";
-import type { Evidence, Note } from "./notes.ts";
+import { type Evidence, evidenceTime, isoMinute, type Note } from "./notes.ts";
 import { resolveProject, shortKey } from "./project.ts";
 import { ProjectMap } from "./projects.ts";
 import { DEFAULT_GLOBAL_CHARTER, DEFAULT_PROJECT_CHARTER, systemPrompt } from "./prompts.ts";
@@ -298,6 +298,8 @@ interface Resolved {
 	evidence: Evidence[];
 	excerpts: string;
 	error?: string;
+	/** supersede / deprecate: the old note's evidence that is newer than this op's. */
+	newer?: NewerEvidence;
 }
 
 function findSessionFile(deps: EvidenceDeps, id: string): string | undefined {
@@ -308,11 +310,16 @@ function findSessionFile(deps: EvidenceDeps, id: string): string | undefined {
 }
 
 async function resolveOp(op: Op, deps: EvidenceDeps): Promise<Resolved> {
+	if (!op.evidence.length) return { op, evidence: [], excerpts: "", error: "no evidence cited" };
+	return { op, ...(await resolveRefs(op.evidence, deps)) };
+}
+
+/** Look cited entries up in the raw sessions: stored evidence (with times) and transcript excerpts. */
+async function resolveRefs(refs: EvidenceRef[], deps: EvidenceDeps): Promise<{ evidence: Evidence[]; excerpts: string; error?: string }> {
 	const evidence: Evidence[] = [];
 	const parts: string[] = [];
-	const fail = (error: string): Resolved => ({ op, evidence, excerpts: "", error });
-	if (!op.evidence.length) return fail("no evidence cited");
-	for (const ref of op.evidence) {
+	const fail = (error: string) => ({ evidence, excerpts: "", error });
+	for (const ref of refs) {
 		if (ref.s.startsWith("inbox:")) {
 			const item = deps.inboxById.get(ref.s.slice(6));
 			if (!item) return fail(`unknown inbox item ${ref.s}`);
@@ -326,14 +333,14 @@ async function resolveOp(op: Op, deps: EvidenceDeps): Promise<Resolved> {
 					for (let k = Math.max(0, i - 5); k <= i; k++) parts.push(renderEntryFull(sess.branch[k], 1200));
 				}
 			}
-			evidence.push({ s: ref.s, e: [], date: item.ts.slice(0, 10), kind: item.source === "user" ? "user" : "inbox" });
+			evidence.push({ s: ref.s, e: [], date: item.ts.slice(0, 10), at: isoMinute(item.ts), kind: item.source === "user" ? "user" : "inbox" });
 			continue;
 		}
 		if (ref.s.startsWith("pr#")) {
 			const comment = ref.e.map((id) => deps.comments.get(id)).find(Boolean);
 			if (!comment) return fail(`unknown review comment ${ref.e.join(",")}`);
 			parts.push(`--- review comment ${comment.id} by ${comment.author} (${comment.at}) ---`, comment.body);
-			evidence.push({ s: ref.s, e: [comment.id], date: comment.at.slice(0, 10), kind: "reviewer" });
+			evidence.push({ s: ref.s, e: [comment.id], date: comment.at.slice(0, 10), at: isoMinute(comment.at), kind: "reviewer" });
 			continue;
 		}
 		const file = findSessionFile(deps, ref.s);
@@ -345,7 +352,8 @@ async function resolveOp(op: Op, deps: EvidenceDeps): Promise<Resolved> {
 		const shown = new Set<number>();
 		let isUser = false;
 		let date: string | undefined;
-		parts.push(`--- session ${sess.header.id} (${sess.header.timestamp.slice(0, 10)}, cwd ${sess.header.cwd}) ---`);
+		let latest: string | undefined;
+		parts.push(`--- session ${sess.header.id} (started ${isoMinute(sess.header.timestamp) ?? "?"}, cwd ${sess.header.cwd}) ---`);
 		for (const id of ref.e) {
 			const i = pos.get(id);
 			if (i === undefined) return fail(`entry ${id} is not in session ${ref.s.slice(0, 8)}`);
@@ -358,10 +366,66 @@ async function resolveOp(op: Op, deps: EvidenceDeps): Promise<Resolved> {
 			}
 			if (isUserEntry) isUser = true;
 			date ??= e.timestamp?.slice(0, 10);
+			if (e.timestamp && (!latest || Date.parse(e.timestamp) > Date.parse(latest))) latest = e.timestamp;
 		}
-		evidence.push({ s: sess.header.id, e: [...new Set(ref.e)], date: date ?? sess.header.timestamp.slice(0, 10), kind: isUser ? "user" : "observed" });
+		evidence.push({
+			s: sess.header.id,
+			e: [...new Set(ref.e)],
+			date: date ?? sess.header.timestamp.slice(0, 10),
+			at: isoMinute(latest ?? sess.header.timestamp),
+			kind: isUser ? "user" : "observed",
+		});
 	}
-	return { op, evidence, excerpts: clipHead(parts.join("\n"), 16_000) };
+	return { evidence, excerpts: clipHead(parts.join("\n"), 16_000) };
+}
+
+/** The latest time among `evidence`, in ms. */
+function latestTime(evidence: Evidence[], startOf: StartOf): number | undefined {
+	let out: number | undefined;
+	for (const e of evidence) {
+		const t = evidenceTime(e, startOf);
+		if (t !== undefined && (out === undefined || t > out)) out = t;
+	}
+	return out;
+}
+
+type StartOf = (sessionId: string) => string | undefined;
+
+/** Evidence of an existing note observed after the evidence of an operation on it. */
+interface NewerEvidence {
+	evidence: Evidence[];
+	excerpts: string;
+}
+
+/**
+ * Before a note is superseded or deprecated: its evidence that is newer than
+ * the operation's own. Newer sessions still saw the note hold, so the fact
+ * checker gets their transcript and the reviewer gets a warning.
+ */
+async function newerNoteEvidence(note: Note, opEvidence: Evidence[], deps: EvidenceDeps, startOf: StartOf): Promise<NewerEvidence | undefined> {
+	const since = latestTime(opEvidence, startOf);
+	if (since === undefined) return undefined;
+	const newer: Array<{ e: Evidence; t: number; excerpts: string }> = [];
+	for (const old of note.evidence) {
+		if (old.s.startsWith("pr#")) continue;
+		const got = old.e.length || old.s.startsWith("inbox:") ? await resolveRefs([{ s: old.s, e: old.e }], deps) : undefined;
+		const e = got && !got.error && got.evidence[0] ? { ...old, at: got.evidence[0].at ?? old.at } : old;
+		const t = evidenceTime(e, startOf);
+		if (t !== undefined && t > since) newer.push({ e, t, excerpts: got && !got.error ? got.excerpts : "" });
+	}
+	if (!newer.length) return undefined;
+	newer.sort((a, b) => b.t - a.t);
+	return {
+		evidence: newer.map((n) => ({ ...n.e, at: n.e.at ?? isoMinute(n.t) })),
+		excerpts: clipHead(
+			newer
+				.slice(0, 3)
+				.map((n) => clipHead(n.excerpts, 5000))
+				.filter(Boolean)
+				.join("\n"),
+			14_000,
+		),
+	};
 }
 
 interface Verdict {
@@ -390,7 +454,20 @@ function validateVerdicts(raw: unknown): Verdict[] {
 	});
 }
 
-function noteForPrompt(n: Note) {
+/** Where a note's evidence comes from and when it was observed, newest first. */
+function evidenceForPrompt(evidence: Evidence[], startOf?: StartOf, max = 6) {
+	return evidence
+		.map((e) => ({ e, t: evidenceTime(e, startOf) }))
+		.sort((a, b) => (b.t ?? 0) - (a.t ?? 0))
+		.slice(0, max)
+		.map(({ e, t }) => ({
+			s: e.s.startsWith("inbox:") || e.s.startsWith("pr#") ? e.s : e.s.slice(0, 8),
+			at: (t !== undefined ? isoMinute(t) : undefined) ?? e.date ?? "?",
+			...(e.kind ? { kind: e.kind } : {}),
+		}));
+}
+
+function noteForPrompt(n: Note, startOf?: StartOf) {
 	return {
 		id: n.id,
 		type: n.type,
@@ -398,7 +475,8 @@ function noteForPrompt(n: Note) {
 		title: n.title,
 		...(n.when ? { when: n.when } : {}),
 		body: clipHead(n.body, 700),
-		evidence: n.evidence.length,
+		evidence_count: n.evidence.length,
+		evidence: evidenceForPrompt(n.evidence, startOf),
 		updated: n.updated,
 		...(n.pinned ? { pinned: true } : {}),
 		...(n.stats.helpful || n.stats.harmful ? { stats: n.stats } : {}),
@@ -422,9 +500,9 @@ function opTitle(op: Op): string {
 	}
 }
 
-function proposalForCheck(op: Op, ws: Workspace) {
+function proposalForCheck(op: Op, ws: Workspace, startOf?: StartOf) {
 	const current = "id" in op ? ws.find(op.id) : undefined;
-	const base = { ref: op.ref, op: op.op, rationale: op.rationale, ...(current ? { current_note: noteForPrompt(current) } : {}) };
+	const base = { ref: op.ref, op: op.op, rationale: op.rationale, ...(current ? { current_note: noteForPrompt(current, startOf) } : {}) };
 	switch (op.op) {
 		case "add":
 			return { ...base, scope: op.scope, proposal: { type: op.type, title: op.title, body: op.body, when: op.when, index: op.index } };
@@ -450,13 +528,14 @@ async function verifyOps(
 	save: (name: string, v: unknown) => void,
 	tag: string,
 	scopes: { project: string; other_projects: string[] },
+	startOf: StartOf,
 ) {
 	const verdicts = new Map<string, Verdict>();
 	const batches: Resolved[][] = [];
 	let cur: Resolved[] = [];
 	let size = 0;
 	for (const r of items) {
-		const sz = r.excerpts.length + 1500;
+		const sz = r.excerpts.length + (r.newer?.excerpts.length ?? 0) + 1500;
 		if (cur.length && (cur.length >= 10 || size + sz > 110_000)) {
 			batches.push(cur);
 			cur = [];
@@ -468,7 +547,17 @@ async function verifyOps(
 	if (cur.length) batches.push(cur);
 	const system = systemPrompt("verify", { language: cfg.language }, root);
 	for (const [i, batch] of batches.entries()) {
-		const input = { scopes, proposals: batch.map((r) => ({ ...proposalForCheck(r.op, ws), excerpts: r.excerpts })) };
+		const input = {
+			scopes,
+			proposals: batch.map((r) => ({
+				...proposalForCheck(r.op, ws, startOf),
+				evidence: evidenceForPrompt(r.evidence, startOf),
+				excerpts: r.excerpts,
+				...(r.newer
+					? { newer_note_evidence: evidenceForPrompt(r.newer.evidence, startOf), newer_note_excerpts: r.newer.excerpts || "(transcripts not available)" }
+					: {}),
+			})),
+		};
 		const out = await llm.json("verify", cfg.models.verify, system, JSON.stringify(input, null, 1), validateVerdicts, { maxTokens: 32_000, timeoutMs: 12 * MINUTE });
 		save(`verify-${tag}-${i + 1}.json`, { input, out });
 		for (const v of out) verdicts.set(v.ref, v);
@@ -668,6 +757,10 @@ async function dream(
 	}
 	const fileBySession = new Map<string, string>();
 	for (const [file, rec] of Object.entries(digests)) if (rec.sessionId) fileBySession.set(rec.sessionId, file);
+	const startOf: StartOf = (id) => {
+		const file = fileBySession.get(id);
+		return (file && digests[file]?.started) || undefined;
+	};
 	const projects = knownProjects(digests);
 	const primaryOf = (rec: DigestRecord | undefined) => (rec ? projects.primary(rec.projectKey, rec.paths ?? []) : undefined);
 
@@ -777,7 +870,7 @@ async function dream(
 						sc,
 						{
 							title: scopeTitle(sc),
-							notes: ns.filter((n) => n.status === "active").map((n) => ({ ...noteForPrompt(n), ...(ws.pending.has(n.id) ? { pending: true } : {}) })),
+							notes: ns.filter((n) => n.status === "active").map((n) => ({ ...noteForPrompt(n, startOf), ...(ws.pending.has(n.id) ? { pending: true } : {}) })),
 						},
 					]),
 				),
@@ -899,6 +992,7 @@ async function dream(
 			const sessionsInput = g.cards.map((c) => ({
 				session: c.sessionId,
 				date: c.date,
+				started: isoMinute(digests[c.file]?.started) ?? c.date,
 				...sessionInfo.get(c.sessionId),
 				title: c.title,
 				summary: c.summary,
@@ -933,8 +1027,14 @@ async function dream(
 					project: { budget: cfg.budgets.projectTokens, used: used(scope, cfg.budgets.projectTokens) },
 				},
 				notes: {
-					global: ws.scope(GLOBAL_SCOPE).filter((n) => n.status === "active").map(noteForPrompt),
-					project: ws.scope(scope).filter((n) => n.status === "active").map(noteForPrompt),
+					global: ws
+						.scope(GLOBAL_SCOPE)
+						.filter((n) => n.status === "active")
+						.map((n) => noteForPrompt(n, startOf)),
+					project: ws
+						.scope(scope)
+						.filter((n) => n.status === "active")
+						.map((n) => noteForPrompt(n, startOf)),
 				},
 				sessions: sessionsInput,
 				inbox: g.inbox.map((i) => ({ s: `inbox:${i.id}`, at: i.ts, source: i.source, kind: i.kind, scope: i.scope, text: i.text })),
@@ -960,8 +1060,14 @@ async function dream(
 			const resolved = await Promise.all(parsed.ops.map((op) => resolveOp(op, deps)));
 			for (const r of resolved.filter((x) => x.error)) rejected.push({ ref: r.op.ref, op: r.op.op, title: opTitle(r.op), reason: r.error ?? "" });
 			const valid = resolved.filter((x) => !x.error);
+			for (const r of valid) {
+				if (r.op.op !== "supersede" && r.op.op !== "deprecate") continue;
+				const old = ws.find(r.op.id);
+				if (old) r.newer = await newerNoteEvidence(old, r.evidence, deps, startOf);
+				if (r.newer) log(`  ${r.op.ref} ${r.op.op} ${r.op.id}: the note has ${r.newer.evidence.length} newer evidence session(s)`);
+			}
 			const scopeChoices = { project: key, other_projects: otherProjects.map((o) => o.scope.slice(8)) };
-			const verdicts = valid.length ? await verifyOps(valid, ws, llm, cfg, wt, save, tag, scopeChoices) : new Map<string, Verdict>();
+			const verdicts = valid.length ? await verifyOps(valid, ws, llm, cfg, wt, save, tag, scopeChoices, startOf) : new Map<string, Verdict>();
 			for (const r of valid) {
 				const v = verdicts.get(r.op.ref);
 				const d = decide(v);
@@ -1001,6 +1107,7 @@ async function dream(
 					source: "curator",
 					verdict: v ? { verdict: v.verdict, reason: v.reason, corrected: !!(d.fix?.title || d.fix?.body || (d.fix?.scope && !guardNote)) } : undefined,
 					proposedTitle: d.fix?.title ? opTitle(r.op) : undefined,
+					newerEvidence: r.newer?.evidence,
 				});
 			}
 		}

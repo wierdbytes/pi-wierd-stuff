@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- **Fix:** a note is no longer superseded or deprecated on evidence older than its own — the curator and the fact check see when each note was last observed, and the report flags replacements of notes with newer evidence.
+
 ## 0.1.0
 
 - **New:** dreaming — a background pi run distills new sessions into evidence-backed memory notes: per-session cards (Sonnet 5.5), a curator that proposes add / update / supersede / deprecate / confirm operations (Opus 5.5), and an independent fact check of every operation against the original transcript entries (GPT-6.1).

@@ -29,7 +29,42 @@ export interface Evidence {
 	/** Entry ids (or comment ids). */
 	e: string[];
 	date?: string;
+	/** When the cited entries were written (ISO, minute precision, UTC); the latest of them. */
+	at?: string;
 	kind?: EvidenceKind;
+}
+
+/** ISO timestamp cut to minutes: `2026-10-31T13:50Z`. */
+export function isoMinute(v: string | number | undefined): string | undefined {
+	if (v === undefined || v === "") return undefined;
+	const t = typeof v === "number" ? v : Date.parse(v);
+	if (!Number.isFinite(t)) return undefined;
+	return `${new Date(t).toISOString().slice(0, 16)}Z`;
+}
+
+/** Creation time of a UUIDv7 session id (pi session ids are v7), in ms. */
+export function uuidV7Time(id: string): number | undefined {
+	const hex = id.replace(/-/g, "");
+	if (!/^[0-9a-f]{32}$/i.test(hex) || hex[12] !== "7") return undefined;
+	return Number.parseInt(hex.slice(0, 12), 16);
+}
+
+/**
+ * When a piece of evidence was observed, in ms: the cited entries' time, else
+ * the session start (`startOf`, then the id itself), else the day.
+ */
+export function evidenceTime(e: Evidence, startOf?: (sessionId: string) => string | undefined): number | undefined {
+	const at = e.at ? Date.parse(e.at) : Number.NaN;
+	if (Number.isFinite(at)) return at;
+	if (!e.s.startsWith("inbox:") && !e.s.startsWith("pr#")) {
+		const started = startOf?.(e.s);
+		const t = started ? Date.parse(started) : Number.NaN;
+		if (Number.isFinite(t)) return t;
+		const v7 = uuidV7Time(e.s);
+		if (v7 !== undefined) return v7;
+	}
+	const day = e.date ? Date.parse(e.date) : Number.NaN;
+	return Number.isFinite(day) ? day : undefined;
 }
 
 export interface Note {
@@ -94,7 +129,8 @@ function parseEvidence(v: unknown): Evidence[] {
 		const o = item as Record<string, unknown>;
 		if (typeof o.s !== "string" || !o.s) continue;
 		const e = Array.isArray(o.e) ? o.e.filter((x): x is string => typeof x === "string") : typeof o.e === "string" ? [o.e] : [];
-		out.push({ s: o.s, e, date: dateStr(o.date), kind: oneOf(EVIDENCE_KINDS, o.kind) ? o.kind : undefined });
+		const at = typeof o.at === "string" ? isoMinute(o.at) : o.at instanceof Date ? isoMinute(o.at.getTime()) : undefined;
+		out.push({ s: o.s, e, date: dateStr(o.date), ...(at ? { at } : {}), kind: oneOf(EVIDENCE_KINDS, o.kind) ? o.kind : undefined });
 	}
 	return out;
 }
@@ -168,6 +204,7 @@ export function serializeNote(n: Note): string {
 		for (const ev of n.evidence) {
 			const o: Record<string, unknown> = { s: ev.s, e: ev.e };
 			if (ev.date) o.date = ev.date;
+			if (ev.at) o.at = ev.at;
 			if (ev.kind) o.kind = ev.kind;
 			lines.push(`  - ${j(o)}`);
 		}
