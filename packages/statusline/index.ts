@@ -70,6 +70,7 @@ import { blockHasSubSettings, createBlockSettingsSubmenu } from "./block-setting
 import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
 import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
 import { SubagentsTracker } from "./subagents-tracker.ts";
+import { EditorDockFit } from "./editor-dock.ts";
 
 const PROMPT_PADDING = 0;
 
@@ -230,6 +231,8 @@ function makeEditorFactory(
     setActiveTui(tui);
 
     class WierdStatuslineEditor extends CustomEditor {
+      private readonly dockFit = new EditorDockFit();
+
       constructor() {
         super(tui, theme, keybindings, { paddingX: PROMPT_PADDING });
       }
@@ -239,6 +242,7 @@ function makeEditorFactory(
       }
 
       render(width: number): string[] {
+        this.dockFit.apply(tui, this);
         const lines = super.render(width);
         if (lines.length === 0) return lines;
 

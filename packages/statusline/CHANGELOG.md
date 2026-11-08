@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2
+
+- **Fix:** no blank rows under the prompt in fullscreen mode — the input is the last terminal row and grows only with its text.
+
 ## 0.9.1
 
 - **New:** ship `CHANGELOG.md` — pi shows release notes under "Extension Updates" after an update.
