@@ -14,6 +14,7 @@ packages/
   ask/          ask_user clarification tool, fork of @eko24ive/pi-ask + OSC 7501 blocked status (extension)
   autoname/     Auto session name + terminal title from a cheap model (extension)
   common/       Shared TUI: settings modal, tool-frame helpers (library)
+  dream/        Offline memory consolidation: background dreams → memory PRs, memory injection + tools (extension)
   events/       Typed notify:toast / notify:status event bus (library)
   facelift/     Pretty rendering for built-in pi tools — bash/read/ls/find/grep (extension)
   herdr/        model / effort / context as agent.* labels on the herdr-core terminal (extension)
