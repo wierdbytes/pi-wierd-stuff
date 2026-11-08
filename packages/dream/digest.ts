@@ -58,6 +58,12 @@ export function expandPath(raw: string, cwd: string): string | undefined {
 }
 
 /** Paths a tool call works with: `path` arguments and, for bash, `cd` targets and home paths. */
+/** Absolute paths under a home folder in a shell command: `~/…`, `/Users/<u>/…` (macOS), `/home/<u>/…` (Linux) or this machine's home. */
+const HOME_PATH_RE = new RegExp(
+	`(?:^|[\\s'"=(:])((?:~|/Users/[^/\\s'"]+|/home/[^/\\s'"]+|${homedir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})/[^\\s'"\`;|&)<>]+)`,
+	"g",
+);
+
 export function callPaths(name: string, args: unknown, cwd: string): string[] {
 	const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
 	const out: string[] = [];
@@ -68,7 +74,7 @@ export function callPaths(name: string, args: unknown, cwd: string): string[] {
 	if (name === "bash" && typeof a.command === "string") {
 		const cmd = a.command;
 		for (const m of cmd.matchAll(/(?:^|[;&|(]|\n)\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|)]+)/g)) add(expandPath(m[1], cwd));
-		for (const m of cmd.matchAll(/(?:^|[\s'"=(:])((?:~|\/Users\/[^/\s'"]+)\/[^\s'"`;|&)<>]+)/g)) add(expandPath(m[1], cwd));
+		for (const m of cmd.matchAll(HOME_PATH_RE)) add(expandPath(m[1], cwd));
 	}
 	return out;
 }

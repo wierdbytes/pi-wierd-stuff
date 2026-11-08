@@ -3,6 +3,7 @@
 ## 0.1.1
 
 - **Fix:** a note is no longer superseded or deprecated on evidence older than its own — the curator and the fact check see when each note was last observed, and the report flags replacements of notes with newer evidence.
+- **Fix:** on Linux, paths under `/home/<user>` in shell commands now count when a session is matched to its project.
 
 ## 0.1.0
 
