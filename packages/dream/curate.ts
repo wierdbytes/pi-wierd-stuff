@@ -27,7 +27,7 @@ import {
 	slugify,
 } from "./notes.ts";
 import { CHARTER_FILE, GLOBAL_SCOPE, INDEX_FILE, projectScope, SCOPE_META_FILE, scopeDir } from "./layout.ts";
-import { findInjection, findRisky, findSecrets } from "./secrets.ts";
+import { findInjection, findSecrets } from "./secrets.ts";
 import { tokenize } from "./search.ts";
 
 export type OpKind = "add" | "update" | "supersede" | "deprecate" | "confirm" | "agents_md" | "skill";
@@ -219,12 +219,6 @@ export function lintText(text: string): string[] {
 	return out;
 }
 
-/** Things the reviewer should look at before merging. */
-export function warnText(text: string): string | undefined {
-	const risky = findRisky(text);
-	return risky.length ? `⚠️ ${risky.join(", ")}: check the source before merging` : undefined;
-}
-
 function evKey(e: Evidence): string {
 	return `${e.s}|${[...e.e].sort().join(",")}`;
 }
@@ -252,6 +246,10 @@ export interface Change {
 	title: string;
 	/** For superseded: the replacement's id. */
 	newId?: string;
+	/** For moved: the scope the note left. */
+	from?: string;
+	/** For updated: the title before, when it changed. */
+	oldTitle?: string;
 	file?: string;
 	note?: string;
 }
@@ -479,8 +477,7 @@ export function applyOp(ws: Workspace, op: Op, actx: ApplyContext): ApplyResult 
 				return { ok: true, change: { kind: "merged", ref: op.ref, scope, noteId: dup.n.id, title: dup.n.title, note: `duplicate of ${dup.n.id}` } };
 			}
 			const note = ws.createNote(scope, f, ev);
-			const warning = warnText(`${f.title}\n${f.body ?? ""}`);
-			return { ok: true, change: { kind: "added", ref: op.ref, scope, noteId: note.id, title: note.title, file: note.file, note: warning } };
+			return { ok: true, change: { kind: "added", ref: op.ref, scope, noteId: note.id, title: note.title, file: note.file } };
 		}
 		case "update": {
 			const n = ws.find(op.id);
@@ -491,6 +488,7 @@ export function applyOp(ws: Workspace, op: Op, actx: ApplyContext): ApplyResult 
 			const target = fix.scope ?? op.scope;
 			const to = target ? resolveScope(ws, target, actx.projectScope) : undefined;
 			if (target && !to) return { ok: false, reason: `unknown scope ${target}` };
+			const oldTitle = f.title && f.title !== n.title ? n.title : undefined;
 			if (f.title) n.title = f.title;
 			if (f.body !== undefined) n.body = f.body;
 			if (f.when) n.when = f.when;
@@ -502,9 +500,10 @@ export function applyOp(ws: Workspace, op: Op, actx: ApplyContext): ApplyResult 
 			const from = n.scope;
 			if (to && to !== n.scope) ws.moveNote(n, to);
 			const moved = n.scope !== from;
-			const warning = warnText(`${n.title}\n${n.body}`);
-			const note = [moved ? `${from} → ${n.scope}` : "", warning ?? ""].filter(Boolean).join(" · ") || undefined;
-			return { ok: true, change: { kind: moved ? "moved" : "updated", ref: op.ref, scope: n.scope, noteId: n.id, title: n.title, file: n.file, note } };
+			return {
+				ok: true,
+				change: { kind: moved ? "moved" : "updated", ref: op.ref, scope: n.scope, noteId: n.id, title: n.title, file: n.file, from: moved ? from : undefined, oldTitle },
+			};
 		}
 		case "supersede": {
 			const old = ws.find(op.id);

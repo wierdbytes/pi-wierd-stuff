@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- **Change:** the memory PR description is a review view — counts and what to check before merging on top, then one line per note grouped by project, marked when it loads into every session, with the note text, rationale and sessions folded under it.
+- **New:** the PR description covers the whole PR — later dreams rebuild it from the branch (review comments and your edits included) and leave a short comment with what they changed.
+- **Fix:** `<placeholders>` in note titles and text no longer vanish from the PR description.
+
 ## 0.1.1
 
 - **Fix:** a note is no longer superseded or deprecated on evidence older than its own — the curator and the fact check see when each note was last observed, and the report flags replacements of notes with newer evidence.

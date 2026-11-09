@@ -19,6 +19,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type AgentsEdit, findContextFile, openAgentsPr, publishAgentsEdits, renderEditsDiff } from "./agentsmd.ts";
+import { diffNotes, itemFromChange, itemsFromDiff, type NoteDiff, prReport, type ReportChange } from "./changes.ts";
 import { type DreamConfig, loadConfig } from "./config.ts";
 import { type AgentsMdOp, applyOp, applyVotes, type EvidenceRef, type IndexStat, type Op, type ParsedOps, parseOps, regenerateIndexes, Workspace } from "./curate.ts";
 import { buildDigest, clipHead, digestHeader, renderDigest, renderEntryFull } from "./digest.ts";
@@ -28,11 +29,21 @@ import { CHARTER_FILE, GLOBAL_SCOPE, keyToDir, type MemoryPaths, memoryPaths, ne
 import { Llm } from "./llm.ts";
 import { acquireLock, releaseLock } from "./lock.ts";
 import { buildIndex } from "./memindex.ts";
-import { type Evidence, evidenceTime, isoMinute, type Note } from "./notes.ts";
+import { type Evidence, evidenceTime, isoMinute, type Note, parseNote } from "./notes.ts";
 import { resolveProject, shortKey } from "./project.ts";
 import { ProjectMap } from "./projects.ts";
 import { DEFAULT_GLOBAL_CHARTER, DEFAULT_PROJECT_CHARTER, systemPrompt } from "./prompts.ts";
-import { prTitle, type ReportAgents, type ReportChange, type ReportData, type ReportRejected, type ReportSession, renderReport } from "./report.ts";
+import {
+	prTitle,
+	type ReportAgents,
+	type ReportData,
+	type ReportItem,
+	type ReportRejected,
+	type ReportSession,
+	renderPrBody,
+	renderReport,
+	renderRunComment,
+} from "./report.ts";
 import { pendingInbox, pendingSessions } from "./scheduler.ts";
 import { Bm25, chunkDigest, type Doc, snippet } from "./search.ts";
 import { listSessionFiles, parseSession, SessionCache, type SessionFile, sessionIdFromPath } from "./sessions.ts";
@@ -613,6 +624,44 @@ async function noteIdsAt(root: string, ref: string): Promise<Set<string>> {
 	return ids;
 }
 
+/**
+ * What the branch checked out in `wt` changes in notes since it left `baseRef`
+ * (from their merge base); undefined when git cannot tell.
+ */
+async function branchNoteDiff(wt: string, baseRef: string, ws: Workspace): Promise<NoteDiff[] | undefined> {
+	const mb = await git(wt, ["merge-base", baseRef, "HEAD"]);
+	const base = mb.stdout.trim();
+	if (mb.code !== 0 || !base) return undefined;
+	const r = await git(wt, ["diff", "--name-status", "--no-renames", base, "HEAD", "--", "scopes"]);
+	if (r.code !== 0) return undefined;
+	const changed = new Set<string>();
+	const before: Note[] = [];
+	for (const line of r.stdout.split("\n")) {
+		const [status, path] = line.split("\t");
+		const scope = path ? /^scopes\/(.+)\/notes\/[^/]+\.md$/.exec(path)?.[1] : undefined;
+		if (!scope) continue;
+		if (status !== "D") changed.add(path);
+		if (status === "A") continue;
+		const show = await git(wt, ["show", `${base}:${path}`]);
+		if (show.code === 0) before.push(parseNote(show.stdout, path, scope));
+	}
+	return diffNotes(before, ws.all().filter((n) => changed.has(n.file)));
+}
+
+/** Saved reports of earlier dreams (`report.json` in their run folders), oldest first. */
+function loadRunReports(P: MemoryPaths, runIds: string[]): ReportData[] {
+	const out: ReportData[] = [];
+	for (const id of runIds) {
+		try {
+			const d = JSON.parse(readFileSync(join(P.runs, id, "report.json"), "utf-8")) as ReportData;
+			if (Array.isArray(d?.items)) out.push(d);
+		} catch {
+			// a dream from before report.json
+		}
+	}
+	return out;
+}
+
 /** Remove worktrees left by dry runs or crashed dreams (older than a day). */
 async function cleanupWorktrees(root: string, P: MemoryPaths, log: (m: string) => void): Promise<void> {
 	if (existsSync(P.worktrees)) {
@@ -1106,7 +1155,6 @@ async function dream(
 					evidence: r.evidence,
 					source: "curator",
 					verdict: v ? { verdict: v.verdict, reason: v.reason, corrected: !!(d.fix?.title || d.fix?.body || (d.fix?.scope && !guardNote)) } : undefined,
-					proposedTitle: d.fix?.title ? opTitle(r.op) : undefined,
 					newerEvidence: r.newer?.evidence,
 				});
 			}
@@ -1130,8 +1178,9 @@ async function dream(
 			if (a.op.summary) entry.summaries.push(a.op.summary);
 		}
 		for (const e of byRepo.values()) {
+			const summary = e.summaries.join("; ") || undefined;
 			if (opts.dryRun) {
-				agents.push({ project: e.key, rel: e.rel, error: "dry run", patch: renderEditsDiff(e.rel, e.edits), rationale: e.rationale });
+				agents.push({ project: e.key, rel: e.rel, title: summary, error: "dry run", patch: renderEditsDiff(e.rel, e.edits), rationale: e.rationale });
 				continue;
 			}
 			const res = await publishAgentsEdits({
@@ -1144,7 +1193,7 @@ async function dream(
 				details: e.rationale,
 				log,
 			});
-			agents.push({ project: e.key, rel: e.rel, url: res.url, error: res.error, patch: res.patch, rationale: e.rationale });
+			agents.push({ project: e.key, rel: e.rel, title: summary, url: res.url, error: res.error, patch: res.patch, rationale: e.rationale });
 		}
 
 		// 8. report, commit, pull request
@@ -1162,8 +1211,14 @@ async function dream(
 				learnings: c.learnings.length,
 			};
 		});
+		const withTitles = (list: ReportItem[]) => {
+			for (const it of list) for (const sc of [it.scope, it.from]) if (sc) scopeTitle(sc);
+			return list;
+		};
+		const items = withTitles(changes.map((c) => itemFromChange(c, (id) => ws.find(id))));
 		const data: ReportData = {
 			runId,
+			runs: [runId],
 			date,
 			language: cfg.language,
 			models: { cards: cfg.models.cards.model, analyze: cfg.models.analyze.model, verify: cfg.models.verify.model },
@@ -1173,7 +1228,7 @@ async function dream(
 			inbox: inbox.length,
 			feedback: feedback.length,
 			unhandled,
-			changes,
+			items,
 			rejected,
 			agents,
 			indexes,
@@ -1184,6 +1239,7 @@ async function dream(
 		};
 		const report = renderReport(data);
 		writeFileSync(join(runDir, "report.md"), report, "utf-8");
+		save("report.json", data);
 		const memoryChanged = (await git(wt, ["status", "--porcelain"])).stdout.trim().length > 0;
 		const result: DreamResult = { status: "noop", sessions: pending.length, cost: llm.totalCost() };
 		if (opts.dryRun) {
@@ -1198,22 +1254,32 @@ async function dream(
 			await gitOk(wt, ["commit", "-m", prTitle(data)]);
 			if (repo) {
 				await gitOk(wt, ["push", "origin", `HEAD:refs/heads/${branch}`], 120_000);
-				const body = report.length > 60_000 ? `${report.slice(0, 60_000)}\n\n…(truncated: reports/${runId}.md)` : report;
-				const bodyFile = join(runDir, "pr-body.md");
-				writeFileSync(bodyFile, body, "utf-8");
+				const sha = await gitOk(wt, ["rev-parse", "HEAD"]);
+				const reportUrl = (id: string) => `https://github.com/${repo}/blob/${sha}/reports/${id}.md`;
 				let stillOpen = false;
 				if (openPr) {
 					const v = await gh(["pr", "view", String(openPr.number), "--repo", repo, "--json", "state", "--jq", ".state"]);
 					stillOpen = v.code === 0 && v.stdout.trim() === "OPEN";
 				}
+				// The description shows the whole pull request: every dream of it, review comments and hand edits.
+				const runs = [...(openPr ? loadRunReports(P, state.runs.filter((r) => r.pr === openPr?.number).map((r) => r.id)) : []), data];
+				const diffs = await branchNoteDiff(wt, `origin/${cfg.github.base}`, ws);
+				if (!diffs) log("  could not diff the branch against its base: the description shows this dream only");
+				const pr = prReport(runs, withTitles(diffs ? itemsFromDiff(diffs, runs.map((r) => r.items)) : items));
+				const title = prTitle(pr, /^pi-dream\/(\d{4}-\d{2}-\d{2})/.exec(branch)?.[1] ?? date);
+				const bodyFile = join(runDir, "pr-body.md");
+				writeFileSync(bodyFile, renderPrBody(pr, { reportUrl }), "utf-8");
 				if (openPr && stillOpen) {
-					await ghOk(["pr", "comment", String(openPr.number), "--repo", repo, "--body-file", bodyFile]);
+					await ghOk(["pr", "edit", String(openPr.number), "--repo", repo, "--title", title, "--body-file", bodyFile]);
+					const commentFile = join(runDir, "pr-comment.md");
+					writeFileSync(commentFile, renderRunComment(data, { updated: true, reportUrl: reportUrl(runId) }), "utf-8");
+					await ghOk(["pr", "comment", String(openPr.number), "--repo", repo, "--body-file", commentFile]);
 					result.pr = openPr.url;
 					log(`updated PR #${openPr.number}: ${openPr.url}`);
 				} else {
 					await gh(["label", "create", cfg.github.label, "--repo", repo, "--color", "7AA2F7", "--description", "pi-dream memory review", "--force"]);
 					const created = await ghOk(
-						["pr", "create", "--repo", repo, "--base", cfg.github.base, "--head", branch, "--title", prTitle(data), "--body-file", bodyFile, "--label", cfg.github.label],
+						["pr", "create", "--repo", repo, "--base", cfg.github.base, "--head", branch, "--title", title, "--body-file", bodyFile, "--label", cfg.github.label],
 						{ timeoutMs: 120_000 },
 					);
 					const url = created.split("\n").pop()?.trim() ?? created;
@@ -1232,9 +1298,9 @@ async function dream(
 			});
 			state.runs = state.runs.slice(-60);
 		} else if (repo && openPr && (feedback.length || unhandled.length)) {
-			const bodyFile = join(runDir, "pr-body.md");
-			writeFileSync(bodyFile, report, "utf-8");
-			await ghOk(["pr", "comment", String(openPr.number), "--repo", repo, "--body-file", bodyFile]);
+			const commentFile = join(runDir, "pr-comment.md");
+			writeFileSync(commentFile, renderRunComment(data, { updated: false }), "utf-8");
+			await ghOk(["pr", "comment", String(openPr.number), "--repo", repo, "--body-file", commentFile]);
 			result.pr = openPr.url;
 		}
 		if (!memoryChanged && agents.length) result.status = "ok";
