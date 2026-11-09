@@ -8,7 +8,7 @@
  *
  *   npm view @anthropic-ai/claude-code version
  */
-export const CLAUDE_CODE_VERSION = "2.1.281";
+export const CLAUDE_CODE_VERSION = "2.1.321";
 
 /**
  * Billing header line as emitted by the real CLI (verified against 2.1.278):

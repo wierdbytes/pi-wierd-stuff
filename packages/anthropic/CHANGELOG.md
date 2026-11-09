@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.6
+
+- **Fix:** OAuth requests rejected with `claude_code_version_too_old` — Claude Code version markers bumped to 2.1.321.
+
 ## 0.2.5
 
 - **New:** ship `CHANGELOG.md` — pi shows release notes under "Extension Updates" after an update.
