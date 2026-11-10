@@ -1259,6 +1259,31 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	});
 
 	// ===================================================================
+	// Working indicator — a still `●` instead of pi's 80ms spinner
+	// -------------------------------------------------------------------
+	// pi's braille spinner repaints the terminal ~12×/s for as long as the
+	// model streams; a GPU-rendered host (Herdr) redraws its whole window
+	// for every one of those frames. A single frame starts no animation
+	// timer at all. pi resets the indicator on every reload / session
+	// switch, so it is applied on each `session_start` (and at once when
+	// the setting changes).
+	// ===================================================================
+
+	const applyWorkingIndicator = (ctx: SessionContextLike): void => {
+		try {
+			if (!ctx.hasUI || typeof ctx.ui.setWorkingIndicator !== "function") return;
+			if (faceliftConfig.animateWorkingIndicator) ctx.ui.setWorkingIndicator();
+			else ctx.ui.setWorkingIndicator({ frames: [ctx.ui.theme.fg("accent", "●")] });
+		} catch {
+			// Stale ctx or an older pi without the API: keep pi's default.
+		}
+	};
+
+	pi.on("session_start", (_event, ctx) => {
+		applyWorkingIndicator(ctx);
+	});
+
+	// ===================================================================
 	// read — syntax-highlighted file content
 	// ===================================================================
 
@@ -1866,6 +1891,15 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				value: faceliftConfig.showWorkingTime,
 				default: true,
 			},
+			{
+				key: "animateWorkingIndicator",
+				type: "boolean",
+				label: "Animated spinner",
+				description:
+					"Animate the spinner in front of the \u201cWorking\u2026\u201d line (pi\u2019s default, redrawn every 80ms). Off shows a still \u25cf, so the terminal isn\u2019t repainted 12\u00d7/s while the model streams \u2014 cheaper in GPU-rendered hosts such as Herdr.",
+				value: faceliftConfig.animateWorkingIndicator,
+				default: false,
+			},
 		];
 		await openSettingsModal(extCtx, {
 			title: "@wierdbytes/pi-facelift",
@@ -1879,6 +1913,11 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 					faceliftConfig = { ...faceliftConfig, showWorkingTime: value as boolean };
 					persistFaceliftConfig(extCtx);
 				}
+				if (key === "animateWorkingIndicator") {
+					faceliftConfig = { ...faceliftConfig, animateWorkingIndicator: value as boolean };
+					persistFaceliftConfig(extCtx);
+					applyWorkingIndicator(extCtx);
+				}
 			},
 		});
 	};
@@ -1888,6 +1927,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			`config:     ${getFaceliftConfigPath()}`,
 			`diffLayout: ${faceliftConfig.diffLayout}`,
 			`workingTime: ${faceliftConfig.showWorkingTime ? "on" : "off"}`,
+			`spinner:    ${faceliftConfig.animateWorkingIndicator ? "animated" : "still"}`,
 		];
 		extCtx.ui.notify(`@wierdbytes/pi-facelift\n${lines.join("\n")}`, "info");
 	};
@@ -1895,6 +1935,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	const resetFaceliftConfig = (extCtx: ExtensionContext): void => {
 		faceliftConfig = faceliftEnvDefaults();
 		persistFaceliftConfig(extCtx);
+		applyWorkingIndicator(extCtx);
 		extCtx.ui.notify("pi-facelift: config reset to defaults.", "info");
 	};
 

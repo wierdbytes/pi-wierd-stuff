@@ -62,6 +62,11 @@ tool output.
   (`0h12m0s` → `12m0s`); sub-minute values keep one decimal (`45.2s`).
 
   Toggle via `showWorkingTime` in `/facelift`.
+- **still working indicator** — pi's braille spinner in front of the
+  `Working...` line is replaced with a still accent `●`, so the terminal
+  isn't repainted ~12×/s while the model streams (GPU-rendered hosts such
+  as Herdr redraw the whole window for every frame). Turn the animation
+  back on via `animateWorkingIndicator` in `/facelift`.
 
 ## Install
 
@@ -128,7 +133,11 @@ Current schema:
   // each run's model time (`worked`, tools excluded) and wall-clock time
   // (`total`, retries + tools + overhead) as a muted line in chat
   // history. Default true.
-  "showWorkingTime": true
+  "showWorkingTime": true,
+
+  // Animate the spinner in front of the "Working..." line (pi's default,
+  // redrawn every 80ms). Default false: a still accent "●".
+  "animateWorkingIndicator": false
 }
 ```
 
@@ -147,6 +156,7 @@ icons, image protocols) or boot-time toggles:
 | `FACELIFT_IMAGE_PROTOCOL`      | auto            | Force `kitty` / `iterm2` / `none`. Auto-detected from `$TERM_PROGRAM` etc.    |
 | `DIFF_LAYOUT`                  | (none)          | One-shot override for `diffLayout` on first-run seeding.                      |
 | `FACELIFT_SHOW_WORKING_TIME`   | `true`          | One-shot override for `showWorkingTime` on first-run seeding (`0`/`off` ⇒ off). |
+| `FACELIFT_ANIMATE_WORKING`     | `false`         | Default for `animateWorkingIndicator` when the config doesn't set it (`1`/`on` ⇒ animated). |
 
 ## Development
 

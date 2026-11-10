@@ -40,6 +40,8 @@ beforeEach(() => {
 	delete process.env.DIFF_LAYOUT;
 	savedEnv.FACELIFT_SHOW_WORKING_TIME = process.env.FACELIFT_SHOW_WORKING_TIME;
 	delete process.env.FACELIFT_SHOW_WORKING_TIME;
+	savedEnv.FACELIFT_ANIMATE_WORKING = process.env.FACELIFT_ANIMATE_WORKING;
+	delete process.env.FACELIFT_ANIMATE_WORKING;
 });
 
 afterEach(() => {
@@ -48,29 +50,32 @@ afterEach(() => {
 	if (savedEnv.FACELIFT_SHOW_WORKING_TIME !== undefined)
 		process.env.FACELIFT_SHOW_WORKING_TIME = savedEnv.FACELIFT_SHOW_WORKING_TIME;
 	else delete process.env.FACELIFT_SHOW_WORKING_TIME;
+	if (savedEnv.FACELIFT_ANIMATE_WORKING !== undefined)
+		process.env.FACELIFT_ANIMATE_WORKING = savedEnv.FACELIFT_ANIMATE_WORKING;
+	else delete process.env.FACELIFT_ANIMATE_WORKING;
 	rmSync(dir, { recursive: true, force: true });
 });
 
 describe("envDefaults", () => {
 	it("returns 'consistent' when DIFF_LAYOUT is unset", () => {
-		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	for (const layout of VALID_DIFF_LAYOUTS) {
 		it(`honours DIFF_LAYOUT=${layout}`, () => {
 			process.env.DIFF_LAYOUT = layout;
-			expect(envDefaults()).toEqual({ diffLayout: layout, showWorkingTime: true });
+			expect(envDefaults()).toEqual({ diffLayout: layout, showWorkingTime: true, animateWorkingIndicator: false });
 		});
 	}
 
 	it("ignores invalid DIFF_LAYOUT values", () => {
 		process.env.DIFF_LAYOUT = "rainbow";
-		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	it("is case-insensitive on DIFF_LAYOUT", () => {
 		process.env.DIFF_LAYOUT = "SPLIT";
-		expect(envDefaults()).toEqual({ diffLayout: "split", showWorkingTime: true });
+		expect(envDefaults()).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	it("defaults showWorkingTime to true", () => {
@@ -90,15 +95,43 @@ describe("envDefaults", () => {
 	});
 });
 
+describe("animateWorkingIndicator", () => {
+	it("defaults to false (a still indicator)", () => {
+		expect(envDefaults().animateWorkingIndicator).toBe(false);
+	});
+
+	it("honours FACELIFT_ANIMATE_WORKING=1/on/true to animate", () => {
+		for (const v of ["1", "on", "true"]) {
+			process.env.FACELIFT_ANIMATE_WORKING = v;
+			expect(envDefaults().animateWorkingIndicator).toBe(true);
+		}
+	});
+
+	it("persists animateWorkingIndicator=true through save/load", () => {
+		saveConfig({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: true }, configFile);
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: true });
+	});
+
+	it("sanitises a non-boolean value back to the default", () => {
+		writeFileSync(configFile, JSON.stringify({ diffLayout: "split", animateWorkingIndicator: "yes" }));
+		expect(loadConfig(configFile).animateWorkingIndicator).toBe(false);
+	});
+
+	it("keeps older config files (no field) on the default", () => {
+		writeFileSync(configFile, JSON.stringify({ diffLayout: "split", showWorkingTime: false }));
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: false, animateWorkingIndicator: false });
+	});
+});
+
 describe("showWorkingTime round-trip", () => {
 	it("persists showWorkingTime=false through save/load", () => {
-		saveConfig({ diffLayout: "consistent", showWorkingTime: false }, configFile);
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: false });
+		saveConfig({ diffLayout: "consistent", showWorkingTime: false, animateWorkingIndicator: false }, configFile);
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: false, animateWorkingIndicator: false });
 	});
 
 	it("sanitises a non-boolean showWorkingTime back to the default", () => {
 		writeFileSync(configFile, JSON.stringify({ diffLayout: "split", showWorkingTime: "nope" }));
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: true });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 });
 
@@ -107,7 +140,7 @@ describe("loadConfig + saveConfig round-trip", () => {
 		it(`persists diffLayout=${layout}`, () => {
 			saveConfig({ diffLayout: layout } as WierdFaceliftConfig, configFile);
 			expect(existsSync(configFile)).toBe(true);
-			expect(loadConfig(configFile)).toEqual({ diffLayout: layout, showWorkingTime: true });
+			expect(loadConfig(configFile)).toEqual({ diffLayout: layout, showWorkingTime: true, animateWorkingIndicator: false });
 		});
 	}
 
@@ -116,23 +149,23 @@ describe("loadConfig + saveConfig round-trip", () => {
 			configFile,
 			JSON.stringify({ diffLayout: "consistent", iconMode: "rainbow", junk: 42 }),
 		);
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	it("rejects invalid diffLayout strings and falls back to default", () => {
 		writeFileSync(configFile, JSON.stringify({ diffLayout: "tutti-frutti" }));
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	it("returns defaults when the file is missing (no write)", () => {
 		expect(existsSync(configFile)).toBe(false);
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 		expect(existsSync(configFile)).toBe(false);
 	});
 
 	it("returns defaults when the file is malformed JSON", () => {
 		writeFileSync(configFile, "{ not valid json");
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	it("writes a trailing newline", () => {
@@ -145,22 +178,22 @@ describe("loadOrInitConfig", () => {
 	it("seeds a missing file from env defaults", () => {
 		expect(existsSync(configFile)).toBe(false);
 		const cfg = loadOrInitConfig(configFile);
-		expect(cfg).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(cfg).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 		expect(existsSync(configFile)).toBe(true);
-		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "consistent", showWorkingTime: true });
+		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	it("respects DIFF_LAYOUT when seeding", () => {
 		process.env.DIFF_LAYOUT = "unified";
 		const cfg = loadOrInitConfig(configFile);
-		expect(cfg).toEqual({ diffLayout: "unified", showWorkingTime: true });
-		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "unified", showWorkingTime: true });
+		expect(cfg).toEqual({ diffLayout: "unified", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "unified", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 
 	it("does not overwrite an existing file", () => {
 		writeFileSync(configFile, JSON.stringify({ diffLayout: "split" }));
 		process.env.DIFF_LAYOUT = "unified"; // would override on a fresh seed
 		const cfg = loadOrInitConfig(configFile);
-		expect(cfg).toEqual({ diffLayout: "split", showWorkingTime: true });
+		expect(cfg).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false });
 	});
 });

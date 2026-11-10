@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+
+- **Change:** still accent `●` instead of pi's animated spinner in the `Working...` line — no ~12×/s terminal repaints while the model streams; `animateWorkingIndicator` in `/facelift` brings the animation back.
+
 ## 0.6.6
 
 - **Fix:** prompt-cache warm-ups no longer inflate `worked` time / deflate `tps` or start a phantom working timer while idle.

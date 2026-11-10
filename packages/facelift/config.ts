@@ -10,7 +10,8 @@
  *     extension.
  *   - Saves write atomically (one JSON.stringify + trailing newline).
  *
- * The knobs we expose today are `diffLayout` and `showWorkingTime`, and
+ * The knobs we expose today are `diffLayout`, `showWorkingTime` and
+ * `animateWorkingIndicator`, and
  * the schema is designed to accept more fields (icon mode, max preview
  * lines, etc.) without breaking older config files.
  */
@@ -58,6 +59,18 @@ export interface WierdFaceliftConfig {
 	 * (`0`/`false`/`off` to disable).
 	 */
 	showWorkingTime: boolean;
+
+	/**
+	 * Animate the spinner in front of the streaming "Working…" line (pi's
+	 * default: a braille spinner redrawn every 80ms). Off ⇒ a still accent
+	 * `●` instead, so an idle-looking terminal isn't repainted 12×/s while
+	 * the model streams — GPU-rendered hosts (e.g. Herdr) redraw the whole
+	 * window for each of those frames.
+	 *
+	 * Defaults to `false`; override with env `FACELIFT_ANIMATE_WORKING`
+	 * (`1`/`true`/`on` to animate).
+	 */
+	animateWorkingIndicator: boolean;
 }
 
 function isDiffLayout(value: unknown): value is DiffLayoutPreference {
@@ -88,6 +101,7 @@ export function envDefaults(): WierdFaceliftConfig {
 	return {
 		diffLayout: fromEnv ?? DEFAULT_DIFF_LAYOUT,
 		showWorkingTime: parseBool(process.env.FACELIFT_SHOW_WORKING_TIME, true),
+		animateWorkingIndicator: parseBool(process.env.FACELIFT_ANIMATE_WORKING, false),
 	};
 }
 
@@ -98,6 +112,7 @@ function sanitize(raw: unknown): WierdFaceliftConfig {
 	const cfg: WierdFaceliftConfig = { ...defaults };
 	if (isDiffLayout(obj.diffLayout)) cfg.diffLayout = obj.diffLayout;
 	if (typeof obj.showWorkingTime === "boolean") cfg.showWorkingTime = obj.showWorkingTime;
+	if (typeof obj.animateWorkingIndicator === "boolean") cfg.animateWorkingIndicator = obj.animateWorkingIndicator;
 	return cfg;
 }
 
@@ -143,6 +158,7 @@ export function saveConfig(
 	const out: Record<string, unknown> = {
 		diffLayout: cfg.diffLayout,
 		showWorkingTime: cfg.showWorkingTime,
+		animateWorkingIndicator: cfg.animateWorkingIndicator,
 	};
 	writeFileSync(path, `${JSON.stringify(out, null, 2)}\n`, "utf-8");
 	return path;
