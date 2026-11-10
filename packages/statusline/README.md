@@ -216,6 +216,16 @@ Tune via `/statusline subagents …`. Settings persist in
 `/statusline subagents status` prints the live counts plus the current
 config.
 
+## Console output
+
+While the TUI is running, anything extensions print with `console.*` or
+write to stderr is kept off the screen — text written behind pi-tui's
+back shifts the screen and leaves duplicated rows. It goes to
+`~/.pi/agent/wierd-statusline/console.log` instead (rotated to
+`console.log.1` past 1 MB); `console.warn` / `console.error` also show
+as a toast. Once pi exits or crashes, output reaches the terminal as
+usual.
+
 ## Shortcuts
 
 - `Alt+S` — stash editor text / restore stash when editor is empty

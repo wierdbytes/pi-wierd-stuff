@@ -11,7 +11,12 @@ type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsMana
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { Component, EditorTheme, SelectItem, TUI } from "@earendil-works/pi-tui";
 import { isKeyRelease, matchesKey, SelectList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { NotifyLevel, NotifyStatusEvent } from "@wierdbytes/pi-events";
+import {
+  PI_WIERD_EVENTS,
+  type NotifyLevel,
+  type NotifyStatusEvent,
+  type NotifyToastEvent,
+} from "@wierdbytes/pi-events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -71,6 +76,7 @@ import { openSettingsModal, type Field } from "@wierdbytes/pi-common";
 import { type ActiveToast, EventsTracker } from "./events-tracker.ts";
 import { SubagentsTracker } from "./subagents-tracker.ts";
 import { EditorDockFit } from "./editor-dock.ts";
+import { installConsoleGuard, toastSummary, type ConsoleGuardToastLevel } from "./console-guard.ts";
 
 const PROMPT_PADDING = 0;
 
@@ -358,6 +364,29 @@ function getStashHistoryPath(): string {
   return join(homeDir, ".pi", "agent", "wierd-statusline", "stash-history.json");
 }
 
+/** Where console output intercepted while the TUI runs ends up (console-guard.ts). */
+function getConsoleLogPath(): string {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || homedir();
+  return join(homeDir, ".pi", "agent", "wierd-statusline", "console.log");
+}
+
+const CONSOLE_TOAST_SOURCE = "console";
+
+function emitConsoleToast(pi: ExtensionAPI, level: ConsoleGuardToastLevel, text: string): void {
+  const message = toastSummary(text);
+  if (!message) return;
+  const event: NotifyToastEvent = {
+    source: CONSOLE_TOAST_SOURCE,
+    title: level === "error" ? "console.error" : "console.warn",
+    message,
+    level,
+    // Repeats of the same line replace the toast instead of stacking.
+    id: `${level}:${toastSummary(text, 80)}`,
+    timestamp: Date.now(),
+  };
+  pi.events.emit(PI_WIERD_EVENTS.TOAST, event);
+}
+
 function normalizeStashHistoryEntries(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const history: string[] = [];
@@ -559,6 +588,14 @@ export default function (pi: ExtensionAPI) {
 
   const getStashCount = () => stashedPromptHistory.length;
 
+  // Stray console output while the TUI runs scrolls / corrupts the
+  // screen behind pi-tui's back (see console-guard.ts). Installed only
+  // for the interactive session; `stopped` is pi-tui's own flag, so the
+  // guard steps aside as soon as the TUI stops (exit, crash report,
+  // external editor). An unknown TUI shape fails open: pass-through.
+  let disposeConsoleGuard: (() => void) | null = null;
+  const isTuiActive = () => (activeTui as { stopped?: unknown } | undefined)?.stopped === false;
+
   // ───────────────────────── events tracker ─────────────────────────
   //
   // The tracker subscribes **eagerly at extension load time** — not
@@ -684,6 +721,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    disposeConsoleGuard?.();
+    disposeConsoleGuard = null;
     inflightRequest = null;
     stashShortcutUnsubscribe?.();
     stashShortcutUnsubscribe = null;
@@ -778,6 +817,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     cacheWarmerForced = false;
+    if (ctx.hasUI && !disposeConsoleGuard) {
+      disposeConsoleGuard = installConsoleGuard({
+        isTuiActive,
+        logPath: getConsoleLogPath(),
+        onToast: (level, text) => emitConsoleToast(pi, level, text),
+      });
+    }
     if (statuslineEnabled) enableStatusline(ctx);
   });
 

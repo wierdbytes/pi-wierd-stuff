@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.3
+
+- **Fix:** duplicated / shuffled rows when an extension prints to the console mid-session (e.g. pi-langfuse on every subagent start); the output goes to `~/.pi/agent/wierd-statusline/console.log`, warnings and errors also show as a toast.
+
 ## 0.9.2
 
 - **Fix:** no blank rows under the prompt in fullscreen mode — the input is the last terminal row and grows only with its text.
