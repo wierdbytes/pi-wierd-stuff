@@ -5,12 +5,27 @@
  * `Opus 5.5 @high · 228k` under each pi, next to the status pi already
  * reports over OSC 7501.
  *
- * Wiring only; the labels are built in `meta.ts`, written in `publisher.ts`.
+ * It also folds the subscription limits every provider response carries
+ * (Claude, Codex) into herdr-core's `limits` document, so every herdr client
+ * can show them.
+ *
+ * Wiring only; the labels are built in `meta.ts`, written in `publisher.ts`;
+ * the limits are read in `limits.ts`, written in `limits-publisher.ts`.
  */
 
+import { hostname } from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type CacheEntry, type CacheWindow, cacheWindow, envRetention, type InflightRequest, WarmWatch } from "./cache.ts";
-import { hcTargetFromEnv, setLabels } from "./hc.ts";
+import { getDoc, hcTargetFromEnv, setDoc, setLabels } from "./hc.ts";
+import {
+  isLimitStreamEvent,
+  type LimitReading,
+  LIMITS_DOC,
+  readingFromHeaders,
+  readingFromStreamEvent,
+  resolveAccount,
+} from "./limits.ts";
+import { LimitsPublisher } from "./limits-publisher.ts";
 import { collectLabels, type MetaModel } from "./meta.ts";
 import { LabelPublisher } from "./publisher.ts";
 import { SubagentCounter } from "./subagents.ts";
@@ -20,6 +35,34 @@ export default function piHerdr(pi: ExtensionAPI) {
   if (!target) return;
 
   const publisher = new LabelPublisher((labels) => setLabels(target, labels));
+  const limits = new LimitsPublisher(
+    {
+      get: () => getDoc(target.socket, LIMITS_DOC),
+      set: (value, version) => setDoc(target.socket, LIMITS_DOC, value, version),
+    },
+    { host: hostname() },
+  );
+  const recordLimits = (reading: LimitReading | null) => {
+    if (reading) limits.record(reading, resolveAccount(reading));
+  };
+  // Every pi reads limits, not only the interactive one: `pi -p` runs and
+  // sub-agents spend the same subscription.
+  pi.on("after_provider_response", async (event) => {
+    try {
+      recordLimits(readingFromHeaders(event.headers));
+    } catch {
+      // A reading pi can't parse must not disturb the reply.
+    }
+  });
+  // Fires for every stream delta: only the two Codex events carry limits.
+  pi.on("provider_stream_event", (event) => {
+    if (!isLimitStreamEvent(event.data)) return;
+    try {
+      recordLimits(readingFromStreamEvent(event.data));
+    } catch {
+      // As above.
+    }
+  });
   // pi-subagents emits from its own session_start, so listen from load on.
   const subagents = new SubagentCounter(() => update());
   subagents.start(pi.events);
@@ -117,6 +160,9 @@ export default function piHerdr(pi: ExtensionAPI) {
     warm.stop();
     if (event.reason === "quit") {
       subagents.dispose();
+      // The last reading is worth a moment; never more than a second.
+      await Promise.race([limits.flush(), new Promise((resolve) => setTimeout(resolve, 1000).unref?.())]);
+      limits.cancel();
       if (owned) await publisher.clear();
       return;
     }

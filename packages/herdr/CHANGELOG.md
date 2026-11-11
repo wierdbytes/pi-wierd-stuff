@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0
+
+- **New:** publish the Claude and Codex subscription limits every provider response reports (5-hour, weekly and per-model windows, plan, status) to herdr-core's `limits` document, so the herdr app, Wierdr and any other herdr-core client can show them on every screen.
+
 ## 0.3.2
 
 - **Fix:** context size no longer lags behind pi's statusline after a tool result or a prompt.

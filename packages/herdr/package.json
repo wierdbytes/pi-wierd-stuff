@@ -1,7 +1,7 @@
 {
   "name": "@wierdbytes/pi-herdr",
-  "version": "0.3.2",
-  "description": "Tell herdr which model, reasoning effort and context size each pi runs with — as agent.* labels on its herdr-core terminal, so agent lists can show them next to the status.",
+  "version": "0.4.0",
+  "description": "Tell herdr which model, reasoning effort and context size each pi runs with — as agent.* labels on its herdr-core terminal — and publish Claude / Codex subscription limits to herdr-core for every herdr client to show.",
   "type": "module",
   "files": [
     "*.ts",
@@ -16,7 +16,8 @@
     "extension",
     "herdr",
     "herdr-core",
-    "terminal-labels"
+    "terminal-labels",
+    "rate-limits"
   ],
   "license": "MIT",
   "author": "wierdbytes",

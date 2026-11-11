@@ -3,7 +3,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { hcTargetFromEnv, setLabels } from "./hc.ts";
+import { getDoc, hcTargetFromEnv, setDoc, setLabels } from "./hc.ts";
 
 describe("hcTargetFromEnv", () => {
   it("needs both the socket and the terminal id", () => {
@@ -13,7 +13,7 @@ describe("hcTargetFromEnv", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("setLabels", () => {
+describe.skipIf(process.platform === "win32")("the socket", () => {
   let dir: string | undefined;
   let server: net.Server | undefined;
   afterEach(() => {
@@ -61,5 +61,30 @@ describe.skipIf(process.platform === "win32")("setLabels", () => {
     const { socket } = await listen(() => undefined);
     await expect(setLabels({ socket, terminal: "t7" }, { a: "b" }, 50)).resolves.toBe(false);
     await expect(setLabels({ socket: join(dir!, "missing.sock"), terminal: "t7" }, { a: "b" })).resolves.toBe(false);
+  });
+
+  it("reads and writes documents", async () => {
+    const { socket, requests } = await listen((r) =>
+      r.method === "doc.get"
+        ? { jsonrpc: "2.0", id: r.id, result: { value: { a: 1 }, version: 4 } }
+        : { jsonrpc: "2.0", id: r.id, result: { version: 5 } },
+    );
+    await expect(getDoc(socket, "limits")).resolves.toEqual({ value: { a: 1 }, version: 4 });
+    await expect(setDoc(socket, "limits", { a: 2 }, 4)).resolves.toBe(5);
+    expect(requests.map((r) => [r.method, r.params])).toEqual([
+      ["doc.get", { name: "limits" }],
+      ["doc.set", { name: "limits", value: { a: 2 }, version: 4 }],
+    ]);
+  });
+
+  it("tells a conflict from other failures", async () => {
+    const { socket } = await listen((r) => ({
+      jsonrpc: "2.0",
+      id: r.id,
+      error: { code: -32000, message: r.params.version === 1 ? "conflict" : "internal", data: { kind: r.params.version === 1 ? "conflict" : "internal" } },
+    }));
+    await expect(setDoc(socket, "limits", {}, 1)).resolves.toBe("conflict");
+    await expect(setDoc(socket, "limits", {}, 2)).resolves.toBeUndefined();
+    await expect(getDoc(socket, "limits")).resolves.toBeUndefined();
   });
 });
