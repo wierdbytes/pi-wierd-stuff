@@ -10,6 +10,7 @@ Monorepo of extensions, themes, and shared TUI helpers for the [pi](https://gith
 
 ```
 packages/
+  agents/       Sub-agents as child pi terminals in herdr-core, nested in herdr (extension)
   anthropic/    Claude Pro/Max OAuth provider (pi extension)
   ask/          ask_user clarification tool, fork of @eko24ive/pi-ask + OSC 7501 blocked status (extension)
   autoname/     Auto session name + terminal title from a cheap model (extension)

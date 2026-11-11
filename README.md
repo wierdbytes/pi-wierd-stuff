@@ -4,6 +4,7 @@ Monorepo for various extensions for the [pi](https://github.com/earendil-works/p
 
 ## Packages
 
+- [`packages/agents`](packages/agents) — `@wierdbytes/pi-agents`: Sub-agents that run as their own pi in herdr-core terminals, nested under the agent that started them in herdr — `Agent` / `get_subagent_result` / `steer_subagent` / `stop_subagent` tools plus a `pi.events` RPC. Replaces `@tintinweb/pi-subagents`.
 - [`packages/anthropic`](packages/anthropic) — `@wierdbytes/pi-anthropic`: Claude Pro/Max OAuth provider.
 - [`packages/ask`](packages/ask) — `@wierdbytes/pi-ask`: Interactive `ask_user` clarification tool (fork of `@eko24ive/pi-ask`) that reports pi as blocked on a question (OSC 7501) while a form waits, so herdr and other agent dashboards alert.
 - [`packages/autoname`](packages/autoname) — `@wierdbytes/pi-autoname`: Auto-names sessions and the terminal title with a short summary from a cheap model, so herdr, tmux and terminal tabs show what each pi is doing.
