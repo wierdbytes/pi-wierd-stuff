@@ -5,7 +5,7 @@
  * row that has block-specific knobs. Two blocks need this:
  *
  *   - `model` \xb7 a single `Show thinking level` toggle.
- *   - `cache` \xb7 hit-rate, savings and expiry-timer segment toggles.
+ *   - `cache` \xb7 hit-rate, tokens, savings and expiry-timer segment toggles.
  *
  * Other blocks (`path`, `git`, `context`, `cost`, `chips`, `stash`)
  * have nothing to configure inside themselves \u2014 visibility lives on
@@ -70,9 +70,15 @@ export function buildBlockSettingsRows(
     return [
       {
         id: "cache.hitRate",
-        label: "Show hit rate (99.9% (200k/200))",
+        label: "Show hit rate (99.9%)",
         value: layout.cache.hitRate,
         toggle: (current) => ({ cache: { ...current.cache, hitRate: !current.cache.hitRate } }),
+      },
+      {
+        id: "cache.tokens",
+        label: "Show tokens (200k/200)",
+        value: layout.cache.tokens,
+        toggle: (current) => ({ cache: { ...current.cache, tokens: !current.cache.tokens } }),
       },
       {
         id: "cache.savings",

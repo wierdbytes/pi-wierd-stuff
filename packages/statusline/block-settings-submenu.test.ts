@@ -19,11 +19,11 @@ describe("buildBlockSettingsRows", () => {
     expect(rows[0]!.id).toBe("model.showThinking");
   });
 
-  it("returns hit-rate, savings and timer toggles for the cache block", () => {
+  it("returns hit-rate, tokens, savings and timer toggles for the cache block", () => {
     const layout = cloneDefaultLayout();
     const rows = buildBlockSettingsRows("cache", layout);
     const ids = rows.map((r) => r.id);
-    expect(ids).toEqual(["cache.hitRate", "cache.savings", "cache.timer"]);
+    expect(ids).toEqual(["cache.hitRate", "cache.tokens", "cache.savings", "cache.timer"]);
   });
 
   it("returns no rows for blocks without sub-settings", () => {
@@ -49,7 +49,7 @@ describe("buildBlockSettingsRows", () => {
     const row = buildBlockSettingsRows("cache", layout).find((r) => r.id === "cache.savings");
     expect(row).toBeTruthy();
     const patch = row!.toggle(layout);
-    expect(patch.cache).toEqual({ hitRate: true, savings: false, timer: true });
+    expect(patch.cache).toEqual({ hitRate: true, tokens: true, savings: false, timer: true });
   });
 });
 

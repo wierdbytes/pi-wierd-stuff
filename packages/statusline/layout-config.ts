@@ -36,8 +36,10 @@ export interface ModelSubToggles {
 
 /** Sub-toggles inside the `cache` block. Each defaults to true. */
 export interface CacheSubToggles {
-  /** Show the `99.9% (read/uncached)` hit-rate segment. */
+  /** Show the `99.9%` hit-rate segment. */
   hitRate: boolean;
+  /** Show the `(read/uncached)` token-count segment. */
+  tokens: boolean;
   /** Show the `-$0.86` / `+$0.15` savings segment. */
   savings: boolean;
   /** Show the cache-expiry countdown segment. */
@@ -78,7 +80,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = Object.freeze({
     stash: true,
   }) as Record<BlockId, boolean>,
   model: Object.freeze({ showThinking: true }) as ModelSubToggles,
-  cache: Object.freeze({ hitRate: true, savings: true, timer: true }) as CacheSubToggles,
+  cache: Object.freeze({ hitRate: true, tokens: true, savings: true, timer: true }) as CacheSubToggles,
   separator: DEFAULT_SEPARATOR,
 }) as LayoutConfig;
 
@@ -151,6 +153,7 @@ export function normaliseLayoutConfig(raw: Partial<LayoutConfig> | undefined): L
   if (raw.cache && typeof raw.cache === "object") {
     const src = raw.cache as unknown as Record<string, unknown>;
     if (typeof src.hitRate === "boolean") merged.cache.hitRate = src.hitRate;
+    if (typeof src.tokens === "boolean") merged.cache.tokens = src.tokens;
     if (typeof src.savings === "boolean") merged.cache.savings = src.savings;
     if (typeof src.timer === "boolean") merged.cache.timer = src.timer;
   }

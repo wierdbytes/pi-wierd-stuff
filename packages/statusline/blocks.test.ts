@@ -67,17 +67,17 @@ describe("block renderers (in isolation)", () => {
     const out = BLOCK_RENDERERS.model(
       makeInputs({ thinkingLevel: "minimal", thinkingLevelMap: { minimal: "low" } }),
     );
-    expect(out).toContain(`${C_PURPLE}[t] min${C_RESET}`);
-    expect(out).not.toContain("[t] low");
+    expect(out).toContain(`${C_PURPLE}@min${C_RESET}`);
+    expect(out).not.toContain("@low");
   });
 
-  it("renderModel gradients the icon and label for mapped max effort", () => {
+  it("renderModel gradients the `@` and label for mapped max effort", () => {
     const out = BLOCK_RENDERERS.model(
       makeInputs({ thinkingLevel: "xhigh", thinkingLevelMap: { xhigh: "max" } }),
     );
-    expect(out).toContain(`${C_ORANGE}[`);
+    expect(out).toContain(`${C_ORANGE}@`);
     expect(out).toContain(`${C_PURPLE}x${C_RESET}`);
-    expect(out).not.toContain(`${C_RED}[t] max`);
+    expect(out).not.toContain(`${C_RED}@max`);
   });
 
   it("renderModel skips thinking when sub-toggle is off", () => {
@@ -216,21 +216,31 @@ describe("block renderers (in isolation)", () => {
   it("renderCache respects each sub-toggle independently", () => {
     const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: -1 };
     const noHit = cloneDefaultLayout();
-    noHit.cache = { hitRate: false, savings: true, timer: true };
+    noHit.cache = { hitRate: false, tokens: false, savings: true, timer: true };
     expect(BLOCK_RENDERERS.cache(makeInputs({ layout: noHit, cache }))).toBe(
       `${C_GRAY}-$1.00${C_RESET}`,
     );
+    const noTokens = cloneDefaultLayout();
+    noTokens.cache = { hitRate: true, tokens: false, savings: false, timer: false };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout: noTokens, cache }))).toBe(
+      `${C_GREEN}\uf1c0 99.0%${C_RESET}`,
+    );
+    const onlyTokens = cloneDefaultLayout();
+    onlyTokens.cache = { hitRate: false, tokens: true, savings: false, timer: false };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout: onlyTokens, cache }))).toBe(
+      `${C_GRAY}\uf1c0${C_RESET} ${C_GRAY}(99/1)${C_RESET}`,
+    );
     const noSavings = cloneDefaultLayout();
-    noSavings.cache = { hitRate: true, savings: false, timer: true };
+    noSavings.cache = { hitRate: true, tokens: true, savings: false, timer: true };
     expect(BLOCK_RENDERERS.cache(makeInputs({ layout: noSavings, cache }))).not.toContain("$");
     const none = cloneDefaultLayout();
-    none.cache = { hitRate: false, savings: false, timer: false };
+    none.cache = { hitRate: false, tokens: false, savings: false, timer: false };
     expect(BLOCK_RENDERERS.cache(makeInputs({ layout: none, cache }))).toBe("");
   });
 
   it("renderCache appends the expiry countdown with the nerd-font hourglass", () => {
     const layout = cloneDefaultLayout();
-    layout.cache = { hitRate: false, savings: false, timer: true };
+    layout.cache = { hitRate: false, tokens: false, savings: false, timer: true };
     const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
     const render = (ms: number) =>
       BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout, cache, cacheRemainingMs: ms }));
@@ -245,7 +255,7 @@ describe("block renderers (in isolation)", () => {
 
   it("renderCache appends the warmer icon after the countdown while forced warming is on", () => {
     const layout = cloneDefaultLayout();
-    layout.cache = { hitRate: false, savings: false, timer: true };
+    layout.cache = { hitRate: false, tokens: false, savings: false, timer: true };
     const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
     const render = (iconSet: RenderInputs["iconSet"], cacheWarmerForced: boolean) =>
       BLOCK_RENDERERS.cache(
@@ -285,9 +295,10 @@ describe("block renderers (in isolation)", () => {
 });
 
 describe("composeStatusLine", () => {
-  it("starts with leading `─ ` divider", () => {
+  it("starts with the first block, no leading divider", () => {
     const out = composeStatusLine(cloneDefaultLayout(), makeInputs());
-    expect(out.startsWith(`${C_GRAY}─${C_RESET} `)).toBe(true);
+    expect(out.startsWith(C_PINK)).toBe(true);
+    expect(out).not.toContain("─");
   });
 
   it("ends with a trailing space", () => {
@@ -332,11 +343,10 @@ describe("composeStatusLine", () => {
     expect(pathIdx).toBeLessThan(modelIdx);
   });
 
-  it("renders only the leading divider when every block is disabled", () => {
+  it("renders nothing when every block is disabled", () => {
     const layout = cloneDefaultLayout();
     for (const id of layout.order) layout.enabled[id] = false;
     const out = composeStatusLine(layout, makeInputs());
-    // No block content survives; we expect just the bare `─ ` head + tail.
-    expect(out).toBe(`${C_GRAY}─${C_RESET}  `);
+    expect(out).toBe("");
   });
 });

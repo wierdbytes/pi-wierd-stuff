@@ -84,8 +84,8 @@ describe("normaliseLayoutConfig", () => {
   });
 
   it("merges cache sub-toggles independently", () => {
-    const out = normaliseLayoutConfig({ cache: { hitRate: false, savings: true, timer: false } });
-    expect(out.cache).toEqual({ hitRate: false, savings: true, timer: false });
+    const out = normaliseLayoutConfig({ cache: { hitRate: false, savings: true, timer: false } as never });
+    expect(out.cache).toEqual({ hitRate: false, tokens: true, savings: true, timer: false });
   });
 
   it("migrates the legacy tokens block to cache in place", () => {
@@ -99,7 +99,7 @@ describe("normaliseLayoutConfig", () => {
     expect(out.enabled.cache).toBe(false);
     expect(out.enabled).not.toHaveProperty("tokens");
     expect(out).not.toHaveProperty("tokens");
-    expect(out.cache).toEqual({ hitRate: true, savings: true, timer: true });
+    expect(out.cache).toEqual({ hitRate: true, tokens: true, savings: true, timer: true });
   });
 
   it("prefers an explicit cache flag over the legacy tokens flag", () => {
@@ -166,7 +166,7 @@ describe("clampSeparator", () => {
       expect(DEFAULT_LAYOUT_CONFIG.enabled[id]).toBe(true);
     }
     expect(DEFAULT_LAYOUT_CONFIG.model.showThinking).toBe(true);
-    expect(DEFAULT_LAYOUT_CONFIG.cache).toEqual({ hitRate: true, savings: true, timer: true });
+    expect(DEFAULT_LAYOUT_CONFIG.cache).toEqual({ hitRate: true, tokens: true, savings: true, timer: true });
   });
 });
 

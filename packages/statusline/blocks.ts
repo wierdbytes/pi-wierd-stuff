@@ -10,7 +10,7 @@
  * `composeStatusLine` walks `layout.order`, calls each renderer
  * whose `enabled` flag is on, drops empty results, and joins the
  * remaining pieces with the configured separator glyph wrapped in a
- * space on each side. The leading `─ ` divider is always first.
+ * space on each side.
  *
  * The chip and toast formatting helpers + color constants live here
  * too so the toast row renderer (in `index.ts`) and the `chips` block
@@ -345,7 +345,7 @@ export type BlockRenderer = (inputs: RenderInputs) => string;
 
 /**
  * `model` block — icon + display name, with an optional inline
- * thinking-level segment attached when (a) the active model is
+ * `@<level>` thinking segment attached when (a) the active model is
  * reasoning-capable and (b) `layout.model.showThinking === true`.
  * Thinking lives inside this block on purpose: it's logically tied to
  * the model and never gets its own `│` separator.
@@ -354,10 +354,9 @@ const renderModel: BlockRenderer = (inputs) => {
   const head = `${C_PINK}${resolveIcon(inputs.iconSet, "model")} ${inputs.modelName}${C_RESET}`;
   if (!inputs.modelReasoning || !inputs.layout.model.showThinking) return head;
   const label = resolveThinkingLabel(inputs.thinkingLevel, inputs.thinkingLevelMap);
-  const icon = resolveIcon(inputs.iconSet, "thinking");
-  if (label === "max") return `${head} ${renderMaxGradient(`${icon} ${label}`)}${C_RESET}`;
+  if (label === "max") return `${head} ${renderMaxGradient(`@${label}`)}${C_RESET}`;
   const color = THINK_COLORS[inputs.thinkingLevel] ?? C_GRAY;
-  return `${head} ${color}${icon} ${label}${C_RESET}`;
+  return `${head} ${color}@${label}${C_RESET}`;
 };
 
 /** `path` block — `…/parent/dir` with the current directory accented. */
@@ -404,8 +403,9 @@ const renderCost: BlockRenderer = (inputs) => {
  * `cache` block — `<icon> 99.9% (200k/200) -$0.86 <timer> 4:21`.
  *
  *   - hit rate: `cacheRead / (input + cacheRead + cacheWrite)`, colored
- *     green ≥ 98.0% / yellow 90.0–97.9% / red < 90.0%; parens hold
- *     `cacheRead / (input + cacheWrite)` (served from cache vs not).
+ *     green ≥ 98.0% / yellow 90.0–97.9% / red < 90.0%.
+ *   - tokens: parens hold `cacheRead / (input + cacheWrite)` (served
+ *     from cache vs not).
  *   - savings: Δ between what the session paid for prompt tokens and
  *     what it would have paid without caching (see `cache-stats.ts`).
  *   - timer: countdown until the prompt cache entry expires, refreshed
@@ -424,22 +424,23 @@ const renderCache: BlockRenderer = (inputs) => {
   const toggles = inputs.layout.cache;
   const pct = cacheHitPercent(stats);
   const showHit = toggles.hitRate && pct !== null;
+  const showTokens = toggles.tokens;
   const showSavings = toggles.savings && stats.delta !== null;
   const remaining = inputs.cacheRemainingMs;
   const showTimer = toggles.timer && remaining !== null;
-  if (!showHit && !showSavings && !showTimer) return "";
+  if (!showHit && !showTokens && !showSavings && !showTimer) return "";
 
   const color = pct !== null ? cacheHitColorFor(pct) : C_GRAY;
   const icon = resolveIcon(inputs.iconSet, "cache");
+  const tokens = `${C_GRAY}(${formatTokens(stats.cacheRead)}/${formatTokens(stats.uncached)})${C_RESET}`;
   const segments: string[] = [];
   if (showHit && pct !== null) {
     const head = icon ? `${icon} ${formatHitPercent(pct)}` : formatHitPercent(pct);
-    segments.push(
-      `${color}${head}${C_RESET} ${C_GRAY}(${formatTokens(stats.cacheRead)}/${formatTokens(stats.uncached)})${C_RESET}`,
-    );
-  } else if (icon && showSavings) {
+    segments.push(`${color}${head}${C_RESET}`);
+  } else if (icon && (showTokens || showSavings)) {
     segments.push(`${C_GRAY}${icon}${C_RESET}`);
   }
+  if (showTokens) segments.push(tokens);
   if (showSavings && stats.delta !== null) segments.push(formatCacheDelta(stats.delta));
   if (showTimer && remaining !== null) {
     const timerIcon = resolveIcon(inputs.iconSet, remaining > 0 ? "cacheTimer" : "cacheExpired");
@@ -484,10 +485,9 @@ export const BLOCK_RENDERERS: Record<BlockId, BlockRenderer> = {
 
 /**
  * Walk `layout.order`, render each enabled block, drop empty results,
- * and join with the configured separator glyph wrapped in spaces. The
- * leading `─ ` divider is always first; a trailing space caps the row
- * so subsequent truncation logic in `renderStatusContent` matches the
- * historical output's tail.
+ * and join with the configured separator glyph wrapped in spaces. A
+ * trailing space caps the row so subsequent truncation logic in
+ * `renderStatusContent` matches the historical output's tail.
  */
 export function composeStatusLine(layout: LayoutConfig, inputs: RenderInputs): string {
   const parts: string[] = [];
@@ -500,5 +500,5 @@ export function composeStatusLine(layout: LayoutConfig, inputs: RenderInputs): s
     parts.push(piece);
   }
   const sep = ` ${C_GRAY}${layout.separator}${C_RESET} `;
-  return `${C_GRAY}─${C_RESET} ${parts.join(sep)} `;
+  return parts.length > 0 ? `${parts.join(sep)} ` : "";
 }

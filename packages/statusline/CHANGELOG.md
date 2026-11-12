@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0
+
+- **Change:** the statusline no longer starts with a `─ ` divider.
+- **Change:** thinking effort shows as `@high` after the model name instead of an icon.
+- **New:** cache token counts `(200k/200)` can be hidden separately from the hit rate (`Show tokens` in the cache block submenu).
+
 ## 0.9.3
 
 - **Fix:** duplicated / shuffled rows when an extension prints to the console mid-session (e.g. pi-langfuse on every subagent start); the output goes to `~/.pi/agent/wierd-statusline/console.log`, warnings and errors also show as a toast.

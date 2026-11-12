@@ -26,8 +26,8 @@
  *
  * `git` (✓ / ✗) and subagent inline marks (✓ / ✗) intentionally stay
  * plain Unicode regardless of icon set — they look identical
- * everywhere and don't read as "decoration" the way model / thinking
- * / stash icons do.
+ * everywhere and don't read as "decoration" the way model / stash
+ * icons do.
  */
 
 /** Built-in icon-set identifiers. */
@@ -36,7 +36,6 @@ export type IconSet = "nerd-font" | "plain" | "ascii" | "minimal" | "emoji";
 /** Every visual slot the statusline / subagents tracker can theme. */
 export type IconKey =
   | "model"
-  | "thinking"
   | "stash"
   | "debug"
   | "info"
@@ -95,7 +94,6 @@ export const ICON_SET_DESCRIPTIONS: Record<IconSet, string> = {
 export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
   "nerd-font": {
     model: "\uec19",     //  nf-cod-copilot
-    thinking: "\uf0eb",  //  nf-fa-lightbulb-o
     stash: "\uf487",     //  nf-oct-package
     debug: "\uf188",     //  nf-fa-bug
     info: "\uf449",      //  nf-oct-info
@@ -111,7 +109,6 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
   },
   plain: {
     model: "◆",
-    thinking: "◇",
     stash: "▤",
     debug: "?",
     info: "ⓘ",
@@ -127,7 +124,6 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
   },
   ascii: {
     model: "[m]",
-    thinking: "[t]",
     stash: "[s]",
     debug: "[?]",
     info: "[i]",
@@ -143,7 +139,6 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
   },
   minimal: {
     model: "▸",
-    thinking: "···",
     stash: "≡",
     debug: "?",
     info: "i",
@@ -159,7 +154,6 @@ export const ICON_SETS: Record<IconSet, Record<IconKey, string>> = {
   },
   emoji: {
     model: "🤖",
-    thinking: "🧠",
     stash: "📦",
     debug: "🔍",
     info: "ℹ️",
