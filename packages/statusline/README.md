@@ -80,7 +80,8 @@ welcome overlay pieces).
 Below 60 columns the statusline wraps onto a second row when the blocks
 don't fit on one: the first row takes as many whole blocks as fit, the
 rest go to the second row, and the path block shrinks to the current
-directory (`…/pi-wierd-stuff`). Never more than two rows — a row that
+directory (`…/pi-wierd-stuff`). Only the first row is extended with
+the `─` line. Never more than two rows — a row that
 still overflows is truncated. At 60 columns and wider it always stays
 on one row (truncated when it overflows).
 

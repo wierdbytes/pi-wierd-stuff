@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.1
+
+- **Change:** in two-row mode the second row has no `─` line after its last block.
+
 ## 0.12.0
 
 - **Change:** the git block shows the clean/dirty mark before the branch: `✗ master`.

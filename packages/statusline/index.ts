@@ -227,8 +227,11 @@ function renderStatusContent(
     iconSet,
     layout,
   };
-  const statusLines = composeStatusLines(layout, inputs, width).map((status) => {
+  // Only the first row gets the `─` fill; in two-row mode the second
+  // row ends right after its last block.
+  const statusLines = composeStatusLines(layout, inputs, width).map((status, index) => {
     const truncated = truncateToWidth(status, width);
+    if (index > 0) return truncated;
     const fillWidth = Math.max(0, width - visibleWidth(truncated));
     return truncated + `${C_GRAY}${"─".repeat(fillWidth)}${C_RESET}`;
   });
