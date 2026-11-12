@@ -56,7 +56,7 @@ import {
   C_RED,
   C_RESET,
   C_YELLOW,
-  composeStatusLine,
+  composeStatusLines,
   type BlockId,
   KNOWN_BLOCK_IDS,
   levelColor,
@@ -227,16 +227,16 @@ function renderStatusContent(
     iconSet,
     layout,
   };
-  const status = composeStatusLine(layout, inputs);
-
-  const truncated = truncateToWidth(status, width);
-  const fillWidth = Math.max(0, width - visibleWidth(truncated));
-  const statusLine = truncated + `${C_GRAY}${"─".repeat(fillWidth)}${C_RESET}`;
+  const statusLines = composeStatusLines(layout, inputs, width).map((status) => {
+    const truncated = truncateToWidth(status, width);
+    const fillWidth = Math.max(0, width - visibleWidth(truncated));
+    return truncated + `${C_GRAY}${"─".repeat(fillWidth)}${C_RESET}`;
+  });
 
   if (events.toast) {
-    return [buildToastLine(events.toast, width, iconSet), statusLine];
+    return [buildToastLine(events.toast, width, iconSet), ...statusLines];
   }
-  return [statusLine];
+  return statusLines;
 }
 
 function makeEditorFactory(
@@ -921,7 +921,7 @@ export default function (pi: ExtensionAPI) {
   const BLOCK_DESCRIPTIONS: Record<BlockId, string> = {
     model: "`<model>` plus the optional inline `@<level>` thinking segment. Enter to open submenu (visibility, show-thinking toggle, move actions). CLI id: `model`.",
     path: "Last three path segments of `cwd`. CLI id: `path`.",
-    git: "Branch name plus a clean/dirty marker. CLI id: `git`.",
+    git: "Clean/dirty marker followed by the branch name (`✗ master`). CLI id: `git`.",
     context: "Percentage of usable context window (33k autocompact buffer reserved) with colored bar. CLI id: `context`.",
     cost: "Session total in USD when greater than zero. CLI id: `cost`.",
     cache: "Cache hit rate `99.9%`, tokens `(read/uncached)`, money saved (`-$0.86`) or overspent (`+$0.15`) by prompt caching on this branch, and a countdown until the cache expires. Enter to toggle and reorder the segments. CLI id: `cache`.",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.0
+
+- **Change:** the git block shows the clean/dirty mark before the branch: `✗ master`.
+- **New:** below 60 columns the statusline wraps onto a second row at a block boundary when it doesn't fit, with the path shortened to `…/<dir>`.
+
 ## 0.11.0
 
 - **New:** reorder the segments of the cache block — `alt+↑` / `alt+↓` in its submenu (`/statusline` → Layout → Prompt cache).

@@ -12,6 +12,7 @@
  * but lays out ANSI codes slightly differently.
  */
 
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,7 +26,10 @@ import {
   C_RED,
   C_RESET,
   C_YELLOW,
+  compactPath,
   composeStatusLine,
+  composeStatusLines,
+  WRAP_WIDTH,
   type RenderInputs,
 } from "./blocks.ts";
 import { EMPTY_CACHE_STATS } from "./cache-stats.ts";
@@ -116,6 +120,12 @@ describe("block renderers (in isolation)", () => {
     const out = BLOCK_RENDERERS.git(makeInputs({ dirty: true }));
     expect(out).toContain(C_RED);
     expect(out).not.toContain(C_GREEN);
+  });
+
+  it("renderGit puts the mark before the branch", () => {
+    expect(BLOCK_RENDERERS.git(makeInputs({ dirty: true, branch: "master" }))).toBe(
+      `${C_RED}✗${C_RESET} ${C_CYAN}master${C_RESET}`,
+    );
   });
 
   it("renderContext is empty when no context window", () => {
@@ -374,5 +384,48 @@ describe("composeStatusLine", () => {
     for (const id of layout.order) layout.enabled[id] = false;
     const out = composeStatusLine(layout, makeInputs());
     expect(out).toBe("");
+  });
+});
+
+describe("composeStatusLines", () => {
+  const strip = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
+  const inputs = () =>
+    makeInputs({ cwd: "/Users/me/dev/pi-wierd-stuff", branch: "master", current: 50_000 });
+
+  it("compactPath keeps only the current directory", () => {
+    expect(compactPath("/Users/me/dev/pi-wierd-stuff")).toBe("…/pi-wierd-stuff");
+    expect(compactPath("/Users")).toBe("/Users");
+  });
+
+  it("stays on one row at WRAP_WIDTH and wider, even when blocks overflow", () => {
+    const layout = cloneDefaultLayout();
+    const full = composeStatusLine(layout, inputs());
+    expect(visibleWidth(full)).toBeGreaterThan(WRAP_WIDTH);
+    expect(composeStatusLines(layout, inputs(), WRAP_WIDTH)).toEqual([full]);
+  });
+
+  it("stays on one row in a narrow terminal when everything fits", () => {
+    const layout = cloneDefaultLayout();
+    for (const id of layout.order) layout.enabled[id] = id === "model";
+    expect(composeStatusLines(layout, inputs(), 40)).toEqual([composeStatusLine(layout, inputs())]);
+  });
+
+  it("wraps at block boundaries into two rows with the compact path", () => {
+    const layout = cloneDefaultLayout();
+    const rows = composeStatusLines(layout, inputs(), 50);
+    expect(rows).toHaveLength(2);
+    const [first, second] = rows.map(strip);
+    expect(first).toBe("sonnet-4.5 @med │ …/pi-wierd-stuff │ ✓ master ");
+    expect(second!.startsWith("25%: 50k[")).toBe(true);
+    expect(second!.endsWith("│ $0.42 ")).toBe(true);
+    expect(visibleWidth(rows[0]!)).toBeLessThanOrEqual(50);
+  });
+
+  it("never renders more than two rows", () => {
+    const layout = cloneDefaultLayout();
+    const rows = composeStatusLines(layout, inputs(), 20);
+    expect(rows).toHaveLength(2);
+    // An oversize first block still gets a row of its own.
+    expect(strip(rows[0]!)).toBe("sonnet-4.5 @med ");
   });
 });

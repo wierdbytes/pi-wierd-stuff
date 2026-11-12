@@ -20,7 +20,8 @@ fully configurable — see [Layout](#layout) below):
   cache block).
 - **Path** — up to the last three segments of `cwd` with a `…/` prefix.
   Parent segments in gray, current directory in purple.
-- **Git** — branch name plus a clean/dirty marker (`✓` green / `✗` red).
+- **Git** — clean/dirty marker (`✓` green / `✗` red) followed by the
+  branch name, e.g. `✗ master`.
   Hidden when not in a git repo.
 - **Context** — current context-window usage reported by pi, printed as
   `pct%: used[▓░░░]remaining` against the model's full context window with a
@@ -73,6 +74,15 @@ by [@nicobailon](https://github.com/nicobailon) — the original brought the
 statusline-as-footer idea to pi. This extension is a from-scratch take that
 focuses on just that footer (skipping the bash mode, working vibes, and
 welcome overlay pieces).
+
+## Narrow terminals
+
+Below 60 columns the statusline wraps onto a second row when the blocks
+don't fit on one: the first row takes as many whole blocks as fit, the
+rest go to the second row, and the path block shrinks to the current
+directory (`…/pi-wierd-stuff`). Never more than two rows — a row that
+still overflows is truncated. At 60 columns and wider it always stays
+on one row (truncated when it overflows).
 
 ## Layout
 
@@ -183,11 +193,11 @@ Display tab of the settings overlay). The choice persists in
 
 | Set | Sample row | Notes |
 |---|---|---|
-| `nerd-font` (default) | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │  2` | Nerd Font glyphs (PUA codepoints). Requires a Nerd Font configured in your terminal. |
-| `plain` | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ ▤ 2` | Geometric Unicode glyphs that ship with every modern font. No install required. |
-| `ascii` | `sonnet-4.5 @med \| … \| master ok \| 45%: … \| $0.12 \| [s] 2` | Bracketed ASCII labels. Survives broken fontconfig, ssh sessions, and log files. |
-| `minimal` | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ ≡ 2` | Single-character symbolic glyphs. Powerline / starship aesthetic. |
-| `emoji` | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ 📦 2` | Original pre-facelift look. Kept for users who prefer emoji. |
+| `nerd-font` (default) | `sonnet-4.5 @med │ … │ ✓ master │ 45%: … │ $0.12 │  2` | Nerd Font glyphs (PUA codepoints). Requires a Nerd Font configured in your terminal. |
+| `plain` | `sonnet-4.5 @med │ … │ ✓ master │ 45%: … │ $0.12 │ ▤ 2` | Geometric Unicode glyphs that ship with every modern font. No install required. |
+| `ascii` | `sonnet-4.5 @med \| … \| ✓ master \| 45%: … \| $0.12 \| [s] 2` | Bracketed ASCII labels. Survives broken fontconfig, ssh sessions, and log files. |
+| `minimal` | `sonnet-4.5 @med │ … │ ✓ master │ 45%: … │ $0.12 │ ≡ 2` | Single-character symbolic glyphs. Powerline / starship aesthetic. |
+| `emoji` | `sonnet-4.5 @med │ … │ ✓ master │ 45%: … │ $0.12 │ 📦 2` | Original pre-facelift look. Kept for users who prefer emoji. |
 
 `git` (✓ / ✗) and the inline subagent completion / failure marks
 (✓ / ✗) intentionally stay plain Unicode regardless of the active

@@ -18,7 +18,7 @@
  */
 
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { NotifyLevel, NotifyStatusEvent } from "@wierdbytes/pi-events";
 import { basename, dirname } from "node:path";
 
@@ -124,6 +124,13 @@ export function shortenPath(cwd: string): string {
   if (segments.length <= 3) return cwd;
   const n = segments.length;
   return `…/${segments[n - 3]}/${segments[n - 2]}/${segments[n - 1]}`;
+}
+
+/** Two-row mode: only the current directory, e.g. `…/pi-wierd-stuff`. */
+export function compactPath(cwd: string): string {
+  const segments = cwd.split("/");
+  if (segments.length <= 2) return cwd;
+  return `…/${segments[segments.length - 1]}`;
 }
 
 export function formatTokens(n: number): string {
@@ -333,6 +340,8 @@ export interface RenderInputs {
   cacheWarmerForced: boolean;
   stashCount: number;
   chips: NotifyStatusEvent[];
+  /** Two-row mode: the `path` block shrinks to `…/<dir>`. */
+  compactPath?: boolean;
   iconSet: IconSet;
   layout: LayoutConfig;
 }
@@ -359,19 +368,20 @@ const renderModel: BlockRenderer = (inputs) => {
   return `${head} ${color}@${label}${C_RESET}`;
 };
 
-/** `path` block — `…/parent/dir` with the current directory accented. */
+/** `path` block — `…/parent/dir` (`…/dir` in two-row mode) with the
+ *  current directory accented. */
 const renderPath: BlockRenderer = (inputs) => {
-  const shortDir = shortenPath(inputs.cwd);
+  const shortDir = inputs.compactPath ? compactPath(inputs.cwd) : shortenPath(inputs.cwd);
   const dirParent = dirname(shortDir);
   const dirName = basename(shortDir) || shortDir;
   return `${C_GRAY}${dirParent}${C_RESET}${C_PURPLE}/${dirName}${C_RESET}`;
 };
 
-/** `git` block — branch + clean/dirty mark; empty outside a repo. */
+/** `git` block — clean/dirty mark + branch (`✗ master`); empty outside a repo. */
 const renderGit: BlockRenderer = (inputs) => {
   if (!inputs.branch) return "";
   const mark = inputs.dirty ? `${C_RED}✗${C_RESET}` : `${C_GREEN}✓${C_RESET}`;
-  return `${C_CYAN}${inputs.branch} ${mark}`;
+  return `${mark} ${C_CYAN}${inputs.branch}${C_RESET}`;
 };
 
 /** `context` block — `pct%: used[bar]remaining`; empty when no context window. */
@@ -491,13 +501,11 @@ export const BLOCK_RENDERERS: Record<BlockId, BlockRenderer> = {
 // Composer
 // ─────────────────────────────────────────────────────────────────────
 
-/**
- * Walk `layout.order`, render each enabled block, drop empty results,
- * and join with the configured separator glyph wrapped in spaces. A
- * trailing space caps the row so subsequent truncation logic in
- * `renderStatusContent` matches the historical output's tail.
- */
-export function composeStatusLine(layout: LayoutConfig, inputs: RenderInputs): string {
+/** Terminals narrower than this may wrap the statusline onto a second row. */
+export const WRAP_WIDTH = 60;
+
+/** Render every enabled block in `layout.order`, dropping empty ones. */
+function renderBlocks(layout: LayoutConfig, inputs: RenderInputs): string[] {
   const parts: string[] = [];
   for (const id of layout.order) {
     if (!layout.enabled[id]) continue;
@@ -507,6 +515,50 @@ export function composeStatusLine(layout: LayoutConfig, inputs: RenderInputs): s
     if (piece.length === 0) continue;
     parts.push(piece);
   }
+  return parts;
+}
+
+/** Join rendered blocks with the separator; a trailing space caps the row. */
+function joinBlocks(layout: LayoutConfig, parts: string[]): string {
+  if (parts.length === 0) return "";
   const sep = ` ${C_GRAY}${layout.separator}${C_RESET} `;
-  return parts.length > 0 ? `${parts.join(sep)} ` : "";
+  return `${parts.join(sep)} `;
+}
+
+/**
+ * Walk `layout.order`, render each enabled block, drop empty results,
+ * and join with the configured separator glyph wrapped in spaces. A
+ * trailing space caps the row so subsequent truncation logic in
+ * `renderStatusContent` matches the historical output's tail.
+ */
+export function composeStatusLine(layout: LayoutConfig, inputs: RenderInputs): string {
+  return joinBlocks(layout, renderBlocks(layout, inputs));
+}
+
+/**
+ * Statusline rows for a terminal `width` columns wide — one or two.
+ *
+ *   - `width >= WRAP_WIDTH` or everything fits: a single row (truncated
+ *     by the caller when it overflows).
+ *   - Otherwise two-row mode: the `path` block shrinks to `…/<dir>`,
+ *     the first row takes as many whole blocks as fit (at least one),
+ *     the rest go to the second row. Never more than two rows; the
+ *     caller truncates either row if it still overflows.
+ */
+export function composeStatusLines(
+  layout: LayoutConfig,
+  inputs: RenderInputs,
+  width: number,
+): string[] {
+  const line = composeStatusLine(layout, inputs);
+  if (width >= WRAP_WIDTH || visibleWidth(line) <= width) return [line];
+
+  const parts = renderBlocks(layout, { ...inputs, compactPath: true });
+  let split = 1;
+  while (split < parts.length && visibleWidth(joinBlocks(layout, parts.slice(0, split + 1))) <= width) {
+    split += 1;
+  }
+  const head = joinBlocks(layout, parts.slice(0, split));
+  if (split >= parts.length) return [head];
+  return [head, joinBlocks(layout, parts.slice(split))];
 }
