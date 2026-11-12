@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- **Change:** `Agent` asks for a sub-agent title written like a session name instead of a task description.
+
 ## 0.1.0
 
 - **New:** `Agent` starts a sub-agent as its own pi in a herdr-core terminal nested under this one, with a model, reasoning effort, prompt and agent type; foreground waits with live progress, background reports back when done.

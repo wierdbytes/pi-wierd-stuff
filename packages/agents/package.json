@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-agents",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sub-agents for pi that run as their own pi in herdr-core terminals, nested under the agent that started them in herdr. Agent / get_subagent_result / steer_subagent / stop_subagent tools plus a pi.events RPC.",
   "type": "module",
   "files": [

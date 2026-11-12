@@ -24,7 +24,7 @@ export interface ToolDeps {
 const text = (t: string) => [{ type: "text" as const, text: t }];
 
 const AgentParams = Type.Object({
-  description: Type.String({ description: "A short (3-5 word) description of the task; also names the agent's terminal in herdr." }),
+  description: Type.String({ description: 'Its title in herdr, like a session name: 2-5 words on what it works on (example: "Auth token cache").' }),
   prompt: Type.String({
     description:
       "The complete task. The sub-agent sees nothing of this conversation: include paths, constraints, and what its final report should contain.",

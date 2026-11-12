@@ -25,7 +25,7 @@ pi must run inside a herdr-core terminal (`HC_TERMINAL_ID` / `HC_TERMINAL_SOCKET
 
 | Tool | What it does |
 |---|---|
-| `Agent` | Start a sub-agent: `description`, `prompt`, optional `subagent_type`, `model` (`provider/id` or fuzzy: `"sonnet"`), `thinking` (`off` … `max`), `cwd`, `run_in_background`. Foreground (default) waits and returns its report, with live progress; background returns at once. |
+| `Agent` | Start a sub-agent: `description` (its title in herdr, like a session name), `prompt`, optional `subagent_type`, `model` (`provider/id` or fuzzy: `"sonnet"`), `thinking` (`off` … `max`), `cwd`, `run_in_background`. Foreground (default) waits and returns its report, with live progress; background returns at once. |
 | `get_subagent_result` | State now, or `wait: true` until it finishes (optional `timeout` seconds). |
 | `steer_subagent` | Type a message into it: a steer while it works, a follow-up turn once it has finished (context intact). |
 | `stop_subagent` | End it and close its terminal. |
