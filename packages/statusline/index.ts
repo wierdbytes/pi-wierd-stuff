@@ -909,7 +909,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   const BLOCK_DESCRIPTIONS: Record<BlockId, string> = {
-    model: "`🤖 <model>` plus the optional inline `@<level>` thinking segment. Enter to open submenu (visibility, show-thinking toggle, move actions). CLI id: `model`.",
+    model: "`<model>` plus the optional inline `@<level>` thinking segment. Enter to open submenu (visibility, show-thinking toggle, move actions). CLI id: `model`.",
     path: "Last three path segments of `cwd`. CLI id: `path`.",
     git: "Branch name plus a clean/dirty marker. CLI id: `git`.",
     context: "Percentage of usable context window (33k autocompact buffer reserved) with colored bar. CLI id: `context`.",
@@ -1037,7 +1037,7 @@ export default function (pi: ExtensionAPI) {
         tab: "display",
         label: "Icon set",
         description:
-          "Glyphs used for model / thinking / stash / toast levels and the subagents chip. " +
+          "Glyphs used for stash / toast levels and the subagents chip. " +
           ICON_SET_DESCRIPTIONS[display.iconSet],
         value: display.iconSet,
         options: VALID_ICON_SETS,

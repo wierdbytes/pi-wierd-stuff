@@ -10,7 +10,7 @@ cluster.
 Sections (each appears only when relevant; ordering and visibility are
 fully configurable — see [Layout](#layout) below):
 
-- **Model** — `🤖` plus the active model's display name (e.g. `Opus 4.7`).
+- **Model** — the active model's display name (e.g. `Opus 4.7`), no icon prefix.
   `Claude ` and `anthropic/` prefixes are stripped for brevity. The
   optional **thinking** segment (`@` + level, e.g. `Opus 4.7 @high`) renders inline after
   the model name when the active model is reasoning-capable and the
@@ -164,7 +164,7 @@ Restart pi to activate.
 - `/statusline toggle` — toggle
 - `/statusline footer on|off|toggle` — show/hide pi's built-in footer beneath the editor (hidden by default)
 - `/statusline events [status|log|clear|toast-ms <level> <ms>]` — inspect / tune the chip+toast pipeline
-- `/statusline icons [nerd-font|plain|ascii|minimal|emoji|status]` — switch the icon set used for model / stash / toast levels / subagents chip
+- `/statusline icons [nerd-font|plain|ascii|minimal|emoji|status]` — switch the icon set used for stash / toast levels / subagents chip
 - `/statusline layout [status|reset|toggle <block>|move <block> <up|down|top|bottom>]` — configure block order + visibility (see [Layout](#layout))
 - `/warmer` — toggle forced prompt-cache warming for the current session (off by default, resets on new / resumed / forked sessions). While on, pi's cache-warming decisions are overridden: a refresh is sent whenever the avoided cache miss exceeds the refresh cost by at least $0.01, ignoring pi's idle continuation estimate (15%) and its $0.05 threshold. pi's own limits still apply: the model needs a known cache lifetime, idle warming needs `cacheWarming: "idle"` in pi settings, and warming stops after 30 minutes idle / 60 minutes of an active run.
 - `/statusline subagents [status|on|off|long-ms <ms>|toast-failure <on|off>|toast-long <on|off>|toast-scheduled <on|off>]` — control the subagents bridge (see below)
@@ -178,11 +178,11 @@ Display tab of the settings overlay). The choice persists in
 
 | Set | Sample row | Notes |
 |---|---|---|
-| `nerd-font` (default) | ` sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │  2` | Nerd Font glyphs (PUA codepoints). Requires a Nerd Font configured in your terminal. |
-| `plain` | `◆ sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ ▤ 2` | Geometric Unicode glyphs that ship with every modern font. No install required. |
-| `ascii` | `[m] sonnet-4.5 @med \| … \| master ok \| 45%: … \| $0.12 \| [s] 2` | Bracketed ASCII labels. Survives broken fontconfig, ssh sessions, and log files. |
-| `minimal` | `▸ sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ ≡ 2` | Single-character symbolic glyphs. Powerline / starship aesthetic. |
-| `emoji` | `🤖 sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ 📦 2` | Original pre-facelift look. Kept for users who prefer emoji. |
+| `nerd-font` (default) | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │  2` | Nerd Font glyphs (PUA codepoints). Requires a Nerd Font configured in your terminal. |
+| `plain` | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ ▤ 2` | Geometric Unicode glyphs that ship with every modern font. No install required. |
+| `ascii` | `sonnet-4.5 @med \| … \| master ok \| 45%: … \| $0.12 \| [s] 2` | Bracketed ASCII labels. Survives broken fontconfig, ssh sessions, and log files. |
+| `minimal` | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ ≡ 2` | Single-character symbolic glyphs. Powerline / starship aesthetic. |
+| `emoji` | `sonnet-4.5 @med │ … │ master ✓ │ 45%: … │ $0.12 │ 📦 2` | Original pre-facelift look. Kept for users who prefer emoji. |
 
 `git` (✓ / ✗) and the inline subagent completion / failure marks
 (✓ / ✗) intentionally stay plain Unicode regardless of the active

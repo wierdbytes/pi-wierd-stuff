@@ -297,7 +297,7 @@ describe("block renderers (in isolation)", () => {
 describe("composeStatusLine", () => {
   it("starts with the first block, no leading divider", () => {
     const out = composeStatusLine(cloneDefaultLayout(), makeInputs());
-    expect(out.startsWith(C_PINK)).toBe(true);
+    expect(out.startsWith(`${C_PINK}sonnet-4.5`)).toBe(true);
     expect(out).not.toContain("─");
   });
 

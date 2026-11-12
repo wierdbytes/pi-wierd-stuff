@@ -344,14 +344,14 @@ export type BlockRenderer = (inputs: RenderInputs) => string;
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * `model` block — icon + display name, with an optional inline
+ * `model` block — display name (no icon prefix), with an optional inline
  * `@<level>` thinking segment attached when (a) the active model is
  * reasoning-capable and (b) `layout.model.showThinking === true`.
  * Thinking lives inside this block on purpose: it's logically tied to
  * the model and never gets its own `│` separator.
  */
 const renderModel: BlockRenderer = (inputs) => {
-  const head = `${C_PINK}${resolveIcon(inputs.iconSet, "model")} ${inputs.modelName}${C_RESET}`;
+  const head = `${C_PINK}${inputs.modelName}${C_RESET}`;
   if (!inputs.modelReasoning || !inputs.layout.model.showThinking) return head;
   const label = resolveThinkingLabel(inputs.thinkingLevel, inputs.thinkingLevelMap);
   if (label === "max") return `${head} ${renderMaxGradient(`@${label}`)}${C_RESET}`;

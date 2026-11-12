@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1
+
+- **Change:** the statusline starts right with the model name — no model icon in front of it.
+
 ## 0.10.0
 
 - **Change:** the statusline no longer starts with a `─ ` divider.
