@@ -8,7 +8,7 @@
  * The renderer walks `order`, calls each block's renderer when its
  * `enabled` flag is on, and joins non-empty results with `separator`.
  * Sub-toggles (`model.showThinking`, `cache.*`) gate **content
- * inside** a single block — they never change ordering, never
+ * inside** a single block (`cache.order` also orders it) — they never change ordering, never
  * introduce a new separator.
  *
  * Normalisation rules (applied on every load, hand-edit, or migration):
@@ -34,8 +34,15 @@ export interface ModelSubToggles {
   showThinking: boolean;
 }
 
-/** Sub-toggles inside the `cache` block. Each defaults to true. */
+/** Segments inside the `cache` block, in default display order. */
+export const CACHE_SEGMENT_IDS = ["hitRate", "tokens", "savings", "timer"] as const;
+export type CacheSegmentId = (typeof CACHE_SEGMENT_IDS)[number];
+const CACHE_SEGMENT_ID_SET: ReadonlySet<string> = new Set(CACHE_SEGMENT_IDS);
+
+/** Sub-toggles inside the `cache` block. Each flag defaults to true. */
 export interface CacheSubToggles {
+  /** Display order of the segments. Always a permutation of `CACHE_SEGMENT_IDS`. */
+  order: CacheSegmentId[];
   /** Show the `99.9%` hit-rate segment. */
   hitRate: boolean;
   /** Show the `(read/uncached)` token-count segment. */
@@ -80,7 +87,13 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = Object.freeze({
     stash: true,
   }) as Record<BlockId, boolean>,
   model: Object.freeze({ showThinking: true }) as ModelSubToggles,
-  cache: Object.freeze({ hitRate: true, tokens: true, savings: true, timer: true }) as CacheSubToggles,
+  cache: Object.freeze({
+    order: Object.freeze([...CACHE_SEGMENT_IDS]) as unknown as CacheSegmentId[],
+    hitRate: true,
+    tokens: true,
+    savings: true,
+    timer: true,
+  }) as CacheSubToggles,
   separator: DEFAULT_SEPARATOR,
 }) as LayoutConfig;
 
@@ -90,7 +103,7 @@ export function cloneDefaultLayout(): LayoutConfig {
     order: [...DEFAULT_LAYOUT_CONFIG.order],
     enabled: { ...DEFAULT_LAYOUT_CONFIG.enabled },
     model: { ...DEFAULT_LAYOUT_CONFIG.model },
-    cache: { ...DEFAULT_LAYOUT_CONFIG.cache },
+    cache: { ...DEFAULT_LAYOUT_CONFIG.cache, order: [...DEFAULT_LAYOUT_CONFIG.cache.order] },
     separator: DEFAULT_LAYOUT_CONFIG.separator,
   };
 }
@@ -103,7 +116,8 @@ export function cloneDefaultLayout(): LayoutConfig {
  *     appended to the tail in `KNOWN_BLOCK_IDS` order.
  *   - `enabled` keys missing for known ids default to `true`; extra
  *     keys are dropped.
- *   - `model` / `cache` sub-toggles default to `true` per key.
+ *   - `model` / `cache` sub-toggles default to `true` per key;
+ *     `cache.order` is sanitised like `order` (see `normaliseCacheOrder`).
  *   - legacy `tokens` id is renamed to `cache` (see module docs).
  *   - `separator` is validated/clamped.
  */
@@ -156,12 +170,27 @@ export function normaliseLayoutConfig(raw: Partial<LayoutConfig> | undefined): L
     if (typeof src.tokens === "boolean") merged.cache.tokens = src.tokens;
     if (typeof src.savings === "boolean") merged.cache.savings = src.savings;
     if (typeof src.timer === "boolean") merged.cache.timer = src.timer;
+    if (Array.isArray(src.order)) merged.cache.order = normaliseCacheOrder(src.order);
   }
 
   // ── separator ───────────────────────────────────────────────────────
   merged.separator = clampSeparator(raw.separator);
 
   return merged;
+}
+
+/**
+ * Sanitise a persisted cache segment order: unknown ids and duplicates
+ * are dropped, missing known ids appended in default order.
+ */
+export function normaliseCacheOrder(raw: readonly unknown[]): CacheSegmentId[] {
+  const seen = new Set<CacheSegmentId>();
+  for (const candidate of raw) {
+    if (typeof candidate !== "string" || !CACHE_SEGMENT_ID_SET.has(candidate)) continue;
+    seen.add(candidate as CacheSegmentId);
+  }
+  for (const id of CACHE_SEGMENT_IDS) seen.add(id);
+  return [...seen];
 }
 
 /**

@@ -5,7 +5,8 @@
  * row that has block-specific knobs. Two blocks need this:
  *
  *   - `model` \xb7 a single `Show thinking level` toggle.
- *   - `cache` \xb7 hit-rate, tokens, savings and expiry-timer segment toggles.
+ *   - `cache` \xb7 hit-rate, tokens, savings and expiry-timer segment toggles,
+ *     listed in display order and reorderable with `alt+\u2191\u2193`.
  *
  * Other blocks (`path`, `git`, `context`, `cost`, `chips`, `stash`)
  * have nothing to configure inside themselves \u2014 visibility lives on
@@ -30,7 +31,7 @@ import {
 import { formatHintLine, type KeyHint } from "@wierdbytes/pi-common";
 
 import type { BlockId } from "./blocks.ts";
-import type { LayoutConfig } from "./layout-config.ts";
+import type { CacheSegmentId, LayoutConfig } from "./layout-config.ts";
 
 /** A toggleable row in the per-block submenu. */
 export interface BlockSettingsToggleRow {
@@ -41,7 +42,17 @@ export interface BlockSettingsToggleRow {
   value: boolean;
   /** Patch builder: returns the LayoutConfig slice to apply when flipped. */
   toggle: (current: LayoutConfig) => Partial<LayoutConfig>;
+  /** Patch builder for `alt+\u2191\u2193`: swaps the row with its neighbour.
+   *  `null` at either edge; absent on rows that can't be reordered. */
+  move?: (current: LayoutConfig, direction: -1 | 1) => Partial<LayoutConfig> | null;
 }
+
+const CACHE_SEGMENT_LABELS: Record<CacheSegmentId, string> = {
+  hitRate: "Show hit rate (99.9%)",
+  tokens: "Show tokens (200k/200)",
+  savings: "Show savings (-$0.86 / +$0.15)",
+  timer: "Show expiry timer (4:21)",
+};
 
 /**
  * Build the toggle rows for `blockId` against the current layout. Pure;
@@ -67,32 +78,22 @@ export function buildBlockSettingsRows(
   }
 
   if (blockId === "cache") {
-    return [
-      {
-        id: "cache.hitRate",
-        label: "Show hit rate (99.9%)",
-        value: layout.cache.hitRate,
-        toggle: (current) => ({ cache: { ...current.cache, hitRate: !current.cache.hitRate } }),
+    return layout.cache.order.map((segment) => ({
+      id: `cache.${segment}`,
+      label: CACHE_SEGMENT_LABELS[segment],
+      value: layout.cache[segment],
+      toggle: (current) => ({ cache: { ...current.cache, [segment]: !current.cache[segment] } }),
+      move: (current, direction) => {
+        const order = current.cache.order;
+        const index = order.indexOf(segment);
+        const target = index + direction;
+        if (index < 0 || target < 0 || target >= order.length) return null;
+        const next = [...order];
+        next[index] = next[target]!;
+        next[target] = segment;
+        return { cache: { ...current.cache, order: next } };
       },
-      {
-        id: "cache.tokens",
-        label: "Show tokens (200k/200)",
-        value: layout.cache.tokens,
-        toggle: (current) => ({ cache: { ...current.cache, tokens: !current.cache.tokens } }),
-      },
-      {
-        id: "cache.savings",
-        label: "Show savings (-$0.86 / +$0.15)",
-        value: layout.cache.savings,
-        toggle: (current) => ({ cache: { ...current.cache, savings: !current.cache.savings } }),
-      },
-      {
-        id: "cache.timer",
-        label: "Show expiry timer (4:21)",
-        value: layout.cache.timer,
-        toggle: (current) => ({ cache: { ...current.cache, timer: !current.cache.timer } }),
-      },
-    ];
+    }));
   }
 
   return [];
@@ -149,8 +150,26 @@ export function createBlockSettingsSubmenu(args: CreateBlockSettingsSubmenuArgs)
     args.tui.requestRender();
   }
 
+  function moveFocusedRow(direction: -1 | 1): void {
+    const row = rowsNow()[cursor];
+    const patch = row?.move?.(args.getLayout(), direction);
+    if (!patch) return;
+    args.onChange(patch);
+    // Focus follows the moved row.
+    cursor += direction;
+    args.tui.requestRender();
+  }
+
   function handleInput(data: string): void {
     if (isKeyRelease(data)) return;
+    if (matchesKey(data, "alt+up")) {
+      moveFocusedRow(-1);
+      return;
+    }
+    if (matchesKey(data, "alt+down")) {
+      moveFocusedRow(1);
+      return;
+    }
     if (matchesKey(data, "up") || data === "k") {
       moveCursor(-1);
       return;
@@ -232,6 +251,7 @@ export function createBlockSettingsSubmenu(args: CreateBlockSettingsSubmenuArgs)
       const hints: KeyHint[] = [
         { key: "\u2191\u2193", label: "navigate" },
         { key: "space/enter", label: "toggle" },
+        ...(rows.some((row) => row.move) ? [{ key: "alt+\u2191\u2193", label: "reorder" }] : []),
         { key: "esc", label: "back" },
       ];
       lines.push(wrap(formatHintLine(hints, args.theme)));

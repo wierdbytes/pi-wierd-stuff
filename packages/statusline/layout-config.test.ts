@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import { KNOWN_BLOCK_IDS } from "./blocks.ts";
 import {
+  CACHE_SEGMENT_IDS,
   clampSeparator,
   cloneDefaultLayout,
   DEFAULT_LAYOUT_CONFIG,
@@ -85,7 +86,19 @@ describe("normaliseLayoutConfig", () => {
 
   it("merges cache sub-toggles independently", () => {
     const out = normaliseLayoutConfig({ cache: { hitRate: false, savings: true, timer: false } as never });
-    expect(out.cache).toEqual({ hitRate: false, tokens: true, savings: true, timer: false });
+    expect(out.cache).toEqual({ order: [...CACHE_SEGMENT_IDS], hitRate: false, tokens: true, savings: true, timer: false });
+  });
+
+  it("sanitises cache.order: drops unknown / duplicate ids, appends missing ones", () => {
+    const out = normaliseLayoutConfig({
+      cache: { order: ["timer", "bogus", "timer", 7, "tokens"] } as never,
+    });
+    expect(out.cache.order).toEqual(["timer", "tokens", "hitRate", "savings"]);
+  });
+
+  it("keeps a valid cache.order as is", () => {
+    const order = ["savings", "timer", "hitRate", "tokens"];
+    expect(normaliseLayoutConfig({ cache: { order } as never }).cache.order).toEqual(order);
   });
 
   it("migrates the legacy tokens block to cache in place", () => {
@@ -99,7 +112,7 @@ describe("normaliseLayoutConfig", () => {
     expect(out.enabled.cache).toBe(false);
     expect(out.enabled).not.toHaveProperty("tokens");
     expect(out).not.toHaveProperty("tokens");
-    expect(out.cache).toEqual({ hitRate: true, tokens: true, savings: true, timer: true });
+    expect(out.cache).toEqual({ order: [...CACHE_SEGMENT_IDS], hitRate: true, tokens: true, savings: true, timer: true });
   });
 
   it("prefers an explicit cache flag over the legacy tokens flag", () => {
@@ -166,7 +179,7 @@ describe("clampSeparator", () => {
       expect(DEFAULT_LAYOUT_CONFIG.enabled[id]).toBe(true);
     }
     expect(DEFAULT_LAYOUT_CONFIG.model.showThinking).toBe(true);
-    expect(DEFAULT_LAYOUT_CONFIG.cache).toEqual({ hitRate: true, tokens: true, savings: true, timer: true });
+    expect(DEFAULT_LAYOUT_CONFIG.cache).toEqual({ order: [...CACHE_SEGMENT_IDS], hitRate: true, tokens: true, savings: true, timer: true });
   });
 });
 
@@ -178,10 +191,12 @@ describe("cloneDefaultLayout", () => {
     a.enabled.git = false;
     a.model.showThinking = false;
     a.cache.hitRate = false;
+    a.cache.order.reverse();
     // Mutating one clone must not affect the other.
     expect(b.order).toEqual([...KNOWN_BLOCK_IDS]);
     expect(b.enabled.git).toBe(true);
     expect(b.model.showThinking).toBe(true);
     expect(b.cache.hitRate).toBe(true);
+    expect(b.cache.order).toEqual([...CACHE_SEGMENT_IDS]);
   });
 });

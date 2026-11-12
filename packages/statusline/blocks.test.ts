@@ -29,7 +29,7 @@ import {
   type RenderInputs,
 } from "./blocks.ts";
 import { EMPTY_CACHE_STATS } from "./cache-stats.ts";
-import { cloneDefaultLayout } from "./layout-config.ts";
+import { CACHE_SEGMENT_IDS, cloneDefaultLayout } from "./layout-config.ts";
 
 /** Build a synthetic `RenderInputs` with sensible defaults. */
 function makeInputs(overrides: Partial<RenderInputs> = {}): RenderInputs {
@@ -216,31 +216,57 @@ describe("block renderers (in isolation)", () => {
   it("renderCache respects each sub-toggle independently", () => {
     const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: -1 };
     const noHit = cloneDefaultLayout();
-    noHit.cache = { hitRate: false, tokens: false, savings: true, timer: true };
+    noHit.cache = { order: [...CACHE_SEGMENT_IDS], hitRate: false, tokens: false, savings: true, timer: true };
     expect(BLOCK_RENDERERS.cache(makeInputs({ layout: noHit, cache }))).toBe(
       `${C_GRAY}-$1.00${C_RESET}`,
     );
     const noTokens = cloneDefaultLayout();
-    noTokens.cache = { hitRate: true, tokens: false, savings: false, timer: false };
+    noTokens.cache = { order: [...CACHE_SEGMENT_IDS], hitRate: true, tokens: false, savings: false, timer: false };
     expect(BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout: noTokens, cache }))).toBe(
       `${C_GREEN}\uf1c0 99.0%${C_RESET}`,
     );
     const onlyTokens = cloneDefaultLayout();
-    onlyTokens.cache = { hitRate: false, tokens: true, savings: false, timer: false };
+    onlyTokens.cache = { order: [...CACHE_SEGMENT_IDS], hitRate: false, tokens: true, savings: false, timer: false };
     expect(BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout: onlyTokens, cache }))).toBe(
       `${C_GRAY}\uf1c0${C_RESET} ${C_GRAY}(99/1)${C_RESET}`,
     );
     const noSavings = cloneDefaultLayout();
-    noSavings.cache = { hitRate: true, tokens: true, savings: false, timer: true };
+    noSavings.cache = { order: [...CACHE_SEGMENT_IDS], hitRate: true, tokens: true, savings: false, timer: true };
     expect(BLOCK_RENDERERS.cache(makeInputs({ layout: noSavings, cache }))).not.toContain("$");
     const none = cloneDefaultLayout();
-    none.cache = { hitRate: false, tokens: false, savings: false, timer: false };
+    none.cache = { order: [...CACHE_SEGMENT_IDS], hitRate: false, tokens: false, savings: false, timer: false };
     expect(BLOCK_RENDERERS.cache(makeInputs({ layout: none, cache }))).toBe("");
+  });
+
+  it("renderCache renders segments in layout.cache.order", () => {
+    const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: -1 };
+    const layout = cloneDefaultLayout();
+    layout.cache.order = ["timer", "savings", "tokens", "hitRate"];
+    const out = BLOCK_RENDERERS.cache(
+      makeInputs({ iconSet: "nerd-font", layout, cache, cacheRemainingMs: 261_000 }),
+    );
+    expect(out).toBe(
+      [
+        `${C_GRAY}\u{F051F} 4:21${C_RESET}`,
+        `${C_GRAY}-$1.00${C_RESET}`,
+        `${C_GRAY}(99/1)${C_RESET}`,
+        `${C_GREEN}\uf1c0 99.0%${C_RESET}`,
+      ].join(" "),
+    );
+  });
+
+  it("renderCache leads with a gray icon when the hit rate is hidden, whatever the order", () => {
+    const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: -1 };
+    const layout = cloneDefaultLayout();
+    layout.cache = { order: ["savings", "hitRate", "tokens", "timer"], hitRate: false, tokens: true, savings: true, timer: false };
+    expect(BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout, cache }))).toBe(
+      `${C_GRAY}\uf1c0${C_RESET} ${C_GRAY}-$1.00${C_RESET} ${C_GRAY}(99/1)${C_RESET}`,
+    );
   });
 
   it("renderCache appends the expiry countdown with the nerd-font hourglass", () => {
     const layout = cloneDefaultLayout();
-    layout.cache = { hitRate: false, tokens: false, savings: false, timer: true };
+    layout.cache = { order: [...CACHE_SEGMENT_IDS], hitRate: false, tokens: false, savings: false, timer: true };
     const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
     const render = (ms: number) =>
       BLOCK_RENDERERS.cache(makeInputs({ iconSet: "nerd-font", layout, cache, cacheRemainingMs: ms }));
@@ -255,7 +281,7 @@ describe("block renderers (in isolation)", () => {
 
   it("renderCache appends the warmer icon after the countdown while forced warming is on", () => {
     const layout = cloneDefaultLayout();
-    layout.cache = { hitRate: false, tokens: false, savings: false, timer: true };
+    layout.cache = { order: [...CACHE_SEGMENT_IDS], hitRate: false, tokens: false, savings: false, timer: true };
     const cache = { cacheRead: 99, uncached: 1, cacheWrite: 1, warmCost: 0, delta: null };
     const render = (iconSet: RenderInputs["iconSet"], cacheWarmerForced: boolean) =>
       BLOCK_RENDERERS.cache(

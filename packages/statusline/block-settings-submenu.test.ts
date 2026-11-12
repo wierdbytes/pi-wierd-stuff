@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import { KNOWN_BLOCK_IDS, type BlockId } from "./blocks.ts";
 import { blockHasSubSettings, buildBlockSettingsRows } from "./block-settings-submenu.ts";
-import { cloneDefaultLayout } from "./layout-config.ts";
+import { CACHE_SEGMENT_IDS, cloneDefaultLayout } from "./layout-config.ts";
 
 describe("buildBlockSettingsRows", () => {
   it("returns one row for the model block: Show thinking", () => {
@@ -49,7 +49,31 @@ describe("buildBlockSettingsRows", () => {
     const row = buildBlockSettingsRows("cache", layout).find((r) => r.id === "cache.savings");
     expect(row).toBeTruthy();
     const patch = row!.toggle(layout);
-    expect(patch.cache).toEqual({ hitRate: true, tokens: true, savings: false, timer: true });
+    expect(patch.cache).toEqual({ order: [...CACHE_SEGMENT_IDS], hitRate: true, tokens: true, savings: false, timer: true });
+  });
+
+  it("lists cache rows in layout.cache.order", () => {
+    const layout = cloneDefaultLayout();
+    layout.cache.order = ["timer", "hitRate", "savings", "tokens"];
+    const ids = buildBlockSettingsRows("cache", layout).map((r) => r.id);
+    expect(ids).toEqual(["cache.timer", "cache.hitRate", "cache.savings", "cache.tokens"]);
+  });
+
+  it("cache row move swaps with its neighbour and stops at the edges", () => {
+    const layout = cloneDefaultLayout();
+    const rows = buildBlockSettingsRows("cache", layout);
+    const tokens = rows.find((r) => r.id === "cache.tokens")!;
+    expect(tokens.move!(layout, -1)?.cache?.order).toEqual(["tokens", "hitRate", "savings", "timer"]);
+    expect(tokens.move!(layout, 1)?.cache?.order).toEqual(["hitRate", "savings", "tokens", "timer"]);
+    expect(rows[0]!.move!(layout, -1)).toBeNull();
+    expect(rows[3]!.move!(layout, 1)).toBeNull();
+    // Moving never touches the flags.
+    expect(tokens.move!(layout, 1)?.cache?.tokens).toBe(true);
+  });
+
+  it("model rows are not reorderable", () => {
+    const [row] = buildBlockSettingsRows("model", cloneDefaultLayout());
+    expect(row!.move).toBeUndefined();
   });
 });
 

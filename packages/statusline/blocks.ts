@@ -26,7 +26,7 @@ import { cacheHitPercent, type CacheStats } from "./cache-stats.ts";
 import { formatCountdown } from "./cache-timer.ts";
 import type { IconKey, IconSet } from "./icons.ts";
 import { resolveIcon } from "./icons.ts";
-import type { LayoutConfig } from "./layout-config.ts";
+import type { CacheSegmentId, LayoutConfig } from "./layout-config.ts";
 
 // ─────────────────────────────────────────────────────────────────────
 // Color constants (Tokyo Night Storm palette)
@@ -413,7 +413,9 @@ const renderCost: BlockRenderer = (inputs) => {
  *     Gray > 0:30, yellow up to 0:30, red at 0:00. Followed by the
  *     `cacheWarmer` icon while `/warmer` forces cache warming.
  *
- * Each segment is gated by `layout.cache.*`. Returns "" when the
+ * Segments render in `layout.cache.order`; the cache icon sits in
+ * front of the hit rate (or leads the block in gray when the hit rate
+ * is hidden). Each segment is gated by `layout.cache.*`. Returns "" when the
  * provider never touched the cache (nothing read or written) or every
  * segment is gated off.
  */
@@ -432,22 +434,28 @@ const renderCache: BlockRenderer = (inputs) => {
 
   const color = pct !== null ? cacheHitColorFor(pct) : C_GRAY;
   const icon = resolveIcon(inputs.iconSet, "cache");
-  const tokens = `${C_GRAY}(${formatTokens(stats.cacheRead)}/${formatTokens(stats.uncached)})${C_RESET}`;
-  const segments: string[] = [];
+  const rendered: Record<CacheSegmentId, string> = { hitRate: "", tokens: "", savings: "", timer: "" };
   if (showHit && pct !== null) {
     const head = icon ? `${icon} ${formatHitPercent(pct)}` : formatHitPercent(pct);
-    segments.push(`${color}${head}${C_RESET}`);
-  } else if (icon && (showTokens || showSavings)) {
-    segments.push(`${C_GRAY}${icon}${C_RESET}`);
+    rendered.hitRate = `${color}${head}${C_RESET}`;
   }
-  if (showTokens) segments.push(tokens);
-  if (showSavings && stats.delta !== null) segments.push(formatCacheDelta(stats.delta));
+  if (showTokens) {
+    rendered.tokens = `${C_GRAY}(${formatTokens(stats.cacheRead)}/${formatTokens(stats.uncached)})${C_RESET}`;
+  }
+  if (showSavings && stats.delta !== null) rendered.savings = formatCacheDelta(stats.delta);
   if (showTimer && remaining !== null) {
     const timerIcon = resolveIcon(inputs.iconSet, remaining > 0 ? "cacheTimer" : "cacheExpired");
     const text = formatCountdown(remaining);
     const warmerIcon = inputs.cacheWarmerForced ? resolveIcon(inputs.iconSet, "cacheWarmer") : "";
     const body = [timerIcon, text, warmerIcon].filter(Boolean).join(" ");
-    segments.push(`${cacheTimerColorFor(remaining)}${body}${C_RESET}`);
+    rendered.timer = `${cacheTimerColorFor(remaining)}${body}${C_RESET}`;
+  }
+
+  const segments = toggles.order.map((id) => rendered[id]).filter((piece) => piece.length > 0);
+  // The cache icon rides on the hit rate; without it, a gray icon still
+  // leads the block so tokens / savings stay recognisable.
+  if (icon && !rendered.hitRate && (rendered.tokens || rendered.savings)) {
+    segments.unshift(`${C_GRAY}${icon}${C_RESET}`);
   }
   return segments.join(" ");
 };

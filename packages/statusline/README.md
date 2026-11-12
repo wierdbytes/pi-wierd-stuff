@@ -30,7 +30,8 @@ fully configurable — see [Layout](#layout) below):
 - **Cost** — session total in USD when greater than zero.
 - **Cache** — prompt-cache efficiency for the current session branch,
   e.g. ` 99.9% (200k/200) -$0.86 󰔟 4:21` (icons are shown with the
-  Nerd Font icon set only). Four segments, each with its own sub-toggle:
+  Nerd Font icon set only). Four segments, each with its own sub-toggle;
+  their order is configurable too (see [Layout](#layout)):
   - **Hit rate** — `cacheRead / (input + cacheRead + cacheWrite)`,
     green at ≥ 98.0%, yellow from 90.0% to 97.9%, red below 90.0%.
   - **Tokens** — `(200k/200)`: tokens served from cache vs. tokens
@@ -102,10 +103,14 @@ Sub-menu contents (Enter on the row):
 - (`model`) **Show thinking level** — inline thinking segment after
   the model name. Only renders for reasoning-capable models anyway.
 - (`cache`) **Show hit rate / Show tokens / Show savings / Show expiry timer** —
-  individual sub-toggles for the four segments inside the cache block.
+  individual sub-toggles for the four segments inside the cache block,
+  listed in display order. `alt+↑` / `alt+↓` moves the focused segment
+  (focus follows it). The cache icon stays in front of the hit rate;
+  when the hit rate is hidden it leads the block in gray.
 
-Visibility lives on the Layout tab (`space`), not inside the sub-menu;
-reorder lives on the Layout tab (`alt+↑↓`), not inside the sub-menu.
+Block visibility lives on the Layout tab (`space`), not inside the
+sub-menu; block reorder lives on the Layout tab (`alt+↑↓`) — the
+sub-menu's own `alt+↑↓` only reorders segments within the block.
 This keeps the sub-menu tightly scoped to settings that **only** make
 sense for one specific block.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.0
+
+- **New:** reorder the segments of the cache block — `alt+↑` / `alt+↓` in its submenu (`/statusline` → Layout → Prompt cache).
+
 ## 0.10.1
 
 - **Change:** the statusline starts right with the model name — no model icon in front of it.

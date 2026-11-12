@@ -66,6 +66,8 @@ import {
   type RenderInputs,
 } from "./blocks.ts";
 import {
+  CACHE_SEGMENT_IDS,
+  type CacheSegmentId,
   type LayoutConfig,
   SEPARATOR_LABELS,
   SEPARATOR_OPTIONS,
@@ -79,6 +81,14 @@ import { EditorDockFit } from "./editor-dock.ts";
 import { installConsoleGuard, toastSummary, type ConsoleGuardToastLevel } from "./console-guard.ts";
 
 const PROMPT_PADDING = 0;
+
+/** Short cache segment names for `/statusline status`. */
+const CACHE_SEGMENT_SHORT: Record<CacheSegmentId, string> = {
+  hitRate: "hit",
+  tokens: "tokens",
+  savings: "savings",
+  timer: "timer",
+};
 
 /**
  * Render the toast row. Returns a width-padded line so it occupies a
@@ -914,7 +924,7 @@ export default function (pi: ExtensionAPI) {
     git: "Branch name plus a clean/dirty marker. CLI id: `git`.",
     context: "Percentage of usable context window (33k autocompact buffer reserved) with colored bar. CLI id: `context`.",
     cost: "Session total in USD when greater than zero. CLI id: `cost`.",
-    cache: "Cache hit rate `99.9%`, tokens `(read/uncached)`, money saved (`-$0.86`) or overspent (`+$0.15`) by prompt caching on this branch, and a countdown until the cache expires. Enter to toggle each segment. CLI id: `cache`.",
+    cache: "Cache hit rate `99.9%`, tokens `(read/uncached)`, money saved (`-$0.86`) or overspent (`+$0.15`) by prompt caching on this branch, and a countdown until the cache expires. Enter to toggle and reorder the segments. CLI id: `cache`.",
     chips: "Notify-status lane fed by `@wierdbytes/pi-events` consumers. CLI id: `chips`.",
     stash: "`📦 N` showing how many prompts are saved. CLI id: `stash`.",
   };
@@ -1306,12 +1316,9 @@ export default function (pi: ExtensionAPI) {
       `layout:        ${formatLayoutLine()}`,
       `  separator:   ${JSON.stringify(layout.separator)}`,
       `  model.think: ${layout.model.showThinking ? "yes" : "no"}`,
-      `  cache:       ${[
-        layout.cache.hitRate ? "hit" : "-hit",
-        layout.cache.tokens ? "tokens" : "-tokens",
-        layout.cache.savings ? "savings" : "-savings",
-        layout.cache.timer ? "timer" : "-timer",
-      ].join(" ")}`,
+      `  cache:       ${layout.cache.order
+        .map((id) => `${layout.cache[id] ? "" : "-"}${CACHE_SEGMENT_SHORT[id]}`)
+        .join(" ")}`,
       `subagents:     ${subagents.enabled ? "on" : "off"} (${counts.running} running / ${counts.created} queued / ${counts.total} total)`,
       `  long-ms:     ${subagents.longCompletionMs}`,
       `  on failure: ${subagents.toastOnFailure ? "yes" : "no"}`,
@@ -1341,7 +1348,7 @@ export default function (pi: ExtensionAPI) {
           {} as Record<BlockId, boolean>,
         ),
         model: { showThinking: true },
-        cache: { hitRate: true, tokens: true, savings: true, timer: true },
+        cache: { order: [...CACHE_SEGMENT_IDS], hitRate: true, tokens: true, savings: true, timer: true },
       });
       ctx.ui.notify("layout: reset to defaults", "info");
       return;
