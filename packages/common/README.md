@@ -279,7 +279,7 @@ pi.registerTool({
 
 | Helper                              | Returns                                                              |
 | ----------------------------------- | -------------------------------------------------------------------- |
-| `frameTop(title, status, theme, w)` | top border `╭── title ───`, multi-line titles render as a sub-tree |
+| `frameTop(title, status, theme, w, { rightLabel? })` | top border `╭── title ───`, multi-line titles render as a sub-tree; `rightLabel` near its right end |
 | `frameBottom(status, theme, w)`     | bottom border `╰─────────`                                       |
 | `frameBottomWithLabel(label, ...)`  | `╰── label ──────` (use for inline summaries / hints)              |
 | `frameBodyLines(text, ...)`         | rail-prefixes each line, terminal-style `\r` collapsing              |
@@ -288,6 +288,32 @@ pi.registerTool({
 | `renderToolError(message, theme, w)`| sugar for `frameResult(theme.fg("error", …), "error", …)`             |
 | `getFrameStatus(ctx)`               | `"pending" \| "success" \| "error"` from `ctx.isError`/`ctx.isPartial` |
 | `getDefaultFrameWidth(maxCap?)`     | `process.stdout.columns` (or fallbacks) clamped to optional cap      |
+
+### `bash` in the frame — `@wierdbytes/pi-common/tool-frame/bash`
+
+`createBashRenderers(options?)` returns `renderShell`, `renderCall` and
+`renderResult` for a bash tool, drawn the way pi-facelift draws it: the
+command in the top border (multi-line commands as a sub-tree), the
+output rail-prefixed, and the elapsed time plus `✓ exit 0` / `✗ exit N`
+/ `⚡ timed out` / `⚡ aborted` in the bottom border. pi-facelift and
+pi-herdr both use it.
+
+```ts
+import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createBashRenderers } from "@wierdbytes/pi-common/tool-frame/bash";
+
+pi.registerTool({
+  ...createBashToolDefinition(cwd),
+  ...createBashRenderers(),
+});
+```
+
+| Option            | Default            |                                                                                          |
+| ----------------- | ------------------ | ---------------------------------------------------------------------------------------- |
+| `TextComponent`   | pi-tui `Text`      | Component to draw into                                                                   |
+| `maxPreviewLines` | `80`               | Output lines shown while collapsed                                                       |
+| `width`           | terminal columns   | Frame width                                                                              |
+| `runningLabel`    | none               | `(details) => string \| undefined`: a label at the right of the top border while it runs, read from partial results' details |
 
 ## License
 

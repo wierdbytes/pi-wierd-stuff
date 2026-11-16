@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- **New:** `@wierdbytes/pi-common/tool-frame/bash` — `createBashRenderers()` draws a bash tool in the tool frame as pi-facelift does, for any extension that runs bash.
+- **New:** `frameTop(…, { rightLabel })` puts a label near the right end of the top border.
+
 ## 0.4.0
 
 - Add `@wierdbytes/pi-common/diff` — Shiki-powered split / unified

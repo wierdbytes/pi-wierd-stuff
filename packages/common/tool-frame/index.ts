@@ -165,12 +165,17 @@ function firstVisibleSpace(s: string): number {
  *
  * Trailing dashes are only emitted on the first row so continuation rows
  * stay clean.
+ *
+ * `options.rightLabel` goes near the right end of the first row,
+ * `╭── <title> ───── <label> ─`, and is left out when the frame is too
+ * narrow to keep at least 12 columns of the title next to it.
  */
 export function frameTop(
   titleAnsi: string,
   status: FrameStatus,
   theme: Theme,
   width: number,
+  options?: { rightLabel?: string },
 ): string {
   const border = (s: string): string =>
     theme.fg(STATUS_TO_THEME_COLOR[status], s);
@@ -180,9 +185,17 @@ export function frameTop(
   const continuations = titleLines.slice(1);
 
   // Layout: `╭` (1) + `──` (2) + ` ` (1) + title + ` ` (1) + trailing dashes (≥1)
+  // [+ ` ` + right label + ` ─` (label + 3)]
   const minTrailing = 1;
   const fixed = 1 + 2 + 1 + 1 + minTrailing;
-  const maxTitleW = Math.max(0, w - fixed);
+  const label = options?.rightLabel ?? "";
+  const labelW = label ? visibleWidth(label) + 3 : 0;
+  const right =
+    labelW > 0 && w - fixed - labelW >= Math.min(12, visibleWidth(firstTitle))
+      ? ` ${label} ${border("─")}`
+      : "";
+  const rightW = right ? labelW : 0;
+  const maxTitleW = Math.max(0, w - fixed - rightW);
 
   let title = firstTitle;
   let tw = visibleWidth(firstTitle);
@@ -190,8 +203,8 @@ export function frameTop(
     title = truncateToWidth(firstTitle, maxTitleW, "…");
     tw = visibleWidth(title);
   }
-  const trailing = Math.max(minTrailing, w - 1 - 2 - 1 - tw - 1);
-  const firstLine = `${border("╭──")} ${title} ${border("─".repeat(trailing))}`;
+  const trailing = Math.max(minTrailing, w - 1 - 2 - 1 - tw - 1 - rightW);
+  const firstLine = `${border("╭──")} ${title} ${border("─".repeat(trailing))}${right}`;
 
   if (continuations.length === 0) return firstLine;
 
