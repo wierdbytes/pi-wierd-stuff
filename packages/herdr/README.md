@@ -1,6 +1,6 @@
 # @wierdbytes/pi-herdr
 
-Tells [herdr](https://herdr.dev) which model, reasoning effort and context size each [pi](https://github.com/earendil-works/pi) runs with, and how much of your Claude and Codex subscription limits is used ([Limits](#limits)).
+Tells [herdr](https://herdr.dev) which model, reasoning effort and context size each [pi](https://github.com/earendil-works/pi) runs with, and how much of your Claude and Codex subscription limits is used ([Limits](#limits)). Runs pi's bash commands in herdr-core terminals under pi's, so you can watch each one live in herdr ([Bash](#bash)).
 
 Pi already reports its status (working, blocked, done) over OSC 7501, but that report has no room for the model. This extension writes it as `agent.*` labels on the herdr-core terminal pi runs in, so a herdr agent list can show a second line under each pi:
 
@@ -16,6 +16,16 @@ pi install npm:@wierdbytes/pi-herdr
 ```
 
 Nothing to configure. Outside a herdr-core terminal (no `HC_TERMINAL_ID` / `HC_TERMINAL_SOCKET`) it does nothing.
+
+Optional settings in `~/.pi/agent/@wierdbytes/pi-herdr/settings.json`:
+
+```json
+{ "bash": false }
+```
+
+| Key | Default | |
+|---|---|---|
+| `bash` | `true` | Run bash commands in herdr-core terminals ([Bash](#bash)). `false` keeps them in pi's own process |
 
 ## Labels
 
@@ -68,6 +78,23 @@ Every Claude and Codex response carries the subscription's usage windows (Anthro
 - Several pi processes write it: each reads the document, folds its reading in and writes it back at that version, retrying when another pi wrote in between. Within one window (same reset, give or take two minutes) `used` only grows; a later window replaces it.
 - Every reading is written, even with the same numbers: `at` is when a provider last reported the window. Nothing is written between responses. Readings within 500 ms go out as one write.
 - Every pi writes, not only the interactive one: `pi -p` runs and sub-agents spend the same subscription. Windows a provider stops reporting stay until a later reading replaces them.
+
+## Bash
+
+Every command pi runs, the model's `bash` tool calls and your `!` / `!!` commands, gets a herdr-core terminal of its own (`terminal.run`, what `hc run` does), a child of pi's. Herdr shows it under pi while it runs:
+
+- the screen starts with `$ <command>`, then the output as it comes;
+- the title is the command's first line, and the program in front is the command itself (`bash -c '<command>'`, or the program when it is a single one);
+- the label `pi-herdr.bash` is `tool` or `user`, for mods that want to tell these terminals apart;
+- ctrl+c typed into it stops the command, and pi reports the exit code.
+
+The terminal is removed as soon as the command ends; when pi quits, running ones are ended and removed.
+
+Commands run as with pi's own bash: stdin is `/dev/null`, stdout and stderr are one pipe (no colors, no pagers, no prompts). `tee` copies it to the terminal and to a file pi reads, so pi gets the exact output however long it is, and the command's exit code. What it starts in the background (`server &`) outlives the terminal, as before. Inside, `HC_TERMINAL_ID` is pi's: `hc run` starts terminals under pi, `hc send $HC_TERMINAL_ID` reaches pi.
+
+Commands that call `hc wait` run in pi's own process: in a terminal under pi they would wait for themselves (`hc wait --children all`). So does a command herdr-core can't start a terminal for (the core is down or refuses), and everything when pi's shell isn't bash (`shellPath`) or on Windows.
+
+Only one extension can own `bash`, and pi won't start when two register it, so pi-herdr registers its tool at session start, and only over pi's built-in one. With another extension that replaces `bash`, the model's commands stay in pi's process and pi-herdr says so once at start; `!` commands still run in herdr terminals. pi-facelift (0.8.0+) can leave `bash` to pi: switch it off in `/facelift` → Tools, then `/reload`.
 
 ## How it works
 

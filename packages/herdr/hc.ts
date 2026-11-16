@@ -2,8 +2,9 @@
  * The smallest herdr-core client this needs, over the JSON-RPC socket
  * herdr-core hands every terminal (`HC_TERMINAL_SOCKET`), one request per
  * connection: `terminal.label` for the agent's labels, `doc.get` / `doc.set`
- * for the shared limits document. Talking to the socket directly instead of
- * spawning `hc` keeps it cheap enough to run after every reply.
+ * for the shared limits document, `terminal.run` / `wait` / `kill` / `rm` for
+ * bash commands. Talking to the socket directly instead of spawning `hc`
+ * keeps it cheap enough to run after every reply.
  */
 
 import net from "node:net";
@@ -29,13 +30,24 @@ let nextId = 1;
 /**
  * Sends one request and resolves with herdr-core's answer. A missing core, a
  * broken reply or no answer within `timeoutMs` resolve as an error too
- * (`unreachable`, `bad_reply`, `timeout`). Never throws: a missing core must
- * not disturb pi.
+ * (`unreachable`, `bad_reply`, `timeout`), and so does `signal` aborting
+ * (`aborted`: the request may still have reached the core). Never throws: a
+ * missing core must not disturb pi.
  */
-export function rpc(socketPath: string, method: string, params: Record<string, unknown>, timeoutMs = 1500): Promise<RpcReply> {
+export function rpc(
+  socketPath: string,
+  method: string,
+  params: Record<string, unknown>,
+  timeoutMs = 1500,
+  signal?: AbortSignal,
+): Promise<RpcReply> {
   const endpoint = process.platform === "win32" ? `\\\\.\\pipe\\${socketPath}` : socketPath;
   const request = { jsonrpc: "2.0", id: nextId++, method, params };
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ ok: false, error: "aborted" });
+      return;
+    }
     let done = false;
     let buffer = "";
     const socket = net.createConnection(endpoint);
@@ -43,9 +55,12 @@ export function rpc(socketPath: string, method: string, params: Record<string, u
       if (done) return;
       done = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       socket.destroy();
       resolve(reply);
     };
+    const onAbort = () => finish({ ok: false, error: "aborted" });
+    signal?.addEventListener("abort", onAbort, { once: true });
     const timer = setTimeout(() => finish({ ok: false, error: "timeout" }), timeoutMs);
     timer.unref?.();
     socket.on("error", () => finish({ ok: false, error: "unreachable" }));

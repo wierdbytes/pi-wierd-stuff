@@ -9,12 +9,17 @@
  * (Claude, Codex) into herdr-core's `limits` document, so every herdr client
  * can show them.
  *
+ * And it runs bash commands (the model's and `!`) in herdr-core terminals
+ * under pi's, so herdr clients show each command live while it runs.
+ *
  * Wiring only; the labels are built in `meta.ts`, written in `publisher.ts`;
- * the limits are read in `limits.ts`, written in `limits-publisher.ts`.
+ * the limits are read in `limits.ts`, written in `limits-publisher.ts`; bash
+ * runs in `bash.ts`, wired in `bash-tool.ts`.
  */
 
 import { hostname } from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { registerHcBash } from "./bash-tool.ts";
 import { type CacheEntry, type CacheWindow, cacheWindow, envRetention, type InflightRequest, WarmWatch } from "./cache.ts";
 import { getDoc, hcTargetFromEnv, setDoc, setLabels } from "./hc.ts";
 import {
@@ -28,11 +33,16 @@ import {
 import { LimitsPublisher } from "./limits-publisher.ts";
 import { collectLabels, type MetaModel } from "./meta.ts";
 import { LabelPublisher } from "./publisher.ts";
+import { loadSettings } from "./settings.ts";
 import { SubagentCounter } from "./subagents.ts";
 
 export default function piHerdr(pi: ExtensionAPI) {
   const target = hcTargetFromEnv();
   if (!target) return;
+
+  // Every pi runs its commands in herdr terminals, `pi -p` and sub-agents too:
+  // each under the terminal it runs in.
+  const bash = loadSettings().bash && process.platform !== "win32" ? registerHcBash(pi, target) : undefined;
 
   const publisher = new LabelPublisher((labels) => setLabels(target, labels));
   const limits = new LimitsPublisher(
@@ -161,7 +171,10 @@ export default function piHerdr(pi: ExtensionAPI) {
     if (event.reason === "quit") {
       subagents.dispose();
       // The last reading is worth a moment; never more than a second.
-      await Promise.race([limits.flush(), new Promise((resolve) => setTimeout(resolve, 1000).unref?.())]);
+      await Promise.race([
+        Promise.all([limits.flush(), bash?.shutdown(1000)]),
+        new Promise((resolve) => setTimeout(resolve, 1000).unref?.()),
+      ]);
       limits.cancel();
       if (owned) await publisher.clear();
       return;

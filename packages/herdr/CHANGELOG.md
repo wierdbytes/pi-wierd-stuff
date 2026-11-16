@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- **New:** the model's bash commands and your `!` / `!!` commands run in their own herdr-core terminal under pi's, so herdr clients show each command and its output live while it runs; the terminal is removed when it ends.
+- **New:** `{"bash": false}` in `~/.pi/agent/@wierdbytes/pi-herdr/settings.json` keeps commands in pi's own process.
+
 ## 0.4.0
 
 - **New:** publish the Claude and Codex subscription limits every provider response reports (5-hour, weekly and per-model windows, plan, status) to herdr-core's `limits` document, so the herdr app, Wierdr and any other herdr-core client can show them on every screen.
