@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+- **New:** the model's bash commands are drawn in pi-facelift's frame — the command in the top border, the herdr terminal's address next to it while it runs (cmd-click it in herdr to peek), duration and ✓ / ✗ exit in the bottom border.
+
 ## 0.5.0
 
 - **New:** the model's bash commands and your `!` / `!!` commands run in their own herdr-core terminal under pi's, so herdr clients show each command and its output live while it runs; the terminal is removed when it ends.

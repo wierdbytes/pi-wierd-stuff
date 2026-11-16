@@ -88,6 +88,14 @@ Every command pi runs, the model's `bash` tool calls and your `!` / `!!` command
 - the label `pi-herdr.bash` is `tool` or `user`, for mods that want to tell these terminals apart;
 - ctrl+c typed into it stops the command, and pi reports the exit code.
 
+In pi, the model's commands are drawn in pi-facelift's frame (the shared renderer from `@wierdbytes/pi-common/tool-frame/bash`), with or without pi-facelift installed: the command in the top border, the output on the rail, duration and `✓ exit 0` / `✗ exit N` in the bottom border. While the command runs, the top border also shows its terminal's address (`t14s`): cmd-click (ctrl-click) it in herdr to peek at the terminal. `!` commands keep pi's own look.
+
+```
+╭── bash npm test ──────────────────────────────── t14s ─
+│ 12 passed
+╰── 3.2s ──────────────────────────────────────────────────
+```
+
 The terminal is removed as soon as the command ends; when pi quits, running ones are ended and removed.
 
 Commands run as with pi's own bash: stdin is `/dev/null`, stdout and stderr are one pipe (no colors, no pagers, no prompts). `tee` copies it to the terminal and to a file pi reads, so pi gets the exact output however long it is, and the command's exit code. What it starts in the background (`server &`) outlives the terminal, as before. Inside, `HC_TERMINAL_ID` is pi's: `hc run` starts terminals under pi, `hc send $HC_TERMINAL_ID` reaches pi.

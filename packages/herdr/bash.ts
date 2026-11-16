@@ -235,6 +235,8 @@ export interface CommandSpec {
   source: BashSource;
   /** settings.json `shellCommandPrefix`, which pi puts before every command: left out of the header. */
   commandPrefix?: string;
+  /** Told the terminal's address once it runs, before any of its output. */
+  onTerminal?: (address: string) => void;
 }
 
 /** Runs pi's bash commands in herdr-core terminals under pi's own. */
@@ -330,6 +332,11 @@ export class HcBash {
       return spec.local.exec(command, cwd, options);
     }
     this.live.add(address);
+    try {
+      spec.onTerminal?.(address);
+    } catch {
+      // Only for show: never stops the command.
+    }
 
     const tail = new OutputTail(files.output, onData, this.pollMs);
     tail.start();

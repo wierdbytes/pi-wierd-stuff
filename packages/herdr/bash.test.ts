@@ -351,6 +351,13 @@ describe.skipIf(!unix)("HcBash", () => {
     expect(result.output).toBe("bar|t0\nstdin done\n");
   });
 
+  it("tells the terminal's address once it runs, before any output", async () => {
+    const events: string[] = [];
+    const o = hc.operations({ shell: BASH, local, source: "tool", onTerminal: (address) => events.push(`terminal ${address}`) });
+    await o.exec("echo hi", dir, { onData: (b) => events.push(`data ${b.toString().trim()}`) });
+    expect(events).toEqual(["terminal t1", "data hi"]);
+  });
+
   it("marks `!` commands as the person's", async () => {
     await run("true", {}, ops("user"));
     expect(core.calls("terminal.run")[0].labels).toEqual({ [BASH_LABEL]: "user" });
