@@ -1,8 +1,7 @@
 /**
  * Wires `HcBash` into pi: the `bash` tool and `!` / `!!` commands run in
  * herdr-core terminals under pi's. The tool is drawn in pi-facelift's frame
- * (shared through pi-common), with the terminal's address in the top border
- * while the command runs; `!` commands keep pi's own look.
+ * (shared through pi-common); `!` commands keep pi's own look.
  *
  * pi refuses to start when two extensions register the same tool at load
  * (pi-facelift registers `bash`), so the tool is registered late, at session
@@ -23,40 +22,6 @@ import { createBashRenderers } from "@wierdbytes/pi-common/tool-frame/bash";
 import { type BashSource, HcBash } from "./bash.ts";
 import type { HcTarget } from "./hc.ts";
 
-/** Partial results of a running command carry its herdr-core terminal here. */
-export const TERMINAL_DETAIL = "hcTerminal";
-
-/** The herdr-core terminal a partial bash result says its command runs in. */
-export function terminalOf(details: unknown): string | undefined {
-  const address = (details as Record<string, unknown> | null | undefined)?.[TERMINAL_DETAIL];
-  return typeof address === "string" && address ? address : undefined;
-}
-
-/**
- * Wraps a tool's `onUpdate` so every partial result carries the terminal
- * the command runs in, once known. `started(address)` records it and sends
- * an empty update right away, so the address shows before any output does.
- */
-// biome-ignore lint/suspicious/noExplicitAny: any tool's update callback
-export function withTerminal<F extends (update: any) => void>(
-  onUpdate: F | undefined,
-): { onUpdate: F | undefined; started: (address: string) => void } {
-  let terminal: string | undefined;
-  const wrapped = onUpdate
-    ? (((update: { details?: unknown }) =>
-        onUpdate(
-          terminal ? { ...update, details: { ...((update.details as object | undefined) ?? {}), [TERMINAL_DETAIL]: terminal } } : update,
-        )) as F)
-    : undefined;
-  return {
-    onUpdate: wrapped,
-    started: (address) => {
-      terminal = address;
-      wrapped?.({ content: [], details: undefined });
-    },
-  };
-}
-
 interface ShellSettings {
   shellPath?: string;
   shellCommandPrefix?: string;
@@ -73,7 +38,7 @@ export function registerHcBash(pi: ExtensionAPI, target: HcTarget): HcBash {
     }
   };
 
-  const operations = (source: BashSource, settings: ShellSettings, onTerminal?: (address: string) => void): BashOperations => {
+  const operations = (source: BashSource, settings: ShellSettings): BashOperations => {
     const local = createLocalBashOperations({ shellPath: settings.shellPath });
     let shell: string;
     try {
@@ -86,7 +51,7 @@ export function registerHcBash(pi: ExtensionAPI, target: HcTarget): HcBash {
     }
     // The script around the command is bash.
     if (basename(shell) !== "bash") return local;
-    return hc.operations({ shell, local, source, commandPrefix: settings.shellCommandPrefix, onTerminal });
+    return hc.operations({ shell, local, source, commandPrefix: settings.shellCommandPrefix });
   };
 
   pi.on("user_bash", () => ({ operations: operations("user", shellSettings()) }));
@@ -118,16 +83,15 @@ export function registerHcBash(pi: ExtensionAPI, target: HcTarget): HcBash {
     const cwd = process.cwd();
     pi.registerTool({
       ...createBashToolDefinition(cwd),
-      ...createBashRenderers({ runningLabel: terminalOf }),
+      ...createBashRenderers(),
       async execute(toolCallId, params, signal, onUpdate, toolCtx) {
         const settings = shellSettings();
-        const updates = withTerminal(onUpdate);
         const tool = createBashToolDefinition(cwd, {
-          operations: operations("tool", settings, updates.started),
+          operations: operations("tool", settings),
           commandPrefix: settings.shellCommandPrefix,
           shellPath: settings.shellPath,
         });
-        return tool.execute(toolCallId, params, signal, updates.onUpdate, toolCtx);
+        return tool.execute(toolCallId, params, signal, onUpdate, toolCtx);
       },
     });
   });

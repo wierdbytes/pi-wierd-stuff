@@ -88,7 +88,7 @@ Every command pi runs, the model's `bash` tool calls and your `!` / `!!` command
 - the label `pi-herdr.bash` is `tool` or `user`, for mods that want to tell these terminals apart;
 - ctrl+c typed into it stops the command, and pi reports the exit code.
 
-In pi, the model's commands are drawn in pi-facelift's frame (the shared renderer from `@wierdbytes/pi-common/tool-frame/bash`), with or without pi-facelift installed: the command in the top border, the output on the rail, duration and `✓ exit 0` / `✗ exit N` in the bottom border. While the command runs, the top border also shows its terminal's address (`t14s`): cmd-click (ctrl-click) it in herdr to peek at the terminal. `!` commands keep pi's own look.
+In pi, the model's commands are drawn in pi-facelift's frame (the shared renderer from `@wierdbytes/pi-common/tool-frame/bash`), with or without pi-facelift installed: the command in the top border, the output on the rail, duration and `✓ exit 0` / `✗ exit N` in the bottom border. `!` commands keep pi's own look.
 
 ```
 ╭── bash npm test ──────────────────────────────── t14s ─

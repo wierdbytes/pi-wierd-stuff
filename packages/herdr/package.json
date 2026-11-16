@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-herdr",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Tell herdr which model, reasoning effort and context size each pi runs with — as agent.* labels on its herdr-core terminal — publish Claude / Codex subscription limits to herdr-core for every herdr client to show, and run pi's bash commands in herdr-core terminals under pi's, watchable live in herdr.",
   "type": "module",
   "files": [

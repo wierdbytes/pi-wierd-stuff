@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- **Removed:** the bash frame no longer shows the herdr terminal's address in its top border while the command runs.
+
 ## 0.6.0
 
 - **New:** the model's bash commands are drawn in pi-facelift's frame — the command in the top border, the herdr terminal's address next to it while it runs (cmd-click it in herdr to peek), duration and ✓ / ✗ exit in the bottom border.
