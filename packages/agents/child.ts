@@ -99,6 +99,22 @@ export function setupChild(pi: ExtensionAPI, info: ChildInfo): void {
       // The parent falls back to the screen; never disturb this pi.
     }
   };
+  /** Picks up the context in use; true when it moved. */
+  const readContext = (next?: ExtensionContext): boolean => {
+    if (next) ctx = next;
+    let usage: ReturnType<ExtensionContext["getContextUsage"]>;
+    try {
+      usage = ctx?.getContextUsage();
+    } catch {
+      return false;
+    }
+    if (!usage || usage.tokens == null || usage.contextWindow <= 0) return false;
+    const a = state.activity!;
+    if (a.context?.tokens === usage.tokens && a.context.window === usage.contextWindow) return false;
+    a.context = { tokens: usage.tokens, window: usage.contextWindow };
+    a.at = Date.now();
+    return true;
+  };
   const soon = () => {
     if (timer) return;
     timer = setTimeout(flush, 400);
@@ -131,7 +147,8 @@ export function setupChild(pi: ExtensionAPI, info: ChildInfo): void {
     flush();
   });
 
-  pi.on("tool_execution_start", async (event) => {
+  pi.on("tool_execution_start", async (event, next) => {
+    readContext(next);
     const a = state.activity!;
     a.tools++;
     a.tool = event.toolName;
@@ -140,15 +157,16 @@ export function setupChild(pi: ExtensionAPI, info: ChildInfo): void {
     soon();
   });
 
-  pi.on("turn_end", async () => {
+  pi.on("turn_end", async (_e, next) => {
     state.activity!.turns++;
+    readContext(next);
     soon();
   });
 
   // Final: pi won't continue on its own. pi reports done/error over OSC 7501
   // at the same moment, so the parent hears about it from either side.
   pi.on("agent_settled", async (event, next) => {
-    ctx = next ?? ctx;
+    readContext(next);
     let last: ReturnType<typeof lastAssistant>;
     try {
       last = ctx ? lastAssistant(ctx.sessionManager.getBranch()) : undefined;

@@ -11,6 +11,15 @@ export function duration(ms: number): string {
   return `${h}h${m % 60 ? `${String(m % 60).padStart(2, "0")}m` : ""}`;
 }
 
+/** `950`, `4.2k`, `45k`, `1.2M` */
+export function tokens(n: number): string {
+  if (n < 1000) return `${n}`;
+  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  if (n < 10_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  return `${Math.round(n / 1_000_000)}M`;
+}
+
 export const elapsed = (s: AgentSnapshot, now = Date.now()): number => (s.endedAt ?? now) - s.startedAt;
 
 export function activityText(s: AgentSnapshot): string | undefined {

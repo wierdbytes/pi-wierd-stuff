@@ -39,6 +39,8 @@ export interface ChildActivity {
   /** The latest tool call. */
   tool?: string;
   detail?: string;
+  /** Context window in use: tokens on the branch and the model's window. */
+  context?: { tokens: number; window: number };
   at: number;
 }
 

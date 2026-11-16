@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { duration, forModel, notificationText } from "./format.ts";
+import { duration, forModel, notificationText, tokens } from "./format.ts";
 import type { AgentSnapshot } from "./manager.ts";
 
 const snap = (over: Partial<AgentSnapshot> = {}): AgentSnapshot => ({
@@ -50,5 +50,11 @@ describe("forModel", () => {
 describe("notificationText", () => {
   it("wraps each agent", () => {
     expect(notificationText([snap()])).toMatch(/^<subagent id="find-auth" terminal="t8c" status="completed">\n/);
+  });
+});
+
+describe("tokens", () => {
+  it("shortens token counts", () => {
+    expect([950, 4_210, 45_300, 200_000, 1_048_576, 12_000_000].map(tokens)).toEqual(["950", "4.2k", "45k", "200k", "1.0M", "12M"]);
   });
 });

@@ -3,24 +3,24 @@
  *
  *     ╭── Agent Explore Find auth code · sonnet-5-5 @low ─────────
  *     │      ╰ Find where the session cookie is validated…
- *     │ ⠼ working · 5 tool calls · read src/auth/session.ts
- *     ╰── find-auth-code · t8c · 0:12 ──────────────────────────
+ *     │ read src/auth/session.ts
+ *     ╰── ◌ running · 12s · 45k · 5 tool calls──────────────
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
   type FrameStatus,
+  frameResult,
   frameResultWithBottomLabel,
   frameTop,
   getDefaultFrameWidth,
 } from "@wierdbytes/pi-common/tool-frame";
-import { duration, elapsed } from "./format.ts";
+import { duration, elapsed, tokens } from "./format.ts";
 import type { AgentSnapshot, AgentStatus } from "./manager.ts";
 
 const PAD = { paddingX: 1 };
 const COLLAPSED_LINES = 8;
-const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
 export interface AgentToolDetails {
   agent?: AgentSnapshot;
@@ -75,13 +75,8 @@ export function agentBody(
   const lines: string[] = [];
   const act = s.activity;
   if (s.status === "running" || s.status === "blocked") {
-    const head =
-      s.status === "running"
-        ? theme.fg("warning", `${SPINNER[Math.floor(now / 100) % SPINNER.length]} working`)
-        : theme.fg("warning", `◆ needs a person${s.hcMessage ? `: ${s.hcMessage}` : ""} — open it in herdr`);
-    const tools = act?.tools ? theme.fg("dim", ` · ${act.tools} tool call${act.tools === 1 ? "" : "s"}`) : "";
-    lines.push(`${head}${tools}`);
-    if (act?.tool) lines.push(theme.fg("dim", `  ${act.tool}${act.detail ? ` ${act.detail}` : ""}`));
+    if (s.status === "blocked") lines.push(theme.fg("warning", `needs a person${s.hcMessage ? `: ${s.hcMessage}` : ""} — open it in herdr`));
+    if (act?.tool) lines.push(theme.fg("dim", `${act.tool}${act.detail ? ` ${act.detail}` : ""}`));
   } else {
     const text = (s.result ?? "").trim();
     if (s.status === "failed" && s.error) lines.push(theme.fg("error", s.error.split("\n").slice(0, expanded ? 40 : 3).join("\n")));
@@ -96,9 +91,9 @@ export function agentBody(
   const bottomParts = [
     theme.fg(COLOR[s.status], `${ICON[s.status]} ${s.status}`),
     theme.fg("dim", duration(elapsed(s, now))),
-    theme.fg("dim", `${s.id} · ${s.address}`),
   ];
-  if (act?.tools && s.status !== "running" && s.status !== "blocked") bottomParts.splice(2, 0, theme.fg("dim", `${act.tools} tool${act.tools === 1 ? "" : "s"}`));
+  if (act?.context) bottomParts.push(theme.fg("dim", tokens(act.context.tokens)));
+  if (act?.tools) bottomParts.push(theme.fg("dim", `${act.tools} tool call${act.tools === 1 ? "" : "s"}`));
   return { body: lines.join("\n"), bottom: bottomParts.join(theme.fg("dim", " · ")), status: frameStatusOf(s.status) };
 }
 
@@ -152,7 +147,7 @@ export function renderAgentResult(
   }
   const text = d?.error ?? result.content?.find((c) => c.type === "text")?.text ?? "";
   if (options.isPartial) {
-    return new Text(frameResultWithBottomLabel(theme.fg("warning", "starting…"), "", "pending", theme, width, PAD), 0, 0);
+    return new Text(frameResult(theme.fg("warning", "starting…"), "pending", theme, width, PAD), 0, 0);
   }
   return new Text(frameResultWithBottomLabel(theme.fg("error", text), theme.fg("error", "✗ error"), "error", theme, width, PAD), 0, 0);
 }
@@ -177,7 +172,7 @@ export function renderRefResult(
   const d = result.details;
   if (d?.mode && d.agent) {
     const line = d.mode === "steer" ? "→ delivered as a steer while it works" : "→ follow-up sent; it's working again";
-    return new Text(frameResultWithBottomLabel(theme.fg("muted", line), theme.fg("dim", `${d.agent.id} · ${d.agent.address}`), "success", theme, width, PAD), 0, 0);
+    return new Text(frameResult(theme.fg("muted", line), "success", theme, width, PAD), 0, 0);
   }
   if (d?.agent) return renderAgentResult(result, options, theme);
   const text = d?.error ?? result.content?.find((c) => c.type === "text")?.text ?? "";

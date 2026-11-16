@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- **Change:** the sub-agent frame no longer repeats "working", the agent id or the terminal address; the tool-call count moves to the bottom status line next to the status and elapsed time.
+- **New:** the sub-agent frame's bottom line shows how many tokens of context it has in use, e.g. `45k`.
+
 ## 0.1.1
 
 - **Change:** `Agent` asks for a sub-agent title written like a session name instead of a task description.
