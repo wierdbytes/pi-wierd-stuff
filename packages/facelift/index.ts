@@ -93,7 +93,6 @@ import {
 	type WorkingTimeEntry,
 } from "./working-time.ts";
 import {
-	formatDuration,
 	frameBodyLines,
 	frameBottom,
 	frameBottomWithLabel,
@@ -104,6 +103,7 @@ import {
 	renderToolError,
 	type FrameStatus,
 } from "@wierdbytes/pi-common/tool-frame";
+import { bashResultDetails, createBashRenderers } from "@wierdbytes/pi-common/tool-frame/bash";
 import type { BundledLanguage, BundledTheme } from "shiki";
 
 // ---------------------------------------------------------------------------
@@ -247,7 +247,6 @@ const FG_LNUM = "\x1b[38;2;100;100;100m";
 const FG_DIM = "\x1b[38;2;80;80;80m";
 const FG_RULE = "\x1b[38;2;50;50;50m";
 const FG_GREEN = "\x1b[38;2;100;180;120m";
-const FG_RED = "\x1b[38;2;200;100;100m";
 const FG_YELLOW = "\x1b[38;2;220;180;80m";
 const FG_BLUE = "\x1b[38;2;100;140;220m";
 const FG_MUTED = "\x1b[38;2;139;148;158m";
@@ -1017,11 +1016,6 @@ type ReadRenderState = { _rk?: string; _rt?: string };
 type GrepRenderState = { _gk?: string; _gt?: string };
 type WriteRenderState = { _wk?: string; _wt?: string };
 type EditRenderState = { _ek?: string; _et?: string };
-type BashRenderState = {
-	startedAt?: number;
-	endedAt?: number;
-	interval?: NodeJS.Timeout;
-};
 type FindResultDetails = { _type: "findResult"; text: string; pattern: string; matchCount: number };
 type GrepResultDetails = { _type: "grepResult"; text: string; pattern: string; matchCount: number };
 type WriteResultDetails =
@@ -1432,7 +1426,8 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		registerFaceliftTool({
 			...origBash,
 			name: "bash",
-			renderShell: "self",
+			// Shared with pi-herdr's bash, so both draw the same frame.
+			...createBashRenderers({ TextComponent, maxPreviewLines: MAX_PREVIEW_LINES, width: termW }),
 
 			async execute(
 				tid: string,
@@ -1442,140 +1437,8 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				ctx: ExtensionContext,
 			) {
 				const result = (await origBash.execute(tid, params, sig, upd, ctx)) as ToolResultLike;
-				const textContent = getTextContent(result);
-
-				let exitCode: number | null = 0;
-				if (textContent) {
-					const exitMatch = textContent.match(/(?:exit code|exited with|exit status)[:\s]*(\d+)/i);
-					if (exitMatch) exitCode = Number(exitMatch[1]);
-					if (textContent.includes("command not found") || textContent.includes("No such file")) {
-						exitCode = 1;
-					}
-				}
-
-				setResultDetails(result, {
-					_type: "bashResult",
-					text: textContent ?? "",
-					exitCode,
-					command: params.command ?? "",
-				});
-
+				setResultDetails(result, bashResultDetails(getTextContent(result) ?? "", params.command ?? ""));
 				return result;
-			},
-
-			renderCall(args: BashParams, theme: ThemeLike, ctx: RenderContextLike<BashRenderState>) {
-				resolveBaseBackground(theme);
-				const cmd = args.command ?? "";
-				const t = ctx.lastComponent ?? new TextComponent("", 0, 0);
-				const state = ctx.state;
-				if (ctx.executionStarted && state.startedAt === undefined) {
-					state.startedAt = Date.now();
-					state.endedAt = undefined;
-				}
-				const timeout = args.timeout ? ` ${theme.fg("muted", `(${args.timeout}s timeout)`)}` : "";
-
-				// Multi-line bash commands (shell line continuations with `\`, here-docs,
-				// or embedded newlines) need each line wrapped in the accent color
-				// separately so the color survives line splitting in `frameTop`. Leading
-				// whitespace on continuation lines is dropped — the sub-tree connector
-				// already provides visual indentation, so the user's heredoc indent
-				// would just push content right and misalign the tree.
-				//
-				// The full command is always rendered in the title — no length-based
-				// truncation in compact mode. `frameTop` still right-truncates any
-				// individual line that exceeds the frame width, which is a separate
-				// (display-fit) concern from hiding command content.
-				const cmdLines = cmd.split("\n");
-				const firstCmd = cmdLines[0];
-				const restCmd = cmdLines.slice(1).map((line) => line.replace(/^\s+/, ""));
-				const firstTitle = `${theme.fg("toolTitle", theme.bold("bash"))} ${theme.fg("accent", firstCmd)}${timeout}`;
-				const title = [firstTitle, ...restCmd.map((line) => theme.fg("accent", line))].join("\n");
-				t.setText(frameTop(title, getFrameStatus(ctx), asTheme(theme), termW()));
-				return t;
-			},
-
-			renderResult(
-				result: ToolResultLike,
-				opt: ToolRenderResultOptions,
-				theme: ThemeLike,
-				ctx: RenderContextLike<BashRenderState>,
-			) {
-				resolveBaseBackground(theme);
-				const t = ctx.lastComponent ?? new TextComponent("", 0, 0);
-				const status = getFrameStatus(ctx);
-				const frameTheme = asTheme(theme);
-				const frameWidth = termW();
-				const state = ctx.state;
-
-				// Live timer: tick every second while still streaming, freeze on final/error.
-				const stillRunning = !!opt.isPartial && !ctx.isError;
-				if (state.startedAt !== undefined && stillRunning && !state.interval) {
-					state.interval = setInterval(() => ctx.invalidate(), 1000);
-				}
-				if (!stillRunning) {
-					if (state.startedAt !== undefined) state.endedAt ??= Date.now();
-					if (state.interval) {
-						clearInterval(state.interval);
-						state.interval = undefined;
-					}
-				}
-
-				// Resolve the body text + status (works for success, error, streaming, fallback).
-				const d = result.details as RenderDetails | undefined;
-				let bodyText = d?._type === "bashResult" ? d.text : (getTextContent(result) ?? "");
-				let exitCode: number | null = d?._type === "bashResult" ? d.exitCode : null;
-				let timedOut = false;
-				let aborted = false;
-
-				// pi's bash appends `Command exited with code N` / `Command timed out…` /
-				// `Command aborted` to the result text on failure. Lift that line into the
-				// bottom-border label so the body stays clean and the summary is consistent.
-				const tail = bodyText.match(
-					/(?:\n\n|^)Command (?:exited with code (\d+)|timed out after \d+ seconds|aborted)\s*$/,
-				);
-				if (tail) {
-					if (tail[1]) exitCode = Number(tail[1]);
-					else if (/timed out/.test(tail[0])) timedOut = true;
-					else if (/aborted/.test(tail[0])) aborted = true;
-					bodyText = bodyText.slice(0, tail.index);
-				}
-				if (exitCode === null && !opt.isPartial && !ctx.isError) exitCode = 0;
-
-				// Build the bottom-border label: `<duration> <icon> exit <N> (<lines>)`.
-				const elapsedMs = state.startedAt !== undefined ? (state.endedAt ?? Date.now()) - state.startedAt : undefined;
-				const durationStr = elapsedMs !== undefined ? `${FG_DIM}${formatDuration(elapsedMs)}${RST}` : "";
-
-				let summary = "";
-				if (!opt.isPartial) {
-					if (timedOut) summary = `${FG_YELLOW}⚡ timed out${RST}`;
-					else if (aborted) summary = `${FG_YELLOW}⚡ aborted${RST}`;
-					else if (exitCode !== null) {
-						const isOk = exitCode === 0;
-						summary = `${isOk ? FG_GREEN : FG_RED}${isOk ? "✓" : "✗"} exit ${exitCode}${RST}`;
-					}
-				}
-
-				const lines = bodyText.length > 0 ? bodyText.split("\n") : [];
-				const lineCount = lines.length;
-				const lineInfo = summary && lineCount > 1 ? ` ${FG_DIM}(${lineCount} lines)${RST}` : "";
-				const labelParts = [durationStr, summary].filter(Boolean);
-				const label = labelParts.length ? `${labelParts.join(" ")}${lineInfo}` : "";
-
-				// Render body lines (preview-truncated when collapsed).
-				const maxShow = ctx.expanded ? lineCount : MAX_PREVIEW_LINES;
-				const show = lines.slice(0, Math.max(0, maxShow));
-				const out: string[] = [...show];
-				if (lineCount > maxShow) {
-					out.push(`${FG_DIM}… ${lineCount - maxShow} more lines${RST}`);
-				}
-				const body = out.join("\n");
-
-				if (label) {
-					t.setText(frameResultWithBottomLabel(body, label, status, frameTheme, frameWidth));
-				} else {
-					t.setText(frameResult(body, status, frameTheme, frameWidth));
-				}
-				return t;
 			},
 		});
 	}

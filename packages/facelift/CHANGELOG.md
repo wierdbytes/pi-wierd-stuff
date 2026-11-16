@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- **Change:** `bash` is drawn by the renderer it shares with pi-herdr, so a bash run in herdr terminals looks the same.
+
 ## 0.8.0
 
 - **New:** `/facelift` → Tools switches facelift off per tool (`read`, `bash`, `ls`, `find`, `grep`, `write`, `edit`), leaving it to pi or another extension (e.g. pi-herdr's `bash`); applies after `/reload`.
