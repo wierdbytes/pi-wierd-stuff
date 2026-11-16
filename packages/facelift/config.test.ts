@@ -21,13 +21,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+	allTools,
 	envDefaults,
+	FACELIFT_TOOLS,
 	loadConfig,
 	loadOrInitConfig,
 	saveConfig,
 	VALID_DIFF_LAYOUTS,
 	type WierdFaceliftConfig,
 } from "./config.ts";
+
+const ALL = allTools();
 
 let dir: string;
 let configFile: string;
@@ -58,24 +62,24 @@ afterEach(() => {
 
 describe("envDefaults", () => {
 	it("returns 'consistent' when DIFF_LAYOUT is unset", () => {
-		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	for (const layout of VALID_DIFF_LAYOUTS) {
 		it(`honours DIFF_LAYOUT=${layout}`, () => {
 			process.env.DIFF_LAYOUT = layout;
-			expect(envDefaults()).toEqual({ diffLayout: layout, showWorkingTime: true, animateWorkingIndicator: false });
+			expect(envDefaults()).toEqual({ diffLayout: layout, showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 		});
 	}
 
 	it("ignores invalid DIFF_LAYOUT values", () => {
 		process.env.DIFF_LAYOUT = "rainbow";
-		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(envDefaults()).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("is case-insensitive on DIFF_LAYOUT", () => {
 		process.env.DIFF_LAYOUT = "SPLIT";
-		expect(envDefaults()).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(envDefaults()).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("defaults showWorkingTime to true", () => {
@@ -108,8 +112,8 @@ describe("animateWorkingIndicator", () => {
 	});
 
 	it("persists animateWorkingIndicator=true through save/load", () => {
-		saveConfig({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: true }, configFile);
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: true });
+		saveConfig({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: true, tools: ALL }, configFile);
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: true, tools: ALL });
 	});
 
 	it("sanitises a non-boolean value back to the default", () => {
@@ -119,19 +123,19 @@ describe("animateWorkingIndicator", () => {
 
 	it("keeps older config files (no field) on the default", () => {
 		writeFileSync(configFile, JSON.stringify({ diffLayout: "split", showWorkingTime: false }));
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: false, animateWorkingIndicator: false });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: false, animateWorkingIndicator: false, tools: ALL });
 	});
 });
 
 describe("showWorkingTime round-trip", () => {
 	it("persists showWorkingTime=false through save/load", () => {
-		saveConfig({ diffLayout: "consistent", showWorkingTime: false, animateWorkingIndicator: false }, configFile);
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: false, animateWorkingIndicator: false });
+		saveConfig({ diffLayout: "consistent", showWorkingTime: false, animateWorkingIndicator: false, tools: ALL }, configFile);
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: false, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("sanitises a non-boolean showWorkingTime back to the default", () => {
 		writeFileSync(configFile, JSON.stringify({ diffLayout: "split", showWorkingTime: "nope" }));
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 });
 
@@ -140,7 +144,7 @@ describe("loadConfig + saveConfig round-trip", () => {
 		it(`persists diffLayout=${layout}`, () => {
 			saveConfig({ diffLayout: layout } as WierdFaceliftConfig, configFile);
 			expect(existsSync(configFile)).toBe(true);
-			expect(loadConfig(configFile)).toEqual({ diffLayout: layout, showWorkingTime: true, animateWorkingIndicator: false });
+			expect(loadConfig(configFile)).toEqual({ diffLayout: layout, showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 		});
 	}
 
@@ -149,23 +153,23 @@ describe("loadConfig + saveConfig round-trip", () => {
 			configFile,
 			JSON.stringify({ diffLayout: "consistent", iconMode: "rainbow", junk: 42 }),
 		);
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("rejects invalid diffLayout strings and falls back to default", () => {
 		writeFileSync(configFile, JSON.stringify({ diffLayout: "tutti-frutti" }));
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("returns defaults when the file is missing (no write)", () => {
 		expect(existsSync(configFile)).toBe(false);
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 		expect(existsSync(configFile)).toBe(false);
 	});
 
 	it("returns defaults when the file is malformed JSON", () => {
 		writeFileSync(configFile, "{ not valid json");
-		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(loadConfig(configFile)).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("writes a trailing newline", () => {
@@ -178,22 +182,45 @@ describe("loadOrInitConfig", () => {
 	it("seeds a missing file from env defaults", () => {
 		expect(existsSync(configFile)).toBe(false);
 		const cfg = loadOrInitConfig(configFile);
-		expect(cfg).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(cfg).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 		expect(existsSync(configFile)).toBe(true);
-		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "consistent", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("respects DIFF_LAYOUT when seeding", () => {
 		process.env.DIFF_LAYOUT = "unified";
 		const cfg = loadOrInitConfig(configFile);
-		expect(cfg).toEqual({ diffLayout: "unified", showWorkingTime: true, animateWorkingIndicator: false });
-		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "unified", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(cfg).toEqual({ diffLayout: "unified", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
+		expect(JSON.parse(readFileSync(configFile, "utf-8"))).toEqual({ diffLayout: "unified", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
 	});
 
 	it("does not overwrite an existing file", () => {
 		writeFileSync(configFile, JSON.stringify({ diffLayout: "split" }));
 		process.env.DIFF_LAYOUT = "unified"; // would override on a fresh seed
 		const cfg = loadOrInitConfig(configFile);
-		expect(cfg).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false });
+		expect(cfg).toEqual({ diffLayout: "split", showWorkingTime: true, animateWorkingIndicator: false, tools: ALL });
+	});
+});
+
+describe("tools", () => {
+	it("replaces every tool by default", () => {
+		expect(envDefaults().tools).toEqual({ read: true, bash: true, ls: true, find: true, grep: true, write: true, edit: true });
+		expect(Object.keys(envDefaults().tools)).toEqual([...FACELIFT_TOOLS]);
+	});
+
+	it("persists a tool switched off through save/load", () => {
+		saveConfig({ ...envDefaults(), tools: { ...ALL, bash: false } }, configFile);
+		expect(JSON.parse(readFileSync(configFile, "utf-8")).tools).toEqual({ ...ALL, bash: false });
+		expect(loadConfig(configFile).tools).toEqual({ ...ALL, bash: false });
+	});
+
+	it("keeps unset and malformed tools on, and drops unknown ones", () => {
+		writeFileSync(configFile, JSON.stringify({ tools: { bash: false, read: "no", nope: false } }));
+		expect(loadConfig(configFile).tools).toEqual({ ...ALL, bash: false });
+	});
+
+	it("ignores a tools value that isn't an object", () => {
+		writeFileSync(configFile, JSON.stringify({ tools: ["bash"] }));
+		expect(loadConfig(configFile).tools).toEqual(ALL);
 	});
 });

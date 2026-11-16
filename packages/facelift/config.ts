@@ -10,8 +10,8 @@
  *     extension.
  *   - Saves write atomically (one JSON.stringify + trailing newline).
  *
- * The knobs we expose today are `diffLayout`, `showWorkingTime` and
- * `animateWorkingIndicator`, and
+ * The knobs we expose today are `diffLayout`, `showWorkingTime`,
+ * `animateWorkingIndicator` and the per-tool `tools` switches, and
  * the schema is designed to accept more fields (icon mode, max preview
  * lines, etc.) without breaking older config files.
  */
@@ -32,6 +32,15 @@ import { configPath as defaultConfigPath, ensureFaceliftDir } from "./paths.ts";
 export const VALID_DIFF_LAYOUTS = ["consistent", "split", "unified", "per-edit"] as const;
 export type DiffLayoutPreference = (typeof VALID_DIFF_LAYOUTS)[number];
 export const DEFAULT_DIFF_LAYOUT: DiffLayoutPreference = "consistent";
+
+/** The built-in tools facelift replaces, in the order its settings list them. */
+export const FACELIFT_TOOLS = ["read", "bash", "ls", "find", "grep", "write", "edit"] as const;
+export type FaceliftTool = (typeof FACELIFT_TOOLS)[number];
+
+/** Every tool replaced: facelift's default. */
+export function allTools(): Record<FaceliftTool, boolean> {
+	return Object.fromEntries(FACELIFT_TOOLS.map((tool) => [tool, true])) as Record<FaceliftTool, boolean>;
+}
 
 export interface WierdFaceliftConfig {
 	/**
@@ -71,6 +80,15 @@ export interface WierdFaceliftConfig {
 	 * (`1`/`true`/`on` to animate).
 	 */
 	animateWorkingIndicator: boolean;
+
+	/**
+	 * Which built-in tools facelift replaces with its own (same behaviour,
+	 * facelift's rendering). A tool switched off stays pi's own, free for
+	 * another extension to replace (e.g. pi-herdr's `bash`, which runs
+	 * commands in herdr terminals). Read at load: a change applies after
+	 * `/reload`. Every tool defaults to `true`.
+	 */
+	tools: Record<FaceliftTool, boolean>;
 }
 
 function isDiffLayout(value: unknown): value is DiffLayoutPreference {
@@ -102,6 +120,7 @@ export function envDefaults(): WierdFaceliftConfig {
 		diffLayout: fromEnv ?? DEFAULT_DIFF_LAYOUT,
 		showWorkingTime: parseBool(process.env.FACELIFT_SHOW_WORKING_TIME, true),
 		animateWorkingIndicator: parseBool(process.env.FACELIFT_ANIMATE_WORKING, false),
+		tools: allTools(),
 	};
 }
 
@@ -113,6 +132,12 @@ function sanitize(raw: unknown): WierdFaceliftConfig {
 	if (isDiffLayout(obj.diffLayout)) cfg.diffLayout = obj.diffLayout;
 	if (typeof obj.showWorkingTime === "boolean") cfg.showWorkingTime = obj.showWorkingTime;
 	if (typeof obj.animateWorkingIndicator === "boolean") cfg.animateWorkingIndicator = obj.animateWorkingIndicator;
+	if (obj.tools && typeof obj.tools === "object") {
+		const tools = obj.tools as Record<string, unknown>;
+		for (const tool of FACELIFT_TOOLS) {
+			if (typeof tools[tool] === "boolean") cfg.tools[tool] = tools[tool];
+		}
+	}
 	return cfg;
 }
 
@@ -159,6 +184,7 @@ export function saveConfig(
 		diffLayout: cfg.diffLayout,
 		showWorkingTime: cfg.showWorkingTime,
 		animateWorkingIndicator: cfg.animateWorkingIndicator,
+		tools: Object.fromEntries(FACELIFT_TOOLS.map((tool) => [tool, cfg.tools?.[tool] !== false])),
 	};
 	writeFileSync(path, `${JSON.stringify(out, null, 2)}\n`, "utf-8");
 	return path;

@@ -102,6 +102,13 @@ modal; subcommands print or reset state:
 The overlay matches the look of `/voice`, `/web`, `/statusline` from the
 same monorepo. Changes are persisted to disk immediately on each tweak.
 
+The **General** tab holds the diff layout and the working timer / spinner;
+**Tools** switches facelift off per tool (`read`, `bash`, `ls`, `find`,
+`grep`, `write`, `edit`). A tool switched off is not registered at all:
+pi keeps its own tool and rendering, and another extension can replace it
+(pi refuses to start when two extensions register the same tool). pi
+can't unregister a tool, so tool switches apply after `/reload`.
+
 ### Config file
 
 Per-package state lives at:
@@ -137,7 +144,21 @@ Current schema:
 
   // Animate the spinner in front of the "Working..." line (pi's default,
   // redrawn every 80ms). Default false: a still accent "●".
-  "animateWorkingIndicator": false
+  "animateWorkingIndicator": false,
+
+  // Which built-in tools facelift replaces. `false` leaves the tool and
+  // its rendering to pi, so another extension can replace it instead
+  // (e.g. pi-herdr's bash, which runs commands in herdr terminals).
+  // Applies after /reload. Every tool defaults to true.
+  "tools": {
+    "read": true,
+    "bash": true,
+    "ls": true,
+    "find": true,
+    "grep": true,
+    "write": true,
+    "edit": true
+  }
 }
 ```
 

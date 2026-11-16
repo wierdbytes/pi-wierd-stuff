@@ -79,8 +79,10 @@ import {
 	getConfigPath as getFaceliftConfigPath,
 	loadOrInitConfig as loadFaceliftConfig,
 	saveConfig as saveFaceliftConfig,
+	FACELIFT_TOOLS,
 	VALID_DIFF_LAYOUTS,
 	type DiffLayoutPreference,
+	type FaceliftTool,
 	type WierdFaceliftConfig,
 } from "./config.ts";
 import {
@@ -1148,6 +1150,16 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		}
 	})();
 
+	// Tools switched off in `/facelift` → Tools stay pi's own, free for
+	// another extension to replace (pi refuses to start when two register
+	// the same tool). Read once, here: pi can't unregister a tool, so a
+	// change applies after `/reload`.
+	const loadedTools: Record<FaceliftTool, boolean> = { ...faceliftConfig.tools };
+	const registerFaceliftTool = (tool: unknown): void => {
+		if (loadedTools[(tool as { name: FaceliftTool }).name] === false) return;
+		pi.registerTool(tool);
+	};
+
 	// ===================================================================
 	// Working-time — live timer in the "Working…" line + durable history
 	// -------------------------------------------------------------------
@@ -1289,7 +1301,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 
 	const origRead = createReadTool(cwd);
 
-	pi.registerTool({
+	registerFaceliftTool({
 		...origRead,
 		name: "read",
 		renderShell: "self",
@@ -1417,7 +1429,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	if (createBashTool) {
 		const origBash = createBashTool(cwd);
 
-		pi.registerTool({
+		registerFaceliftTool({
 			...origBash,
 			name: "bash",
 			renderShell: "self",
@@ -1575,7 +1587,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	if (createLsTool) {
 		const origLs = createLsTool(cwd);
 
-		pi.registerTool({
+		registerFaceliftTool({
 			...origLs,
 			name: "ls",
 			renderShell: "self",
@@ -1646,7 +1658,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	if (createFindTool) {
 		const origFind = createFindTool(cwd);
 
-		pi.registerTool({
+		registerFaceliftTool({
 			...origFind,
 			name: "find",
 			renderShell: "self",
@@ -1722,7 +1734,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	if (createGrepTool) {
 		const origGrep = createGrepTool(cwd);
 
-		pi.registerTool({
+		registerFaceliftTool({
 			...origGrep,
 			name: "grep",
 			renderShell: "self",
@@ -1870,10 +1882,32 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		"per-edit": "per-edit (each diff decides independently)",
 	};
 
+	const toolDescriptions: Record<FaceliftTool, string> = {
+		read: "Syntax-highlighted file contents with line numbers, inline images.",
+		bash: "The command in a frame, its duration and a colored exit status.",
+		ls: "A tree view with file-type icons.",
+		find: "Results grouped by folder, with file-type icons.",
+		grep: "Syntax-highlighted matches with context and line numbers.",
+		write: "A split diff, or a highlighted preview of a new file.",
+		edit: "Per-edit split diffs with a shared summary.",
+	};
+	const toolKey = (tool: FaceliftTool): string => `tools.${tool}`;
+
 	const openFaceliftSettings = async (extCtx: ExtensionContext): Promise<void> => {
+		let toolsChanged = false;
+		const toolFields: Field[] = FACELIFT_TOOLS.map((tool) => ({
+			key: toolKey(tool),
+			type: "boolean",
+			tab: "tools",
+			label: tool,
+			description: `${toolDescriptions[tool]} Off: pi\u2019s own ${tool} and its rendering, free for another extension to replace (pi-herdr runs bash in herdr terminals). Applies after /reload.`,
+			value: faceliftConfig.tools[tool],
+			default: true,
+		}));
 		const fields: Field[] = [
 			{
 				key: "diffLayout",
+				tab: "general",
 				type: "enum",
 				label: "Diff layout",
 				description:
@@ -1885,6 +1919,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			{
 				key: "showWorkingTime",
 				type: "boolean",
+				tab: "general",
 				label: "Working timer",
 				description:
 					"Show a ticking timer in the streaming \u201cWorking\u2026\u201d line and persist each agent run\u2019s total model time (tools excluded) as a muted line in chat history.",
@@ -1894,17 +1929,34 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			{
 				key: "animateWorkingIndicator",
 				type: "boolean",
+				tab: "general",
 				label: "Animated spinner",
 				description:
 					"Animate the spinner in front of the \u201cWorking\u2026\u201d line (pi\u2019s default, redrawn every 80ms). Off shows a still \u25cf, so the terminal isn\u2019t repainted 12\u00d7/s while the model streams \u2014 cheaper in GPU-rendered hosts such as Herdr.",
 				value: faceliftConfig.animateWorkingIndicator,
 				default: false,
 			},
+			...toolFields,
 		];
 		await openSettingsModal(extCtx, {
 			title: "@wierdbytes/pi-facelift",
+			tabs: [
+				{ id: "general", label: "General" },
+				{ id: "tools", label: "Tools" },
+			],
 			fields,
+			onClose: () => {
+				if (toolsChanged && FACELIFT_TOOLS.some((tool) => faceliftConfig.tools[tool] !== loadedTools[tool])) {
+					extCtx.ui.notify("pi-facelift: run /reload to apply the tool changes.", "info");
+				}
+			},
 			onChange: (key, value) => {
+				const tool = FACELIFT_TOOLS.find((t) => toolKey(t) === key);
+				if (tool) {
+					faceliftConfig = { ...faceliftConfig, tools: { ...faceliftConfig.tools, [tool]: value as boolean } };
+					toolsChanged = true;
+					persistFaceliftConfig(extCtx);
+				}
 				if (key === "diffLayout") {
 					faceliftConfig = { ...faceliftConfig, diffLayout: value as DiffLayoutPreference };
 					persistFaceliftConfig(extCtx);
@@ -1928,6 +1980,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			`diffLayout: ${faceliftConfig.diffLayout}`,
 			`workingTime: ${faceliftConfig.showWorkingTime ? "on" : "off"}`,
 			`spinner:    ${faceliftConfig.animateWorkingIndicator ? "animated" : "still"}`,
+			`tools:      ${FACELIFT_TOOLS.map((tool) => `${tool} ${faceliftConfig.tools[tool] ? "on" : "off"}${faceliftConfig.tools[tool] !== loadedTools[tool] ? " (after /reload)" : ""}`).join(", ")}`,
 		];
 		extCtx.ui.notify(`@wierdbytes/pi-facelift\n${lines.join("\n")}`, "info");
 	};
@@ -1936,7 +1989,8 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 		faceliftConfig = faceliftEnvDefaults();
 		persistFaceliftConfig(extCtx);
 		applyWorkingIndicator(extCtx);
-		extCtx.ui.notify("pi-facelift: config reset to defaults.", "info");
+		const reload = FACELIFT_TOOLS.some((tool) => faceliftConfig.tools[tool] !== loadedTools[tool]);
+		extCtx.ui.notify(`pi-facelift: config reset to defaults.${reload ? " Run /reload to apply the tool changes." : ""}`, "info");
 	};
 
 	pi.registerCommand("facelift", {
@@ -2022,7 +2076,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 	if (createWriteTool) {
 		const origWrite = createWriteTool(cwd);
 
-		pi.registerTool({
+		registerFaceliftTool({
 			...origWrite,
 			name: "write",
 			renderShell: "self",
@@ -2221,7 +2275,7 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 			return oldText && oldText !== newText ? [{ oldText, newText }] : [];
 		};
 
-		pi.registerTool({
+		registerFaceliftTool({
 			...origEdit,
 			name: "edit",
 			renderShell: "self",

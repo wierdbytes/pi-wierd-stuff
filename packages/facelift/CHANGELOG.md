@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0
+
+- **New:** `/facelift` → Tools switches facelift off per tool (`read`, `bash`, `ls`, `find`, `grep`, `write`, `edit`), leaving it to pi or another extension (e.g. pi-herdr's `bash`); applies after `/reload`.
+
 ## 0.7.0
 
 - **Change:** still accent `●` instead of pi's animated spinner in the `Working...` line — no ~12×/s terminal repaints while the model streams; `animateWorkingIndicator` in `/facelift` brings the animation back.
