@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadAgentTypes } from "./agent-types.ts";
-import { childFromEnv, setupChild } from "./child.ts";
+import { childFromEnv, setupChild, takeChildEnv } from "./child.ts";
 import { notificationText } from "./format.ts";
 import { endpointFromEnv } from "./hc.ts";
 import { AgentManager, type AgentRecord, isFinal, snapshot } from "./manager.ts";
@@ -25,7 +25,8 @@ import { registerTools } from "./tools.ts";
 export const NOTIFICATION_TYPE = "pi-agents:notification";
 
 export default function piAgents(pi: ExtensionAPI) {
-  const child = childFromEnv();
+  // Taken out of process.env: only this pi is the sub-agent, not what it starts.
+  const child = childFromEnv(takeChildEnv());
   if (child) setupChild(pi, child);
 
   const settings = loadSettings();

@@ -6,13 +6,15 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { ENV } from "./launch.ts";
+import { ENV, ENV_PREFIX } from "./launch.ts";
 import { type ChildState, type LastStatus, readMeta, type RunMeta, writeState } from "./runs.ts";
 
 export interface ChildInfo {
   runId: string;
   dir: string;
   depth: number;
+  /** The parent's answer to "is this project trusted?", when it had one. */
+  trust?: "yes" | "no";
   meta?: RunMeta;
 }
 
@@ -21,7 +23,41 @@ export function childFromEnv(env: NodeJS.ProcessEnv = process.env): ChildInfo | 
   const dir = env[ENV.DIR];
   if (!runId || !dir) return undefined;
   const depth = Number.parseInt(env[ENV.DEPTH] ?? "1", 10);
-  return { runId, dir, depth: Number.isFinite(depth) && depth > 0 ? depth : 1, meta: readMeta(dir, runId) };
+  const trust = env[ENV.TRUST];
+  return {
+    runId,
+    dir,
+    depth: Number.isFinite(depth) && depth > 0 ? depth : 1,
+    trust: trust === "yes" || trust === "no" ? trust : undefined,
+    meta: readMeta(dir, runId),
+  };
+}
+
+/** Where {@link takeChildEnv} keeps what it took, for the life of the process. */
+const TAKEN = Symbol.for("@wierdbytes/pi-agents/child-env");
+
+/**
+ * Takes `PI_AGENTS_*` out of `env` and returns them. Left in place, everything
+ * this pi starts would inherit them — a bash command, the `pi -p` another
+ * extension runs to summarize a page — and a pi among those would load
+ * pi-agents, take itself for this sub-agent and write its run file: the
+ * parent would get that pi's answer as this sub-agent's result.
+ *
+ * pi imports extensions anew (no module cache) on /reload, /new, /resume and
+ * /fork, so what was taken stays on `holder` for the next load to find.
+ */
+export function takeChildEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  holder: Record<symbol, unknown> = globalThis as unknown as Record<symbol, unknown>,
+): Record<string, string> {
+  let taken = holder[TAKEN] as Record<string, string> | undefined;
+  if (!taken) {
+    taken = {};
+    for (const [k, v] of Object.entries(env)) if (k.startsWith(ENV_PREFIX) && v !== undefined) taken[k] = v;
+    holder[TAKEN] = taken;
+  }
+  for (const k of Object.keys(env)) if (k.startsWith(ENV_PREFIX)) delete env[k];
+  return { ...taken };
 }
 
 export function subagentSection(meta: RunMeta | undefined): string {
@@ -121,10 +157,8 @@ export function setupChild(pi: ExtensionAPI, info: ChildInfo): void {
     timer.unref?.();
   };
 
-  const trust = process.env[ENV.TRUST];
-  if (trust === "yes" || trust === "no") {
-    pi.on("project_trust", async () => ({ trusted: trust }));
-  }
+  const trust = info.trust;
+  if (trust) pi.on("project_trust", async () => ({ trusted: trust }));
 
   pi.on("session_start", async (_e, next) => {
     ctx = next;

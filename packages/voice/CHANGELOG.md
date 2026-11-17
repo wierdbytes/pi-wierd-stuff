@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+
+- **Fix:** a spoken summary inside a pi-agents sub-agent no longer ends that sub-agent early with the summary as its report.
+
 ## 0.4.2
 
 - **New:** ship `CHANGELOG.md` — pi shows release notes under "Extension Updates" after an update.

@@ -98,6 +98,20 @@ function killProcess(proc: ChildProcess): void {
   }, SIGKILL_FALLBACK_MS);
 }
 
+/**
+ * The environment for the summarizer pi: this one's, minus pi-agents'
+ * `PI_AGENTS_*`. Inside a sub-agent they say "you are sub-agent <run>": the
+ * summarizer would load pi-agents, take itself for that sub-agent and report
+ * its summary to the parent as the sub-agent's final result.
+ */
+export function nestedPiEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && !key.startsWith("PI_AGENTS_")) out[key] = value;
+  }
+  return out;
+}
+
 function buildPrompt(text: string): string {
   return SUMMARIZER_PROMPT_TEMPLATE.replace("{TEXT}", text);
 }
@@ -132,6 +146,7 @@ export function runSummarizer(opts: SummarizerOptions): Promise<SummarizerResult
   return new Promise<SummarizerResult>((resolve) => {
     const proc = spawn("pi", args, {
       stdio: ["ignore", "pipe", "pipe"],
+      env: nestedPiEnv(),
     });
 
     let buffer = "";

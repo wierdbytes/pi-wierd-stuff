@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- **Fix:** a sub-agent is no longer reported completed, with a stray report, while still working when a tool it ran started another pi (e.g. `web_fetch` with a `prompt`).
+
 ## 0.1.2
 
 - **Change:** the sub-agent frame no longer repeats "working", the agent id or the terminal address; the tool-call count moves to the bottom status line next to the status and elapsed time.

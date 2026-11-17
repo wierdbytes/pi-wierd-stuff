@@ -19,6 +19,20 @@ export interface SubAgentError {
   error: string;
 }
 
+/**
+ * The environment for the nested pi: this one's, minus pi-agents' `PI_AGENTS_*`.
+ * Inside a sub-agent they say "you are sub-agent <run>": the nested pi would load
+ * pi-agents, take itself for that sub-agent and report its summary to the parent
+ * as the sub-agent's final result while the sub-agent is still working.
+ */
+export function nestedPiEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && !key.startsWith("PI_AGENTS_")) out[key] = value;
+  }
+  return out;
+}
+
 export async function runSubAgent(
   content: string,
   prompt: string,
@@ -47,6 +61,7 @@ export async function runSubAgent(
       ],
       {
         stdio: ["ignore", "pipe", "pipe"],
+        env: nestedPiEnv(),
       },
     );
 

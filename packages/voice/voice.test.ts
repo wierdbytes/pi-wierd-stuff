@@ -740,7 +740,7 @@ describe("index.getArgumentCompletions (post-overlay rework)", () => {
 const summarizerSpawnState = vi.hoisted(() => {
   return {
     impl: null as ((command: string, args: readonly string[]) => any) | null,
-    calls: [] as Array<{ command: string; args: string[] }>,
+    calls: [] as Array<{ command: string; args: string[]; opts?: any }>,
   };
 });
 
@@ -750,8 +750,8 @@ vi.mock("node:child_process", async () => {
   );
   return {
     ...actual,
-    spawn: (command: string, args: readonly string[], _opts?: any) => {
-      summarizerSpawnState.calls.push({ command, args: [...args] });
+    spawn: (command: string, args: readonly string[], opts?: any) => {
+      summarizerSpawnState.calls.push({ command, args: [...args], opts });
       if (!summarizerSpawnState.impl) {
         throw new Error("summarizer test did not configure spawnImpl");
       }
@@ -760,7 +760,7 @@ vi.mock("node:child_process", async () => {
   };
 });
 
-import { runSummarizer, SUMMARIZER_PROMPT_TEMPLATE } from "./summarizer.ts";
+import { nestedPiEnv, runSummarizer, SUMMARIZER_PROMPT_TEMPLATE } from "./summarizer.ts";
 import type { ChildProcess } from "node:child_process";
 
 describe("summarizer.runSummarizer", () => {
@@ -789,7 +789,7 @@ describe("summarizer.runSummarizer", () => {
     return proc;
   }
 
-  function lastCall(): { command: string; args: string[] } | undefined {
+  function lastCall(): { command: string; args: string[]; opts?: any } | undefined {
     return summarizerSpawnState.calls[summarizerSpawnState.calls.length - 1];
   }
 
@@ -966,6 +966,42 @@ describe("summarizer.runSummarizer", () => {
     expect(promptArg).toContain("Audio tags");
     expect(promptArg).toContain("[neutral]");
     expect(promptArg).toContain("hello world");
+  });
+
+  it("starts the summarizer pi without PI_AGENTS_* when it runs inside a sub-agent", async () => {
+    summarizerSpawnState.impl = () =>
+      makeFakeProc(
+        [
+          JSON.stringify({
+            type: "message_end",
+            message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+          }) + "\n",
+        ],
+        0,
+      );
+    const keys = ["PI_AGENTS_RUN", "PI_AGENTS_DIR", "PI_AGENTS_DEPTH"];
+    const saved = keys.map((k) => process.env[k]);
+    process.env.PI_AGENTS_RUN = "run-1";
+    process.env.PI_AGENTS_DIR = "/runs";
+    process.env.PI_AGENTS_DEPTH = "1";
+    try {
+      await runSummarizer({ text: "hello world" });
+    } finally {
+      keys.forEach((k, i) => {
+        if (saved[i] === undefined) delete process.env[k];
+        else process.env[k] = saved[i];
+      });
+    }
+    const env = lastCall()!.opts.env as NodeJS.ProcessEnv;
+    expect(env.PATH).toBe(process.env.PATH);
+    expect(Object.keys(env).filter((k) => k.startsWith("PI_AGENTS_"))).toEqual([]);
+    expect(lastCall()!.args).not.toContain("--no-extensions");
+  });
+
+  it("nestedPiEnv drops pi-agents' run variables and keeps the rest", () => {
+    const env = { PATH: "/bin", GEMINI_API_KEY: "k", HC_TERMINAL_ID: "t1", PI_AGENTS_RUN: "r", PI_AGENTS_TRUST: "yes" };
+    expect(nestedPiEnv(env)).toEqual({ PATH: "/bin", GEMINI_API_KEY: "k", HC_TERMINAL_ID: "t1" });
+    expect(env.PI_AGENTS_RUN).toBe("r");
   });
 
   it("the prompt template hints about Gemini 3.1 audio tags", () => {

@@ -5,6 +5,9 @@
 
 import type { AgentsSettings } from "./settings.ts";
 
+/** What every key of {@link ENV} starts with. */
+export const ENV_PREFIX = "PI_AGENTS_";
+
 /** Env keys the child reads. */
 export const ENV = {
   RUN: "PI_AGENTS_RUN",
@@ -94,7 +97,7 @@ const DROP_EXACT = new Set([
   "STARSHIP_SESSION_KEY",
   "LaunchInstanceID",
 ]);
-const DROP_PREFIX = ["HC_", "HERDR_", "PI_AGENTS_", "GHOSTTY_", "KITTY_", "ITERM_", "TMUX", "VSCODE_", "LC_TERMINAL", "WEZTERM_", "ZELLIJ"];
+const DROP_PREFIX = ["HC_", "HERDR_", ENV_PREFIX, "GHOSTTY_", "KITTY_", "ITERM_", "TMUX", "VSCODE_", "LC_TERMINAL", "WEZTERM_", "ZELLIJ"];
 
 /** The parent's environment minus terminal identity, for a child that should run like its parent. */
 export function inheritedEnv(env: NodeJS.ProcessEnv): Record<string, string> {

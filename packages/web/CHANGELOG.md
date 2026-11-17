@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- **Fix:** `web_fetch` with a `prompt` inside a pi-agents sub-agent no longer ends that sub-agent early with the page summary as its report.
+
 ## 0.6.0
 
 - **web_fetch:** add optional `summarize` flag (top-level and per-page) — `false` skips the auto-summary of large pages and returns truncated raw markdown; defaults to `true`.
