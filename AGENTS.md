@@ -10,14 +10,12 @@ Monorepo of extensions, themes, and shared TUI helpers for the [pi](https://gith
 
 ```
 packages/
-  agents/       Sub-agents as child pi terminals in herdr-core, nested in herdr (extension)
   anthropic/    Claude Pro/Max OAuth provider (pi extension)
   ask/          ask_user clarification tool, fork of @eko24ive/pi-ask + OSC 7501 blocked status (extension)
   autoname/     Auto session name + terminal title from a cheap model (extension)
   common/       Shared TUI: settings modal, tool-frame helpers (library)
   events/       Typed notify:toast / notify:status event bus (library)
   facelift/     Pretty rendering for built-in pi tools — bash/read/ls/find/grep (extension)
-  herdr/        model / effort / context as agent.* labels, subscription limits as the `limits` doc in herdr-core, bash commands in herdr-core terminals (extension)
   peon/         CESP/OpenPeon sound-pack player (extension)
   statusline/   Tokyo Night statusline footer + chips/toasts (extension)
   tokyo-night/  Four Tokyo Night theme JSONs (theme-only package)
@@ -26,6 +24,8 @@ packages/
 docs/plans/     Design notes per feature/package
 .github/workflows/publish.yml   Auto-publish on push to master
 ```
+
+The former `packages/herdr` (`@wierdbytes/pi-herdr`) and `packages/agents` (`@wierdbytes/pi-agents`) moved to the Wierdr repository as one package, `@wierdbytes/pi-wierdr` (`Integrations/pi`); both npm packages are deprecated.
 
 ## Extension settings
 

@@ -4,16 +4,16 @@ Monorepo for various extensions for the [pi](https://github.com/earendil-works/p
 
 ## Packages
 
-- [`packages/agents`](packages/agents) — `@wierdbytes/pi-agents`: Sub-agents that run as their own pi in herdr-core terminals, nested under the agent that started them in herdr — `Agent` / `get_subagent_result` / `steer_subagent` / `stop_subagent` tools plus a `pi.events` RPC. Replaces `@tintinweb/pi-subagents`.
 - [`packages/anthropic`](packages/anthropic) — `@wierdbytes/pi-anthropic`: Claude Pro/Max OAuth provider.
 - [`packages/ask`](packages/ask) — `@wierdbytes/pi-ask`: Interactive `ask_user` clarification tool (fork of `@eko24ive/pi-ask`) that reports pi as blocked on a question (OSC 7501) while a form waits, so herdr and other agent dashboards alert.
 - [`packages/autoname`](packages/autoname) — `@wierdbytes/pi-autoname`: Auto-names sessions and the terminal title with a short summary from a cheap model, so herdr, tmux and terminal tabs show what each pi is doing.
 - [`packages/common`](packages/common) — `@wierdbytes/pi-common`: Shared TUI building blocks for sibling packages — a one-call settings modal (ratatui-style frame, built-in field types, model + reasoning-effort widget), tool-frame helpers, and diff renderers.
 - [`packages/events`](packages/events) — `@wierdbytes/pi-events`: Typed `notify:toast` / `notify:status` event bus that lets any extension surface chips and toasts in the statusline.
 - [`packages/facelift`](packages/facelift) — `@wierdbytes/pi-facelift`: Cosmetic facelift for built-in pi tool output — open-right rounded frames, syntax-highlighted reads, status-aware bash summaries with execution duration, themed `ls`/`find`/`grep` rendering.
-- [`packages/herdr`](packages/herdr) — `@wierdbytes/pi-herdr`: Publishes the session's model, reasoning effort and context size as `agent.*` labels on its herdr-core terminal, so herdr agent lists can show them next to the status, and the Claude / Codex subscription limits from every provider response as herdr-core's `limits` document, for any herdr client to show. Runs pi's bash commands (the model's and `!`) in herdr-core terminals under pi's, so herdr shows each one live.
 - [`packages/peon`](packages/peon) — `@wierdbytes/pi-peon`: [CESP / OpenPeon](https://openpeon.com/spec) sound-pack player — peons, GLaDOS, battlecruisers, 300+ community packs play on session start, task complete, errors, and other pi lifecycle events.
 - [`packages/statusline`](packages/statusline) — `@wierdbytes/pi-statusline`: Minimal modular statusline, fully modular block layout — reorder, toggle, and customise the separator from the settings overlay.
 - [`packages/tokyo-night`](packages/tokyo-night) — `@wierdbytes/pi-tokyo-night`: Tokyo Night themes (folke palette) for pi — ships all four variants (`tokyo-night`, `tokyo-night-storm`, `tokyo-night-moon`, `tokyo-night-day`), each mapped to all 51 color tokens.
 - [`packages/voice`](packages/voice) — `@wierdbytes/pi-voice`: Spoken summary after each agent turn via Gemini 3.1 Flash TTS.
 - [`packages/web`](packages/web) — `@wierdbytes/pi-web`: Anthropic-powered server-side `web_search` and a Puppeteer + trafilatura `web_fetch` (with optional sub-agent distillation).
+
+Moved out: `@wierdbytes/pi-herdr` and `@wierdbytes/pi-agents` are now one package, [`@wierdbytes/pi-wierdr`](https://www.npmjs.com/package/@wierdbytes/pi-wierdr), in the Wierdr repository (`Integrations/pi`).
