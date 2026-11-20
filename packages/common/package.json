@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-common",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Shared TUI building blocks for pi coding agent extensions — settings modal, frame helpers, common field renderers.",
   "type": "module",
   "files": [
@@ -57,9 +57,9 @@
     "@earendil-works/pi-tui": ">=0.74.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@earendil-works/pi-tui": "^0.74.0",
+    "@earendil-works/pi-ai": "^1.6.0",
+    "@earendil-works/pi-coding-agent": "^1.6.0",
+    "@earendil-works/pi-tui": "^1.6.0",
     "@types/diff": "^8.0.0",
     "shiki": "^4.0.2",
     "vitest": "^4.0.18"

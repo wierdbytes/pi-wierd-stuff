@@ -25,7 +25,7 @@ export type Mode = "first" | "auto" | "follow";
 export const MODES: readonly Mode[] = ["first", "auto", "follow"];
 
 /** Mirrors pi-ai's `ModelThinkingLevel`; kept local so this module has no pi-ai runtime import. */
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
 export const DEFAULT_MODEL = "anthropic/claude-haiku-5-5";

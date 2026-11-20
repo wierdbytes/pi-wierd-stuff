@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- **Fix:** model picker offers `max` effort, and `xhigh` / `max` only for models that support them.
+- **Fix:** bash frame shows `⚡ timed out (shell exit N)` when background processes kept writing until the timeout, instead of leaving pi's status line in the output.
+- **Fix:** bash frame shows `⚡ terminated` for a command that ended without an exit code.
+
 ## 0.5.1
 
 - **New:** `@wierdbytes/pi-common/tool-frame/bash` — `createBashRenderers()` draws a bash tool in the tool frame as pi-facelift does, for any extension that runs bash.

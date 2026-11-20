@@ -252,6 +252,23 @@ describe("edit execute: per-path snapshot/execute serialization", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
+	it("keeps pi's own details next to facelift's (the diff /export draws)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "facelift-edit-details-"));
+		const file = join(dir, "src.ts");
+		writeFileSync(file, "alpha\n", "utf-8");
+
+		const editExec = async () => ({
+			content: [{ type: "text", text: "ok" }],
+			details: { diff: "-1 alpha\n+1 ALPHA", firstChangedLine: 1 },
+		});
+		const editTool = loadTools({ editExec }).get("edit");
+		const r = await editTool.execute("t1", { path: file, edits: [{ oldText: "alpha", newText: "ALPHA" }] }, null, null, {});
+
+		expect(r.details).toMatchObject({ _type: "editDiff", diff: "-1 alpha\n+1 ALPHA", firstChangedLine: 1 });
+
+		rmSync(dir, { recursive: true, force: true });
+	});
+
 	it("does not serialize unrelated paths against each other", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "facelift-edit-indep-"));
 		const fileA = join(dir, "a.txt");

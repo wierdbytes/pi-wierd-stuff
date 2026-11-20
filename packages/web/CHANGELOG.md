@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- **Fix:** `max` fetch thinking selectable in `/web` settings.
+
 ## 0.6.1
 
 - **Fix:** `web_fetch` with a `prompt` inside a pi-agents sub-agent no longer ends that sub-agent early with the page summary as its report.

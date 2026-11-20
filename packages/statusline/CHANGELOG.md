@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.2
+
+- **Change:** prompt editor ready for pi 1.6+ read-only rendering — no longer edits pi's rendered lines in place.
+
 ## 0.12.1
 
 - **Change:** in two-row mode the second row has no `─` line after its last block.

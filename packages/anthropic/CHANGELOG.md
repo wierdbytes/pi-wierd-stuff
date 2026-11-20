@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.7
+
+- **Change:** Claude Code version markers bumped to 2.1.329.
+
 ## 0.2.6
 
 - **Fix:** OAuth requests rejected with `claude_code_version_too_old` — Claude Code version markers bumped to 2.1.321.

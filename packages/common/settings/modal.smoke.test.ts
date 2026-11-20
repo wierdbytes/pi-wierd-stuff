@@ -275,6 +275,37 @@ describe("createSettingsModalBody — happy paths", () => {
     expect(submenu).toMatch(/\(xhigh\)/);
   });
 
+  it("model effort offers max only to models that map it", () => {
+    const model = (id: string, thinkingLevelMap: Record<string, string | null>) =>
+      ({ id, name: id, provider: "anthropic", reasoning: true, thinkingLevelMap }) as unknown as import(
+        "@earendil-works/pi-ai"
+      ).Model<import("@earendil-works/pi-ai").Api>;
+    const submenuFor = (m: ReturnType<typeof model>) => {
+      const fields: Field[] = [
+        {
+          key: "m",
+          type: "model",
+          label: "M",
+          value: { id: `anthropic/${m.id}`, thinking: "max" },
+          models: [{ value: `anthropic/${m.id}`, label: m.id, model: m }],
+        },
+      ];
+      const body = createSettingsModalBody(
+        { fields },
+        { tui: fakeTui(), theme: fakeTheme(), ctx: fakeCtx(), close: vi.fn() },
+      );
+      body.handleInput?.("\r"); // open submenu
+      return body.render(80).join("\n");
+    };
+
+    // Opus-like: maps xhigh and max → `max` stays selected.
+    expect(submenuFor(model("with-max", { off: null, xhigh: "xhigh", max: "max" }))).toMatch(/effort: .*max/);
+    // No max (or xhigh) in the map → the stored `max` clamps to medium.
+    const noMax = submenuFor(model("no-max", { off: null }));
+    expect(noMax).toMatch(/effort: .*medium/);
+    expect(noMax).not.toMatch(/effort: .*max/);
+  });
+
   it("Enter on a long enum mounts a submenu instead of cycling", () => {
     const onChange = vi.fn();
     const close = vi.fn();

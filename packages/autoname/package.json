@@ -1,6 +1,6 @@
 {
   "name": "@wierdbytes/pi-autoname",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Auto-name pi sessions and the terminal title with a short summary from a cheap model — so herdr, tmux and terminal tabs show what each pi is doing.",
   "type": "module",
   "files": [
@@ -42,7 +42,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@wierdbytes/pi-common": "^0.5.0",
+    "@wierdbytes/pi-common": "^0.5.2",
     "@wierdbytes/pi-events": "^0.1.0"
   },
   "peerDependencies": {
@@ -51,9 +51,9 @@
     "@earendil-works/pi-tui": ">=0.99.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^1.5.0",
-    "@earendil-works/pi-coding-agent": "^1.5.0",
-    "@earendil-works/pi-tui": "^1.5.0",
+    "@earendil-works/pi-ai": "^1.6.0",
+    "@earendil-works/pi-coding-agent": "^1.6.0",
+    "@earendil-works/pi-tui": "^1.6.0",
     "vitest": "^4.0.18"
   }
 }

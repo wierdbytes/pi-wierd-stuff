@@ -47,8 +47,8 @@
     "@wierdbytes/pi-events": "^0.1.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@earendil-works/pi-tui": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^1.6.0",
+    "@earendil-works/pi-tui": "^1.6.0",
     "vitest": "^4.0.18"
   }
 }

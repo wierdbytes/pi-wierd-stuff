@@ -59,6 +59,7 @@ const ALL_THINKING_LEVELS: ModelThinkingLevel[] = [
   "medium",
   "high",
   "xhigh",
+  "max",
 ];
 
 /** Short display labels for pi's internal thinking levels — used as a
@@ -72,6 +73,7 @@ const LEVEL_FALLBACK_LABELS: Record<ModelThinkingLevel, string> = {
   medium: "med",
   high: "high",
   xhigh: "xhigh",
+  max: "max",
 };
 
 const DEFAULT_SESSION_LABEL = "(session model)";
@@ -137,10 +139,23 @@ function resolveModelForValue(
   return ctx.ctx.modelRegistry.find(provider, id);
 }
 
+/**
+ * The efforts a model takes, as pi-ai's `getSupportedThinkingLevels()`
+ * decides them (re-implemented: pi-ai < 1.x doesn't export it): `off`
+ * only without reasoning; a level mapped to `null` is unsupported;
+ * `xhigh` and `max` only when the model maps them. Unknown model (the
+ * session-model sentinel): every level.
+ */
 function supportedEfforts(model: Model<Api> | undefined): ModelThinkingLevel[] {
-  if (!model || !model.thinkingLevelMap) return ALL_THINKING_LEVELS;
-  const map = model.thinkingLevelMap;
-  return ALL_THINKING_LEVELS.filter((lvl) => !(lvl in map && map[lvl] === null));
+  if (!model) return ALL_THINKING_LEVELS;
+  if (model.reasoning === false) return ["off"];
+  const map = model.thinkingLevelMap as Partial<Record<ModelThinkingLevel, string | null>> | undefined;
+  return ALL_THINKING_LEVELS.filter((lvl) => {
+    const mapped = map?.[lvl];
+    if (mapped === null) return false;
+    if (lvl === "xhigh" || lvl === "max") return mapped !== undefined;
+    return true;
+  });
 }
 
 function clampEffort(

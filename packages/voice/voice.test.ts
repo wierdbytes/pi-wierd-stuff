@@ -598,7 +598,7 @@ describe("config", () => {
   });
 
   it("loadConfig accepts every documented thinking level", () => {
-    for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+    for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
       writeFileSync(
         configFile,
         JSON.stringify({

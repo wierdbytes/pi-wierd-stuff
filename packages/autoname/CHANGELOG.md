@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- **Fix:** `max` reasoning effort selectable in `/autoname` settings and kept in the config.
+
 ## 0.1.1
 
 - **Fix:** titles no longer get a stray "session" — the naming prompt now follows Claude Code's (noun phrase naming the subject, no request verbs or generic labels).

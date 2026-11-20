@@ -129,6 +129,16 @@ const BG_DEFAULT = "\x1b[49m";
 const RGB_ANSI = /\x1b\[(?:38|48);2;\d+;\d+;\d+m/;
 
 /**
+ * The status line pi's bash appends to a failed result. Groups: 1 exit code;
+ * 2 timeout, 3 the shell's exit code when it exited before the timeout
+ * (`… The shell exited with code N after S seconds, but background processes
+ * it started kept writing output until the timeout.`); 4 abort; 5 a command
+ * ended without an exit code.
+ */
+const BASH_STATUS_TAIL =
+  /(?:\n\n|^)Command (?:exited with code (\d+)|(timed out) after \d+ seconds(?:\.[^\n]*?\bexited with code (\d+)[^\n]*)?|(aborted)|(terminated) without an exit code)\s*$/;
+
+/**
  * The reset that ends coloured text: back to the theme's tool background
  * where the host paints tool rows with one, so the reset blends in.
  */
@@ -236,15 +246,23 @@ export function createBashRenderers<C extends TextLike = Text>(options: BashRend
       let exitCode: number | null = d?._type === "bashResult" ? (d.exitCode ?? null) : null;
       let timedOut = false;
       let aborted = false;
+      let terminated = false;
+      // The shell's own exit code when it exited before a timeout that its
+      // background processes ran into (pi ≥ 1.5.1).
+      let shellExit: string | undefined;
 
       // pi's bash appends `Command exited with code N` / `Command timed out…` /
-      // `Command aborted` to the result text on failure. Lift that line into the
-      // bottom-border label so the body stays clean and the summary is consistent.
-      const tail = bodyText.match(/(?:\n\n|^)Command (?:exited with code (\d+)|timed out after \d+ seconds|aborted)\s*$/);
+      // `Command aborted` / `Command terminated without an exit code` to the
+      // result text on failure. Lift that line into the bottom-border label so
+      // the body stays clean and the summary is consistent.
+      const tail = bodyText.match(BASH_STATUS_TAIL);
       if (tail) {
         if (tail[1]) exitCode = Number(tail[1]);
-        else if (/timed out/.test(tail[0])) timedOut = true;
-        else if (/aborted/.test(tail[0])) aborted = true;
+        else if (tail[2]) {
+          timedOut = true;
+          shellExit = tail[3];
+        } else if (tail[4]) aborted = true;
+        else if (tail[5]) terminated = true;
         bodyText = bodyText.slice(0, tail.index);
       }
       if (exitCode === null && !opt.isPartial && !ctx.isError) exitCode = 0;
@@ -255,8 +273,9 @@ export function createBashRenderers<C extends TextLike = Text>(options: BashRend
 
       let summary = "";
       if (!opt.isPartial) {
-        if (timedOut) summary = `${FG_YELLOW}⚡ timed out${RST}`;
+        if (timedOut) summary = `${FG_YELLOW}⚡ timed out${shellExit !== undefined ? ` (shell exit ${shellExit})` : ""}${RST}`;
         else if (aborted) summary = `${FG_YELLOW}⚡ aborted${RST}`;
+        else if (terminated) summary = `${FG_YELLOW}⚡ terminated${RST}`;
         else if (exitCode !== null) {
           const isOk = exitCode === 0;
           summary = `${isOk ? FG_GREEN : FG_RED}${isOk ? "✓" : "✗"} exit ${exitCode}${RST}`;

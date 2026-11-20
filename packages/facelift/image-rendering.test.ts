@@ -161,4 +161,26 @@ describe("image rendering terminal detection", () => {
 			{ type: "image", data: Buffer.from("fake").toString("base64"), mimeType: "image/png" },
 		]);
 	});
+
+	it("keeps pi's details and shows that the model does not support images", async () => {
+		const readTool = loadReadTool(async () => ({
+			content: [
+				{ type: "text", text: "Read image file [image/png]" },
+				{ type: "image", data: Buffer.from("fake").toString("base64"), mimeType: "image/png" },
+			],
+			details: { imageUnsupportedByModel: "text-only-1" },
+		}));
+
+		const result = await readTool.execute("t1", { path: "media/inline-image.png" }, null, null, {});
+		expect(result.details).toMatchObject({ _type: "readImage", imageUnsupportedByModel: "text-only-1" });
+
+		const rendered = readTool.renderResult(result, {}, mockTheme, {
+			lastComponent: new MockText(),
+			isError: false,
+			state: {},
+			expanded: false,
+			invalidate: () => {},
+		});
+		expect(rendered.getText()).toContain("text-only-1 does not support images");
+	});
 });

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4
+
+- **Fix:** `max` summarizer thinking selectable in `/voice` settings and kept in the config.
+
 ## 0.4.3
 
 - **Fix:** a spoken summary inside a pi-agents sub-agent no longer ends that sub-agent early with the summary as its report.

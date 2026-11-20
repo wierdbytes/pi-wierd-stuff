@@ -94,6 +94,30 @@ describe("renderResult", () => {
       strip(renderResult({ content: [{ type: "text", text }] }, { isPartial: false }, theme, context({ isError: true })).text);
     expect(draw("x\n\nCommand timed out after 5 seconds")).toContain("⚡ timed out");
     expect(draw("x\n\nCommand aborted")).toContain("⚡ aborted");
+    expect(draw("x\n\nCommand terminated without an exit code")).toContain("⚡ terminated");
+  });
+
+  it("lifts a timeout whose shell had already exited", () => {
+    const { renderResult } = renderers();
+    const out = strip(
+      renderResult(
+        {
+          content: [
+            {
+              type: "text",
+              text:
+                "x\n\nCommand timed out after 10 seconds. The shell exited with code 0 after 1.2 seconds, but background processes it started kept writing output until the timeout.",
+            },
+          ],
+        },
+        { isPartial: false },
+        theme,
+        context({ isError: true }),
+      ).text,
+    );
+    expect(out).toContain("⚡ timed out (shell exit 0)");
+    expect(out).not.toContain("background processes");
+    expect(out.split("\n")[0]).toBe("│x");
   });
 
   it("takes facelift's details when present", () => {

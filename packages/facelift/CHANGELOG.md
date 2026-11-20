@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2
+
+- **Fix:** reading an image with a model without image input shows `<model> does not support images; it saw a placeholder instead` (pi 1.6+ shows it in the TUI only).
+- **Fix:** `/export` HTML shows the diff of `edit` calls.
+- **Fix:** bash frame shows `⚡ timed out` when background processes kept writing until the timeout.
+
 ## 0.8.1
 
 - **Change:** `bash` is drawn by the renderer it shares with pi-herdr, so a bash run in herdr terminals looks the same.

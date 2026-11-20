@@ -262,7 +262,9 @@ function makeEditorFactory(
 
       render(width: number): string[] {
         this.dockFit.apply(tui, this);
-        const lines = super.render(width);
+        // A copy: pi ≥ 1.6 treats rendered lines as read-only and may hand out
+        // a cached array, and the borders are cut out of it below.
+        const lines = [...super.render(width)];
         if (lines.length === 0) return lines;
 
         const stripAnsi = (s: string) =>

@@ -1031,7 +1031,14 @@ type EditResultDetails = {
 	language: string | undefined;
 };
 type RenderDetails =
-	| { _type: "readImage"; filePath: string; data: string; mimeType: string }
+	| {
+			_type: "readImage";
+			filePath: string;
+			data: string;
+			mimeType: string;
+			/** pi's read (≥ 1.6): the model that saw a placeholder instead of the image. */
+			imageUnsupportedByModel?: string;
+	  }
 	| { _type: "readFile"; filePath: string; content: string; offset: number; lineCount: number }
 	| { _type: "bashResult"; text: string; exitCode: number | null; command: string }
 	| { _type: "lsResult"; text: string; path: string; entryCount: number }
@@ -1057,8 +1064,17 @@ function getTextContent(result: ToolResultLike): string {
 	);
 }
 
+/**
+ * Add facelift's render details to a result, keeping the details pi's tool
+ * put there: pi reads them outside our renderers (`/export` draws an edit's
+ * `diff`, read's `imageUnsupportedByModel` is the only trace of that warning).
+ */
 function setResultDetails<T>(result: ToolResultLike, details: T): void {
-	result.details = details;
+	const original = result.details;
+	result.details =
+		original && typeof original === "object" && !Array.isArray(original)
+			? { ...(original as Record<string, unknown>), ...details }
+			: details;
 }
 
 // ---------------------------------------------------------------------------
@@ -1376,8 +1392,16 @@ export default function piFaceliftExtension(pi: PiFaceliftApi, deps?: PiFacelift
 				const byteSize = Math.ceil(((d.data as string).length * 3) / 4);
 				const sizeStr = humanSize(byteSize);
 				const mimeStr = d.mimeType ?? "image";
+				// pi ≥ 1.6 keeps this warning out of what the model sees and shows it
+				// in the TUI only, so it has to be drawn here.
+				const unsupported =
+					typeof d.imageUnsupportedByModel === "string" && d.imageUnsupportedByModel
+						? `\n${theme.fg("warning", `${d.imageUnsupportedByModel} does not support images; it saw a placeholder instead`)}`
+						: "";
 
-				text.setText(frameResult(`${fileIcon(d.filePath)}${FG_DIM}${mimeStr} · ${sizeStr}${RST}`, status, t, w));
+				text.setText(
+					frameResult(`${fileIcon(d.filePath)}${FG_DIM}${mimeStr} · ${sizeStr}${RST}${unsupported}`, status, t, w),
+				);
 				return text;
 			}
 

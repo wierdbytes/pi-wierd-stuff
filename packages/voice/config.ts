@@ -33,6 +33,7 @@ export const VALID_THINKING_LEVELS = [
   "medium",
   "high",
   "xhigh",
+  "max",
 ] as const;
 export type SummarizerThinkingLevel = (typeof VALID_THINKING_LEVELS)[number];
 

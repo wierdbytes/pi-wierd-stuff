@@ -12,10 +12,11 @@ describe("config", () => {
   });
 
   it("sanitize drops unknown and invalid values", () => {
-    const cfg = sanitize({ target: "nope", mode: "follow", thinking: "max", maxLength: 999, titleTemplate: "no placeholder", extra: 1 });
+    const cfg = sanitize({ target: "nope", mode: "follow", thinking: "ultra", maxLength: 999, titleTemplate: "no placeholder", extra: 1 });
     expect(cfg.target).toBe("both");
     expect(cfg.mode).toBe("follow");
     expect(cfg.thinking).toBe("off");
+    expect(sanitize({ thinking: "max" }).thinking).toBe("max");
     expect(cfg.maxLength).toBe(MAX_LENGTH);
     expect(cfg.titleTemplate).toBe("{name}");
     expect(sanitize({ maxLength: 1 }).maxLength).toBe(MIN_LENGTH);
