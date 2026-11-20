@@ -16,7 +16,7 @@
  *   agent_end (no tools, just talk)    →  input.required
  *   tool_result (isError === true)     →  task.error
  *   after_provider_response (429)      →  resource.limit
- *   session_shutdown (reason "quit")   →  session.end
+ *   session_shutdown (reason "quit")   →  session.end  (external players only)
  *   input events ≥3 in 5s              →  user.spam  (rate-limited)
  *
  * No special handling for task.progress — pi has no clean signal for
@@ -147,16 +147,9 @@ export default function piPeon(pi: ExtensionAPI) {
     if (candidates.length === 0) return;
     const chosen = pickSound(picker, pack.name, category, candidates);
     if (!chosen) return;
-    try {
-      const child = play(playerSpec, chosen.absPath, config.volume);
-      // Detach + ignore errors. The spec is emphatic: never block on
-      // a missing sound. Listeners on `error` keep Node from logging
-      // unhandled-error noise.
-      child.once("error", () => {});
-      child.unref();
-    } catch {
-      // best-effort
-    }
+    // Best-effort, never throws: the spec is emphatic about never
+    // blocking on a missing sound.
+    play(playerSpec, chosen.absPath, config.volume);
   };
 
   /**
@@ -270,10 +263,9 @@ export default function piPeon(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (event) => {
-    if (event.reason === "quit") {
-      // Fire and forget — the player is async; the actual sound may
-      // be cut off when the process exits, but the spec is OK with
-      // best-effort here.
+    // Only a separate player process outlives pi; an in-process sound
+    // would be cut off as pi exits, so it isn't started at all.
+    if (event.reason === "quit" && playerSpec?.outlivesProcess) {
       playFor("session.end");
     }
   });
@@ -421,13 +413,7 @@ export default function piPeon(pi: ExtensionAPI) {
     if (localPack) {
       const localPath = join(localPack.root, ...rel.split("/"));
       if (existsSync(localPath)) {
-        try {
-          const child = play(playerSpec, localPath, config.volume);
-          child.once("error", () => {});
-          child.unref();
-        } catch {
-          // best-effort
-        }
+        play(playerSpec, localPath, config.volume);
         return;
       }
     }
@@ -438,9 +424,7 @@ export default function piPeon(pi: ExtensionAPI) {
     try {
       const tmpPath = await downloadSoundToTemp(entry, rel);
       if (config.muted) return; // user muted while we were downloading
-      const child = play(playerSpec, tmpPath, config.volume);
-      child.once("error", () => {});
-      child.unref();
+      play(playerSpec, tmpPath, config.volume);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       emitToast("error", `peon: preview failed (${msg}).`);
@@ -511,13 +495,7 @@ export default function piPeon(pi: ExtensionAPI) {
     // Bypass the picker's debounce + no-repeat so /peon test is
     // imperative — the user explicitly asked to hear it.
     const chosen = sounds[Math.floor(Math.random() * sounds.length)]!;
-    try {
-      const child = play(playerSpec, chosen.absPath, config.volume);
-      child.once("error", () => {});
-      child.unref();
-    } catch {
-      // best-effort
-    }
+    play(playerSpec, chosen.absPath, config.volume);
     ctx.ui.notify(`peon: playing ${cat} → ${chosen.label}`, "info");
   };
 

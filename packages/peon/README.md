@@ -36,6 +36,9 @@ finishes — no restart needed.
 | `session_shutdown` (reason `"quit"`)      | `session.end`       |
 | user sending ≥ 3 messages in 5 s          | `user.spam`         |
 
+`session.end` only plays with an external player (`afplay`, `paplay`, …):
+the macOS in-process backend would be cut off as pi exits, so it skips it.
+
 Every category can be toggled individually from the settings modal -
 the on-disk pack decides whether that category has actual sounds, and
 missing categories are silently skipped (per spec).
@@ -91,7 +94,7 @@ Everything you can configure interactively lives behind `/peon`:
   drive navigation between submenus.
 
 - **Master volume** — 0–100. Scaled to each backend's native range
-  (afplay's `-v 0.0–1.0`, paplay's 0–65 536, ffplay's `-volume 0–100`).
+  (AVAudioPlayer's and afplay's `0.0–1.0`, paplay's 0–65 536, ffplay's `-volume 0–100`).
 - **Muted** — global kill switch.
 - **Per-event toggles** — one boolean per CESP category. The settings
   description tells you whether the active pack actually has sounds for
@@ -99,13 +102,21 @@ Everything you can configure interactively lives behind `/peon`:
 
 ## Audio backends
 
-Detected once per session via `which` / `where`:
+Detected once per session; external players via `which` / `where`:
 
 | Platform | Order tried                                          |
 | -------- | ---------------------------------------------------- |
-| macOS    | `afplay`                                              |
+| macOS    | AVAudioPlayer in-process, then `afplay`               |
 | Linux    | `pw-play`, `paplay`, `ffplay`, `mpv`, `play`, `aplay` |
 | Windows  | `powershell.exe` (`System.Windows.Media.MediaPlayer`) |
+
+On macOS with Node ≥ 26.1, sounds play through AVAudioPlayer inside the
+pi process (Node's experimental `node:ffi`, on a worker thread), so pi
+stays one CoreAudio client however many sounds it plays. Spawning
+`afplay` per sound makes each one a short-lived client; under bursts
+(many sub-agents at once) coreaudiod can stop cleaning up after exited
+clients, and all audio on the Mac crackles until it's restarted. Under
+Bun or older Node, `afplay` is used as before.
 
 `aplay` has no volume control; the master-volume setting is ignored
 when it's the only backend.
